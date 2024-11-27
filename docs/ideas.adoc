@@ -1,0 +1,70 @@
+= Ideas
+:hardbreaks:
+
+Instead of using SRFC as it is normally done, a possible alternative would to use the Longest Lived Reference, essentially saying that ownership of the data belongs to the reference with the longest lifetime.
+Unlike in rust however ownership of data does not affect how that data can be used, so all existing references will still be valid (until they go out of scope). 
+
+For example given a struct `Player`
+[source, conical]
+----
+struct Player {
+    name: &str;
+    x: i32;
+    y: i32;
+}
+----
+
+[source, conical]
+----
+fn example() -> &mut Player {
+    mut player = new<Player>({"ellipse12", 0, 0});
+    return &player;
+}
+
+fn main() {
+    mut player = example();
+    printn!(player.name);
+}
+----
+
+[source, conical]
+mut player = new<Player>({"ellipse12", 0, 0});
+
+this line allocates a new Player struct and initializes it with some data, this counts as a reference
+
+[source, conical]
+return &player;
+
+Then a reference is returned, in which case the ownership is transfered to this reference, since it has a longer lifetime.
+Likely later in the development you wont have to make a new reference each time you change the lifetime.
+
+Then in main
+[source, conical]
+mut player = example();
+printn!(player);
+
+here we call the example function which returns a reference. If we did not assign it to a variable, the compiler would generate an error saying that we have to either assign it or ignore it.
+
+since the ownership was transfered to the returned reference, the player variable becomes that reference. And since the owner does not change for the rest of the function it gets deallocated at the end of main. 
+Note that printing player does not cause the ownership to change since it has a smaller lifetime. Ownership also does not change how a variable can be used, it is purely within the compiler (unlike rust).
+
+Since we are no longer counting references, cycles should not be a problem.
+[source, conical]
+----
+struct Cycle {
+    next: &Cycle;
+}
+----
+
+[source, conical]
+----
+mut cycle = new<Cycle>();
+let cycle2 = new<Cycle>({&cycle});
+cycle.next = &cycle2;
+----
+
+the only special thing that we need to do is change the lifetime of the new reference `&cycle` to the lifetime of the new struct `cycle2`. In this example it does not matter since both will be deallocated at the end of the scope, but if cycle2 is returned, then the ownership of cycle gets transfered to cycle2.next
+I am not sure at the moment what problems this will have, but i am assumming it will have some.
+I will probably still allow for explicit lifetime annotations, just to give as much control as possible without sacrificing safety. There could also be an `untracked` block (like `unsafe` in rust) that turns the reference checking off.
+
+I also want it to have full C abi support, though not direct. Like there could be a intrinsic that converts Conical types into C types, and then have a header that can be used in C programs to take in Conical types.

@@ -1,0 +1,53 @@
+= Enums
+:hardbreaks:
+
+Enums (or enumerations) in Conical are what are called a _sum_ type. This means that the enum has a set of finite states, or _variants_, that it can be at one time.
+[source, conical]
+----
+enum Shape {
+    Circle,
+    Rectangle,
+    Square
+}
+----
+
+They can also have "associated values", meaning that each variant can hold some combination of values.
+[source, conical]
+----
+enum Shape {
+    Circle(f64),
+    Rectangle(f64, f64),
+    Square(f64),
+}
+----
+
+Notice that the variants are delimited by commas instead of semicolons, this is to indicate that it can only be *one* of the possible states. Whereas structs are delimited by semicolons to indicate that it is composed of all of its constituents.
+
+== Common Enums
+
+Some common enums in the standard library are Option, and Result. Option represents a value that could not exist, and is equivalent to `null` in other languages. Result represents a value that can either be valid or an error value (note that the following implementations are simplified).
+
+[source, conical]
+----
+enum Option<T> {
+    Some(T),
+    None
+}
+----
+
+[source, conical]
+----
+enum Result<T, E> {
+    Ok(T),
+    Err(E)
+}
+----
+
+.Monads
+[%collapsible]
+====
+Both Option and Result implement the `Monad` trait, which implements both `Functor` and `Applicative` traits. There are a handful other Monads in the standard library as well.
+====
+
+
+

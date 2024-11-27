@@ -1,0 +1,95 @@
+= Functions
+:hardbreaks:
+
+Here is a simple function `add` along with example usage:
+
+[source, conical]
+----
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn main() {
+    let a = 2;
+    let b = 4;
+    let result = add(a, b);
+    printn!("{}", result);
+}
+----
+
+Function signatures can be written in two different ways _inline_ and _postfix_, the example above is in inline form. Here is the same function in postfix form:
+
+[source, conical]
+----
+fn add(a, b) :: (i32, i32) -> i32 {
+    a + b
+}
+----
+
+this form exists to make it easier to read more complex function signatures, since it seperates the type information from the parameter names, you can focus on one thing at a time.
+You can read this as: a function `add` that takes in a and b and that has the type signature of parameter 1: i32 and parameter 2: i32 and returns an i32.
+
+For simple functions like this that only have a single expression you can collapse it, in which case it is recomended to use postfix form to make it clearer. 
+
+[source, conical]
+----
+fn add(a, b) => a + b :: (i32, i32) -> i32;
+----
+
+Since functions are also values you can define a function inside another function (although it is considered bad practice)
+[source, conical]
+----
+fn outer() {
+    fn inner() {
+        printn!("Inner");
+    }
+    printn!("Outer");
+    inner();
+}
+----
+
+Functions without an explicit return type will return unit (see ()[expressions]).
+
+== The Dot Operator
+
+when used to call a function the dot operator takes the previous expression result and passes to it to the righthand function.
+so given,
+[source, conical]
+----
+fn first(a) => a + 1 :: i32 -> i32;
+
+fn second(b) => b - 4 :: i32 -> i32;
+
+----
+
+this
+[source, conical]
+let result = 1.first().second(); //Output: -2
+
+is equivalent to
+[source, conical]
+let result = first(second(1)); //Output: -2
+
+this syntax makes it easier to read heavily nested function calls.
+
+== Closures
+
+Conical also supports closures, or small functions that have no name, and can capture surrounding variables.
+
+[source, conical]
+----
+let foo = a->a+1; //type is inferred but would be (i32->i32)
+printn!(foo(4)); //Outputs: 5
+----
+
+== Declerations
+
+You can also declare a function signature to be implemented later. This is usually used in ()[interfaces]
+[source, conical]
+fn add :: (i32, i32) -> i32;
+fn add(a, b) => a + b;
+
+in which case you can completely leave off the type signature. However every decleration *must* have an implementation.
+
+
+

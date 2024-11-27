@@ -1,0 +1,34 @@
+= Getting Started
+:hardbreaks:
+:source-highlighter: highlight.js
+:highlightjs-languages: rust
+:highlightjs-theme: atom-one-dark 
+
+To get started with Conical first install the build-chain, then create a new project using:
+[source, console]
+$ conc new example
+
+and follow the prompts to create a new empty project named `example`.
+
+=== Project Structure Overview
+
+[source]
+----
+.
+├── Conical.pks
+└── src
+    └── main.cnc
+----
+
+here main.cnc contains:
+[source, rust]
+----
+fn main() {
+    printn!("Hello, World!");
+}
+----
+
+Then run:
+[source, console]
+$ pksc run
+Hello, World!
