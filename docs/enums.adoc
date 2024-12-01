@@ -25,7 +25,7 @@ Notice that the variants are delimited by commas instead of semicolons, this is 
 
 == Common Enums
 
-Some common enums in the standard library are Option, and Result. Option represents a value that could not exist, and is equivalent to `null` in other languages. Result represents a value that can either be valid or an error value (note that the following implementations are simplified).
+Some common enums in the standard library are Option, and Result. Option represents a value that can be empty, and is equivalent to `null` in other languages. Result represents a value that can either be valid or an error value (note that the following implementations are simplified).
 
 [source, conical]
 ----
