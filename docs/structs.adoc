@@ -68,3 +68,15 @@ impl Show for Foo {
 
 All trait functions must be implemented to compile.
 
+It is also possible to implement some functions/ a trait for any arbitrary type. 
+[source, conical]
+----
+impl Show for i32 {
+    fn to_string(&self, allocator: Allocator) -> &str {
+        format!("{}", *self);
+    }
+}
+----
+
+this is how many of the traits in the standard library are implemented on builtin types.
+
