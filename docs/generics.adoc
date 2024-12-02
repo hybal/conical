@@ -20,7 +20,7 @@ impl<T> Foo<T> { //the first generic is declaring a generic T and the second one
 }
 
 fn example() {
-    let foo: Foo<&str> = Foo::new("abc", 1); //the type system will automatically detect the correct generic to pass.
+    let foo: Foo<&str> = Foo::new("abc", 1); //the type system will automatically detect the correct type to pass.
     print(foo);
 }
 ----
