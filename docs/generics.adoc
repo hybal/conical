@@ -1,7 +1,27 @@
 = Generics
 :hardbreaks:
 
-[NOTE]
-All of the content in this file is subject to change!
+A generic in conical refers to a local identifier that can be used as an unknown type, so any type can be used. Many things can use generics, but all of them require a declaration that you are using one.
+[source, conical]
+----
+struct Foo<T> { //struct/enums have the generic declaration after the identifier since it is closer to how it would be used.
+    bar: T;
+    b: i32;
+}
 
+fn <T> print(T val) {...} 
+
+fn <T> add(a, b) :: (T, T) -> T => a + b;
+
+impl<T> Foo<T> { //the first generic is declaring a generic T and the second one is passing that generic to Foo
+    fn new(bar: T, b: i32) -> Self {
+        Foo {bar, b}
+    }
+}
+
+fn example() {
+    let foo: Foo<&str> = Foo::new("abc", 1); //the type system will automatically detect the correct generic to pass.
+    print(foo);
+}
+----
 
