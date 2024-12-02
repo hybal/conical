@@ -37,7 +37,7 @@ fn example() {
     cycle.next = &cycle;
 }
 ----
-This now removes the roll of the reference counter, since the lifetime of the data is now explicitly defined.
+This now removes the role of the reference counter, since the lifetime of the data is now explicitly defined.
 The <'this> lifetime is a builtin lifetime that refers to the current scope. So in the example the two Cycle structs will be freed at the end of the function.
 
 What separates conical's lifetime annotations from rust's is that instead of having to annotate each function, you can just use the identifier of the function (or any other variable) to set it to that lifetime.

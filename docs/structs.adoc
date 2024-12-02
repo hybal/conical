@@ -54,7 +54,7 @@ impl Foo {
 }
 ----
 
-The `greater_then` function takes in a reference to `self`, notice that you do not have to define the type after self, this is becaue it is implied. it is functionally equivalent to `self: &Foo`. Also notice that there is no `return` keyword being used, this is because in conical everything is an ()[expression]
+The `greater_then` function takes in a reference to `self`, notice that you do not have to define the type after self, this is because it is implied. it is functionally equivalent to `self: &Foo`. Also notice that there is no `return` keyword being used, this is because in conical everything is an ()[expression]
 
 You can also use an `impl` block to implement a specefic trait for a type. For example the `Show` trait (owing its origins to haskell) allows a struct to be printed using any of the printx! macros. It defines one method `to_string`, that takes in a reference to self and an ()[allocator] and returns a ()[string] reference.
 [source, conical]
