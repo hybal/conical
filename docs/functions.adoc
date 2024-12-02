@@ -34,6 +34,9 @@ For simple functions like this that only have a single expression you can collap
 [source, conical]
 ----
 fn add(a, b) => a + b :: (i32, i32) -> i32;
+
+//not recommended
+fn add(a: i32, b:i32) -> i32 => a + b;
 ----
 
 Since functions are also values you can define a function inside another function (although it is considered bad practice)
@@ -49,7 +52,6 @@ fn outer() {
 ----
 
 Functions without an explicit return type will return unit (see ()[expressions]).
-
 == The Dot Operator
 
 when used to call a function the dot operator takes the previous expression result and passes to it to the righthand function.
