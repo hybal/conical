@@ -91,7 +91,7 @@ You can also declare a function signature to be implemented later. This is usual
 fn add :: (i32, i32) -> i32;
 fn add(a, b) => a + b;
 
-in which case you can completely leave off the type signature. However every declaration *must* have an implementation.
+in which case you can completely leave off the type signature. However every declaration *must* have an implementation within the _same_ module.
 
 
 
