@@ -1,0 +1,50 @@
+= Traits
+:hardbreaks:
+
+[NOTE]
+Traits may change name do distinguish between rust, but that will depend on if they are different or not.
+
+A *trait* in Conical is just a collection of function signatures and optional bodies that can be used on a struct to allow dynamic dispatch (running arbitrary functions at runtime)
+They are created with the `trait` keyword followed by the name of the trait and a body with function declarations.
+[source, conical]
+----
+trait Show {
+    //function declarations
+}
+----
+
+Within a trait you can use inline or postfix or external type syntax for the function declarations. Though external is usually favored for its readability
+[source, conical]
+----
+trait Show {
+    fn to_string :: (&Self, Allocator) -> &str; //external syntax - recommended
+    fn to_string(&self, allocator) :: (&Self, Allocator) -> &str; //postfix
+    fn to_string(&self, allocator: Allocator) -> &str; //inline
+}
+----
+
+To implement a trait for a type you can use an impl block.
+[source, conical]
+----
+/... the previous Show trait definition
+struct Foo {
+    a: i32;
+    b: i32;
+}
+
+impl Show for Foo {
+    fn to_string(&self, allocator: Allocator) -> &str {
+        //... converting the struct to a string
+    }
+}
+----
+
+now you can use the trait as a type to take in any type that implements that trait.
+[source, conical]
+----
+fn print(value: Show?) {
+    value.to_string().printn!();
+}
+----
+
+
