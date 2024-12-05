@@ -1,0 +1,87 @@
+= BNF of Conical
+:hardbreaks:
+
+[NOTE]
+Everything in here is subject to change
+
+.Key
+====
+
+`+` is one or more
+`*` is zero or more
+`?` is zero or one
+`|` is either or
+`[]` is a character class that can include ranges of characters
+`{?}` is any character 
+`{expr, count}` is repeat expression for 0-count times
+`{expr, start, end}` is repeat expression for start-end times (inclusive)
+`"a"` is a literal
+
+====
+
+.Grammar
+----
+expr = decl
+
+decl = var_decl | func_decl
+
+func_decl = "fn" id generic? ("(" (id ":" type)* ")" ("->" type)? | "(" id? ("," id)* ")" ("::" "(" type ("," type)* ")" "->" type)?
+
+func = func_decl ("=>" expr | body)
+
+generic = "<" (("'"? type_keyword)? ("," "'"? type_keyword)* | generic) ">
+
+type = "&"* (type_keyword | id) 
+
+type_keyword = integer_types | floating_types | "str" | "char" | "bool" | id | "[" type_keyword "]"
+
+integer_types = ("i" | "u") ("8", "16", "32", "64", "128", "size")
+
+floating_types = "f32" | "f64"
+
+body = "{" expr* "}"
+
+var_decl = ("let" | "mut") id (":" type)? assignment?
+
+assignment = binary_operators? "=" boolean+ 
+
+boolean = comparison (">=" | "<=" | ">" | "<" | "!=" | "==" boolean)?
+
+comparison = additive ("+" | "-" comparison)?
+
+additive = bitwise ("%" | "/" | "*" additive)?
+
+bitwise = unary ("|" | "~" | "&" | "<<" | ">>" bitwise)?
+
+unary = "(" expr ")" | unary_operators? literal ("++" | "--")?
+
+binary_operators = "+" | "-" | "%" | "/" | "*"  | "|" | "~" | "&" | "<<" | ">>" 
+
+unary_operators = "-" | "+" | "!" | "~" | "&" | "^" | "*" | "++" | "--"
+
+literal = number | floating_point | string | char_literal | "true" | "false" | range | id | body | control
+
+control = ("while" | "loop" | "for" ) body | "if" boolean (body | expr) ("else if" body | "else" (body | expr))? | match_expr
+
+match_expr = //TODO
+
+number = [1-9] ([0-9]* | "_") | "0x" (hex_digit |  "_")+ | "0b" ([0-1] | "_")+ | "0o" ([0-7] | "_")+
+
+floating_point = number? "." number?
+
+hex_digit = [0-9a-fA-F]
+
+string = "\"" (char | escape)* "\" | "`" (char | newline)* "`"
+
+char_literal = "'" (char | escape) "'"
+
+escape = "\\" ("n" | "r" | "t" | "v" | "b" | "f" | "\" | "'" | "\"" | "0" | "x" hex_digit hex_digit | "u" {hex_digit, 4, 4} | "U" {hex_digit, 8,8}
+
+newline = "\n" | "\r\n" | "\r"
+
+char = {?}
+
+id = [_a-zA-Z] [_a-zA-Z0-9]*
+
+
+----
