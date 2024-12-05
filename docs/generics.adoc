@@ -9,7 +9,7 @@ struct Foo<T> {
     b: i32;
 }
 
-fn print<T>(T val) {...} 
+fn print<T>(val: T) {...} 
 
 fn add<T>(a, b) :: (T, T) -> T => a + b;
 
@@ -24,4 +24,43 @@ fn example() {
     print(foo);
 }
 ----
+
+
+== Alternative Idea
+
+Instead of using the above way of declaring generics, another way would be to have a symbol that can be appended/prepended to a type in a signature to indicate that it is generic.
+For the purposes of example I will use `?` but it can be changed into anything else.
+
+By having the generic declaration be inline it makes it easier to read and cleaner.
+
+[source, conical]
+----
+struct Foo { 
+    bar: T?;
+    b: i32;
+}
+
+fn print(val: T?) {...} 
+
+fn add(a, b) :: (T?, T) -> T => a + b; //only one 
+
+impl<T> Foo<T> { 
+    fn init(bar: T, b: i32) -> Self {
+        Foo {bar, b}
+    }
+}
+
+fn example() {
+    let foo: Foo<&str> = Foo::init("abc", 1); 
+    print(foo);
+}
+
+
+----
+
+The things that will need to be worked on are:
+    1. how to pass types/ how to indicate what type you are instantiating
+    2. how to use them in impl blocks since they technically require a type to implement on
+a possible way to do this is to only allow this generic syntax on postfix/external type signatures, but this just makes the type system more fragmented with more rules to remember.
+Another way may be to allow both, but make it so that <T> can be used as a "global" generic in impl blocks.
 
