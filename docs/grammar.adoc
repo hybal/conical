@@ -19,8 +19,8 @@ Everything in here is subject to change
 
 ====
 
-.Grammar
 [source, ebnf]
+.Grammar
 ----
 expr = decl
 
