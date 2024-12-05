@@ -42,7 +42,7 @@ struct Foo {
 
 fn print(val: T?) {...} 
 
-fn add(a, b) :: (T?, T) -> T => a + b; //only one 
+fn add(a, b) :: (T?, T) -> T => a + b; //only one of the T's needs to be declared as a generic after which it can be used as its own "type" 
 
 impl<T> Foo<T> { 
     fn init(bar: T, b: i32) -> Self {
