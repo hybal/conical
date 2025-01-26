@@ -5,7 +5,7 @@ Here is a simple function `add` along with example usage:
 
 [source, conical]
 ----
-fn add(a: i32, b: i32) -> i32 {
+fn add(a, b): (i32, i32) -> i32 {
     a + b
 }
 
@@ -17,81 +17,103 @@ fn main() {
 }
 ----
 
-Function signatures can be written in two different ways _inline_ and _postfix_, the example above is in inline form. Here is the same function in postfix form:
-
+Function signatures can also be written inline, however the above postfix form is preferred for declarations.
 [source, conical]
 ----
-fn add(a, b) :: (i32, i32) -> i32 {
+fn add(a: i32, b: i32) -> i32 {
     a + b
 }
 ----
 
-this form exists to make it easier to read more complex function signatures, since it seperates the type information from the parameter names, you can focus on one thing at a time.
-You can read this as: a function `add` that takes in a and b and that has the type signature of parameter 1: i32 and parameter 2: i32 and returns an i32.
-
-For simple functions like this that only have a single expression you can collapse it, in which case it is recomended to use postfix form to make it clearer. 
-
-[source, conical]
-----
-fn add(a, b) => a + b :: (i32, i32) -> i32;
-
-//not recommended
-fn add(a: i32, b:i32) -> i32 => a + b;
-----
-
-Since functions are also values you can define a function inside another function (although it is considered bad practice)
-[source, conical]
-----
-fn outer() {
-    fn inner() {
-        printn!("Inner");
-    }
-    printn!("Outer");
-    inner();
-}
-----
-
-Functions without an explicit return type will return unit (see ()[expressions]).
 == The Dot Operator
 
-when used to call a function the dot operator takes the previous expression result and passes to it to the righthand function.
-so given,
+The dot operator has two usages in conical, the first is member access on types. That is, struct members and functions defined in `impl` blocks for a type. This is the typical usage in other languages, however conical also supports *Uniform Function Call Syntax* (UFCS) which means that if the dot operator is used between an expression and a function (when the expression does not result in a type that has that function as a member) the dot operator will pass the expression as the first argument to the function. This means that:
 [source, conical]
-----
-fn first(a) => a + 1 :: i32 -> i32;
-
-fn second(b) => b - 4 :: i32 -> i32;
-
-----
-
-this
-[source, conical]
-let result = 1.first().second(); //Output: -2
+14.add(17).sub(24); //Yields: 7
 
 is equivalent to
 [source, conical]
-let result = first(second(1)); //Output: -2
+sub(add(14, 17), 24); //Yields: 7
 
-this syntax makes it easier to read heavily nested function calls.
+this syntax makes it much easier to read heavily nested function calls.
 
-== Closures
-
-Conical also supports closures, or small functions that have no name, and can capture surrounding variables.
-
+The `::` operator can be used to prevent passing the expression, which can be useful for member functions.
 [source, conical]
 ----
-let foo = a->a+1; //type is inferred but would be (i32->i32)
-printn!(foo(4)); //Outputs: 5
+struct Foo {
+    a: i32;
+    b: i32;
+}
+
+impl Foo {
+    fn answer() -> i32 => 42;
+}
+
+fn main() {
+    let foo = Foo {a: 45, b: 29};
+    let sum = foo::answer(); //Yields: 42
+    let sum2 = Foo::answer(); //This form is preferred since it shows what type you are using.
+}
+----
+
+== Lambdas
+
+Conical also supports lambdas, or small functions that have no name.
+[source, conical]
+----
+let hello = () => printn!("Hello, World!");
+hello(); //Prints: Hello, World!
+----
+
+For the most part the type signature of lambdas is inferred based on usage. However if the compiler cannot infer the types, it is recommended to use inline type annotations instead of postfix.
+[source, conical]
+----
+let ambiguous = (a: i32, b: i32) -> i32 => a + b; 
+printn!("{}", ambiguous);
+----
+
+=== Closures
+
+If a lambda uses variables from the surrounding context (called capturing), then it is called a _closure_. 
+[source, conical]
+----
+let external = "I am an external string";
+let closure = () => printn!("{} inside a closure", external);
+closure();
+----
+Depending on how the captured variables are used a closure may need to be annotated with how the variables are captured.
+[source, conical]
+----
+fn foo() -> (int[], fn()) {
+    let copied = 42;
+    mut ref = new int[2];
+    let long = new str("abc");
+    let closure = () |move long| => {
+        printn!("Immediates are copied: {}", copied);
+        ref[0] = 2543;
+        ref[1] = 90;
+        printn!("ref[0] = {}", 2542); //References are fine as long as they live longer than the closure.
+
+        printn!("{}", abc); //if the closure lives longer than the reference the reference must be moved into the closure, which moves it onto the heap and will be deallocated when the closure dies.
+    };
+    return (ref, closure);
+}
+
+fn main() {
+    let _, closure = foo();
+    closure();
+}
 ----
 
 == Declerations
 
 You can also declare a function signature to be implemented later. This is usually used in ()[interfaces]
 [source, conical]
-fn add :: (i32, i32) -> i32;
-fn add(a, b) => a + b;
+fn add: (i32, i32) -> i32;
+fn add: (a, b) => a + b;
 
-in which case you can completely leave off the type signature. However every declaration *must* have an implementation within the _same_ scope/module.
+Every declaration *must* have an implementation within the same scope or module.
+
 
 
 

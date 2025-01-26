@@ -1,66 +1,40 @@
 = Generics
 :hardbreaks:
 
-A generic in conical refers to a local identifier that can be used as an unknown type, so any type can be used. Many things can use generics, but all of them require a declaration that you are using one.
+Generics are a way to define logic and data that is independent of type.
+They are declared using `$id` and afterwards can be used as a normal type.
 [source, conical]
 ----
-struct Foo<T> { 
-    bar: T;
-    b: i32;
+fn add(a, b): ($T, T) -> T => a + b;
+
+struct Vec {
+    data: $T[],
+    len: usz
 }
 
-fn print<T>(val: T) {...} 
-
-fn add<T>(a, b) :: (T, T) -> T => a + b;
-
-impl<T> Foo<T> { //the first generic is declaring a generic T and the second one is passing that generic to Foo
-    fn init(bar: T, b: i32) -> Self {
-        Foo {bar, b}
-    }
-}
-
-fn example() {
-    let foo: Foo<&str> = Foo::init("abc", 1); //the type system will automatically detect the correct type to pass.
-    print(foo);
+enum Option {
+    Some($T),
+    None
 }
 ----
+This creates a function that can take any value that supports the add operator.
 
-
-== Alternative Idea
-
-Instead of using the above way of declaring generics, another way would be to have a symbol that can be appended/prepended to a type in a signature to indicate that it is generic.
-For the purposes of example I will use `?` but it can be changed into anything else.
-
-By having the generic declaration be inline it makes it easier to read and cleaner.
-
+Generics are expanded at compile time, essentially creating a custom function for every type that is used.
+For the most part the compiler can infer the type to set the generic, however if it cannot then they can be passed manually.
 [source, conical]
 ----
-struct Foo { 
-    bar: T?;
-    b: i32;
-}
-
-fn print(val: T?) {...} 
-
-fn add(a, b) :: (T?, T) -> T => a + b; //only one of the T's needs to be declared as a generic after which it can be used as its own "type" 
-
-impl<T> Foo<T> { 
-    fn init(bar: T, b: i32) -> Self {
-        Foo {bar, b}
+fn div(a, b): (i32, i32) -> Option(i32) {
+    if b == 0 {
+        None
+    } else {
+        Some(a/b)
     }
 }
-
-fn example() {
-    let foo: Foo<&str> = Foo::init("abc", 1); 
-    print(foo);
-}
-
-
 ----
-
-The things that will need to be worked on are:
-    1. how to pass types/ how to indicate what type you are instantiating
-    2. how to use them in impl blocks since they technically require a type to implement on
-a possible way to do this is to only allow this generic syntax on postfix/external type signatures, but this just makes the type system more fragmented with more rules to remember.
-Another way may be to allow both, but make it so that <T> can be used as a "global" generic in impl blocks.
+and inline
+[source, conical]
+----
+let arr = vec![1,2,3,4];
+let plus_one = arr.iter().map(v => v + 1).collect::Vec(i32)();
+----
 
