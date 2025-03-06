@@ -56,7 +56,7 @@ pub const Tag = enum {
     dot2, //..
     colon, //:
     colon2, //::
-    single_quote,
+    single_quote, //'
     //keywords
     keyword_if,
     keyword_else,
@@ -84,6 +84,21 @@ pub const Tag = enum {
     keyword_mod,
     keyword_comptime,
     keyword_continue,
+    keyword_as, 
+    keyword_static,
+    keyword_type,
+    keyword_const,
+    keyword_unsafe,
+    keyword_impl,
+    keyword_move,
+    keyword_self,
+    keyword_trait,
+    keyword_when,
+    keyword_Self,
+    keyword_where, 
+    keyword_macro,
+    keyword_new,
+    keyword_do,
     keyword_true,
     keyword_false,
 };
@@ -177,6 +192,21 @@ pub const Lexer = struct {
         .{ "comptime", .keyword_comptime },
         .{ "true", .keyword_true },
         .{ "false", .keyword_false },
+        .{ "as", .keyword_as },
+        .{ "static", .keyword_static },
+        .{ "type", .keyword_type },
+        .{ "const", .keyword_const },
+        .{ "unsafe", .keyword_unsafe },
+        .{ "impl", .keyword_impl },
+        .{ "move", .keyword_move },
+        .{ "self", .keyword_self },
+        .{ "trait", .keyword_trait },
+        .{ "when", .keyword_when },
+        .{ "Self", .keyword_Self },
+        .{ "where", .keyword_where },
+        .{ "macro", .keyword_macro },
+        .{ "new", .keyword_new },
+        .{ "do", .keyword_do },
     });
     fn is_double(self: *Lexer) bool {
         if (!self.has_next()) return false;
@@ -327,20 +357,26 @@ pub const Lexer = struct {
                                     else .lt,
                 
                 '\'' => { //This could probably be better
-                    var can_be_lifetime = false;
-                    if (self.is_next('\'')) {
-                        tag = .char_literal;
-                        break;
-                    } else if (self.next_if('\\')) |_| {
-                        if (!self.parse_escape()) {
+                    if (self.next_if('\\')) |_| {
+                        if (!self.parse_escape() or !self.is_next('\'')) {
                             tag = .invalid;
                             break;
                         }
-                    } else if (is_id_start(self.get())) {
-                            can_be_lifetime = true;
+                        _ = self.next();
+                        tag = .char_literal;
+                        break;
+                    } 
+                    if (self.next_if('\'')) |_| {
+                        tag = .char_literal;
+                        break;
                     }
-                    
-
+                    if (self.peek2() != '\'') {
+                        tag = .single_quote;
+                        break;
+                    }
+                    _ = self.next();
+                    _ = self.next();
+                    tag = .char_literal;
                 },
                 '\"' => { //This could also probably be better
                     while (self.has_next() and !self.is_next('\"')): (_ = self.next()) {
