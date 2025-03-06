@@ -1,15 +1,13 @@
 const std = @import("std");
 const lex = @import("lexer.zig");
+const parse = @import("parser.zig");
 pub fn main() !void {
     const source = 
-        \\ #!/bin/bash
-        \\ fn add(a,b): (i32, i32) -> i32 {
-        \\     a + b
-        \\ }
+        \\ let a = 1;
     ;
-    var lexer = lex.init(source);
-    var next = lexer.next_token();
-    while (next.tag != .eof) : (next = lexer.next_token()) {
-        std.debug.print("token: {}, str: \"{s}\"\n", .{next, source[next.start..next.end]});
-    }
+    var parser = parse.init_from_source(source);
+    parser.parse();
+    _ = lex;
 }
+
+

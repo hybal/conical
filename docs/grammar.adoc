@@ -13,8 +13,8 @@ Everything in here is subject to change
 `|` is either or
 `[]` is a character class that can include ranges of characters
 `{?}` is any character 
-`{expr, count}` is repeat expression for 0-count times
-`{expr, start, end}` is repeat expression for start-end times (inclusive)
+`{expr, count}` is repeat expression for 0-to-count times
+`{expr, start, end}` is repeat expression for start-to-end times (inclusive)
 `"a"` is a literal
 
 ====
