@@ -26,7 +26,7 @@ expr = decl
 
 decl = var_decl | func_decl
 
-func_decl = "fn" id generic? ("(" (id ":" type)* ")" ("->" type)? | "(" id? ("," id)* ")" ("::" "(" type ("," type)* ")" "->" type)?
+func_decl = "fn" id("(" (id ":" type)* ")" ("->" type)? | "(" id? ("," id)* ")" ("::" "(" type ("," type)* ")" "->" type)?
 
 func = func_decl ("=>" expr | body)
 
