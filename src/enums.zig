@@ -11,27 +11,36 @@ pub const Tag = enum {
     ident, // [a-zA-Z_] [a-zA-Z_0-9]*
     //Symbols
     plus, //+
+    pluseq,
     plus2, //++
     minus, //-
+    minuseq,
     minus2, //--
     slash, // /
+    slasheq,
     back_slash, //\
     star, //*
+    stareq, //*=
     caret, //^
+    careteq, //^=
     tilde, //~
+    tildeeq, //~=
     percent, //%
+    percenteq, //%=
     at, //@
     dollar, //$
-    semicolon,
-    comma,
+    semicolon, //;
+    comma, //,
     question, //?
     question2, //??
     pipe, //|
+    pipeeq, //|=
     pipe2, //||
     hash, //#
     bang, // !
     bang2, // !!
     amp, //&
+    ampeq, //&=
     amp2, //&&
     eq, //=
     eq2, //==
@@ -41,7 +50,9 @@ pub const Tag = enum {
     lteq, //<=
     gteq, //>=
     shl, //<<
+    shleq, //<<=
     shr, //>>
+    shreq, //>>=
     open_bracket, //{
     close_bracket, //}
     open_paren, //(
