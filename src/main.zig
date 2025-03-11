@@ -4,7 +4,7 @@ const ast = @import("Ast.zig");
 const parse = @import("parser.zig");
 
 const source = 
-        \\ a += 1 + 1
+        \\ a ++= 1
     ;
 
 fn print_tree(node: ?*ast.Ast, prefix: []const u8, is_left: bool) void {
