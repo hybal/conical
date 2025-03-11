@@ -1,107 +1,5 @@
 const std = @import("std");
-
-
-pub const Tag = enum {
-    invalid,
-    eof,
-    //Literals
-    int_literal,
-    float_literal,
-    string_literal, //"..."
-    raw_string_literal, //`...`
-    char_literal, //'.'
-    ident, // [a-zA-Z_] [a-zA-Z_0-9]*
-    //Symbols
-    plus, //+
-    plus2, //++
-    minus, //-
-    minus2, //--
-    slash, // /
-    back_slash, //\
-    star, //*
-    caret, //^
-    tilde, //~
-    percent, //%
-    at, //@
-    dollar, //$
-    semicolon,
-    comma,
-    question, //?
-    question2, //??
-    pipe, //|
-    pipe2, //||
-    hash, //#
-    bang, // !
-    bang2, // !!
-    amp, //&
-    amp2, //&&
-    eq, //=
-    eq2, //==
-    noteq, // !=
-    gt, //>
-    lt,//<
-    lteq, //<=
-    gteq, //>=
-    shl, //<<
-    shr, //>>
-    open_bracket, //{
-    close_bracket, //}
-    open_paren, //(
-    close_paren, //)
-    open_square, //[
-    close_square, //]
-    thin_arrow,
-    fat_arrow, //=>
-    dot, //.
-    dot2, //..
-    colon, //:
-    colon2, //::
-    single_quote, //'
-    //keywords
-    keyword_if,
-    keyword_else,
-    keyword_while,
-    keyword_for,
-    keyword_in,
-    keyword_match,
-    keyword_fn,
-    keyword_async,
-    keyword_await,
-    keyword_inline,
-    keyword_extern,
-    keyword_priv,
-    keyword_pub,
-    keyword_export,
-    keyword_let,
-    keyword_mut,
-    keyword_return,
-    keyword_break,
-    keyword_struct,
-    keyword_enum,
-    keyword_test,
-    keyword_union,
-    keyword_use,
-    keyword_mod,
-    keyword_comp,
-    keyword_continue,
-    keyword_as, 
-    keyword_static,
-    keyword_type,
-    keyword_const,
-    keyword_unsafe,
-    keyword_impl,
-    keyword_move,
-    keyword_self,
-    keyword_trait,
-    keyword_when,
-    keyword_Self,
-    keyword_where, 
-    keyword_macro,
-    keyword_new,
-    keyword_do,
-    keyword_true,
-    keyword_false,
-};
+const Tag = @import("enums.zig").Tag;
 
 const Base = enum {
     b2,
@@ -141,15 +39,16 @@ pub const Token = struct {
     tag: Tag,
 };
 
-pub fn init(buffer: []const u8) Lexer {
-    return .{
-        .buffer = buffer,
-        .index = if (std.mem.startsWith(u8, buffer, "\xEF\xBB\xBF")) 3 else 0,
-    };
-}
 pub const Lexer = struct {
     buffer: []const u8,
     index: usize,
+
+    pub fn init(buffer: []const u8) Lexer {
+        return .{
+            .buffer = buffer,
+            .index = if (std.mem.startsWith(u8, buffer, "\xEF\xBB\xBF")) 3 else 0,
+        };
+    }
 
     const State = enum {
         start,
@@ -207,6 +106,7 @@ pub const Lexer = struct {
         .{ "macro", .keyword_macro },
         .{ "new", .keyword_new },
         .{ "do", .keyword_do },
+        .{ "try", .keyword_try }
     });
     fn is_double(self: *Lexer) bool {
         if (!self.has_next()) return false;
@@ -226,7 +126,7 @@ pub const Lexer = struct {
         }
         return null;
     }
-    fn has_next(self: *Lexer) bool {
+    pub fn has_next(self: *Lexer) bool {
         return self.index < self.buffer.len;
     }
     fn next(self: *Lexer) ?u8 {
@@ -291,6 +191,26 @@ pub const Lexer = struct {
         }
         return true;
     }
+
+    pub fn consume_if_eq(self: *Lexer, one_of: []const Tag) ?Token {
+        const save = self.index;
+        const next_tok = self.next_token();
+        for (one_of) |tok| {
+            if (next_tok.tag == tok) {
+                return next_tok;
+            }
+        }
+        self.index = save;
+        return null;
+    }
+
+    pub fn peek_token2(self: *Lexer) Token {
+        const saved = self.index;
+        _ = self.next_token();
+        const out = self.next_token();
+        self.index = saved;
+        return out;
+    }
     pub fn next_token(self: *Lexer) Token {
         var start = self.index;
         var tag: Tag = .eof;
@@ -341,69 +261,69 @@ pub const Lexer = struct {
                 ':' => tag = if (self.next_if(':')) |_| .colon2 else .colon,
                 '&' => tag = if (self.next_if('&')) |_| .amp2 else .amp,
                 '=' => tag = if (self.next_if('=')) |_| .eq2 
-                                else if (self.next_if('>')) |_| .fat_arrow 
-                                    else .eq,
-                '-' => tag = if (self.next_if('-')) |_| .minus2 
+                    else if (self.next_if('>')) |_| .fat_arrow 
+                        else .eq,
+                            '-' => tag = if (self.next_if('-')) |_| .minus2 
                                 else if (self.next_if('>')) |_| .thin_arrow 
                                     else .minus,
-                '!' => tag = if (self.next_if('=')) |_| .noteq
-                                else if (self.next_if('!')) |_| .bang2
-                                    else .bang,
-                '>' => tag = if (self.next_if('=')) |_| .gteq
-                                else if (self.next_if('>')) |_| .shr
-                                    else .gt,
-                '<' => tag = if (self.next_if('=')) |_| .lteq
-                                else if (self.next_if('<')) |_| .shl
-                                    else .lt,
-                
-                '\'' => { //This could probably be better
-                    if (self.next_if('\\')) |_| {
-                        if (!self.parse_escape() or !self.is_next('\'')) {
-                            tag = .invalid;
-                            break;
-                        }
-                        _ = self.next();
-                        tag = .char_literal;
-                        break;
-                    } 
-                    if (self.next_if('\'')) |_| {
-                        tag = .char_literal;
-                        break;
-                    }
-                    if (self.peek2() != '\'') {
-                        tag = .single_quote;
-                        break;
-                    }
-                    _ = self.next();
-                    _ = self.next();
-                    tag = .char_literal;
-                },
-                '\"' => { //This could also probably be better
-                    while (self.has_next() and !self.is_next('\"')): (_ = self.next()) {
-                        if (self.next_if('\\')) |_| {
-                            if (!self.parse_escape()) {
-                                tag = .invalid;
-                            }
-                        }
-                        if (!self.has_next()) {
-                            tag = .invalid;
-                            break;
-                        }
-                        switch (self.peek() orelse 0) {
-                            '\n', 
-                            0x01...0x09, 0x0b...0x1f, 0x7f => {
-                                tag = .invalid;
-                                break;
-                            },
-                            else => {}
-                        }
-                    } 
-                    _ = self.next();
-                    if (tag != .invalid) {
-                        tag = .string_literal;
-                    }
+                                        '!' => tag = if (self.next_if('=')) |_| .noteq
+                                            else if (self.next_if('!')) |_| .bang2
+                                                else .bang,
+                                                    '>' => tag = if (self.next_if('=')) |_| .gteq
+                                                        else if (self.next_if('>')) |_| .shr
+                                                            else .gt,
+                                                                '<' => tag = if (self.next_if('=')) |_| .lteq
+                                                                    else if (self.next_if('<')) |_| .shl
+                                                                        else .lt,
 
-                },
+                                                                            '\'' => { //This could probably be better
+                                                                                if (self.next_if('\\')) |_| {
+                                                                                    if (!self.parse_escape() or !self.is_next('\'')) {
+                                                                                        tag = .invalid;
+                                                                                        break;
+                                                                                    }
+                                                                                    _ = self.next();
+                                                                                    tag = .char_literal;
+                                                                                    break;
+                                                                                } 
+                                                                                if (self.next_if('\'')) |_| {
+                                                                                    tag = .char_literal;
+                                                                                    break;
+                                                                                }
+                                                                                if (self.peek2() != '\'') {
+                                                                                    tag = .single_quote;
+                                                                                    break;
+                                                                                }
+                                                                                _ = self.next();
+                                                                                _ = self.next();
+                                                                                tag = .char_literal;
+                                                                            },
+                                                                            '\"' => { //This could also probably be better
+                                                                                while (self.has_next() and !self.is_next('\"')): (_ = self.next()) {
+                                                                                    if (self.next_if('\\')) |_| {
+                                                                                        if (!self.parse_escape()) {
+                                                                                            tag = .invalid;
+                                                                                        }
+                                                                                    }
+                                                                                    if (!self.has_next()) {
+                                                                                        tag = .invalid;
+                                                                                        break;
+                                                                                    }
+                                                                                    switch (self.peek() orelse 0) {
+                                                                                        '\n', 
+                                                                                        0x01...0x09, 0x0b...0x1f, 0x7f => {
+                                                                                            tag = .invalid;
+                                                                                            break;
+                                                                                        },
+                                                                                        else => {}
+                                                                                    }
+                                                                                } 
+                                                                                _ = self.next();
+                                                                                if (tag != .invalid) {
+                                                                                    tag = .string_literal;
+                                                                                }
+
+                                                                            },
                 '`' => {
                     while (self.has_next() and !self.is_next('`')): (_ = self.next()) {
                         if (!self.has_next()) {
