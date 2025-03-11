@@ -22,13 +22,27 @@ pub fn init_from_source(src: []const u8, gpa: std.mem.Allocator) @This() {
 pub fn parse(self: *@This()) !*Ast {
     var ast: *Ast = undefined;
     while (self.lexer.has_next()) {
-        ast = try self.expr();
+        ast = try self.assignment();
     }
     return ast;
 }
 
 
-
+fn assignment(self: *@This()) !*Ast {
+    if (self.lexer.consume_if_eq(&[_]enums.Tag{.ident})) |id| {
+        if (self.lexer.consume_if_eq(&[_]enums.Tag{
+        .eq, .pluseq, .minuseq, .stareq, .slasheq, .percenteq, .shleq, .shreq, .ampeq, .careteq, .pipeeq
+        })) |token| {
+            const parent: Ast = .{
+                .token = token,
+                .left = try mem.createWith(self.gpa, Ast.init(id)),
+                .right = try self.expr(),
+            };
+            return try mem.createWith(self.gpa, parent);
+        }
+    }
+    return self.expr();
+}
 
 fn expr(self: *@This()) !*Ast {
     var left = try self.term();
