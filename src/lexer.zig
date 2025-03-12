@@ -1,6 +1,6 @@
 const std = @import("std");
 const Tag = @import("enums.zig").Tag;
-
+const Token = @import("enums.zig").Token;
 const Base = enum { b2, b8, b10, b16, b64 };
 
 fn is_base(char: u8, base: Base) bool {
@@ -20,12 +20,6 @@ fn is_id_start(char: u8) bool {
     };
 }
 
-pub const Token = struct {
-    start: usize,
-    end: usize,
-    tag: Tag,
-};
-
 pub const Lexer = struct {
     buffer: []const u8,
     index: usize,
@@ -37,65 +31,8 @@ pub const Lexer = struct {
         };
     }
 
-    const State = enum { 
-        start, 
-        end, 
-        escape_char, 
-        string_literal, 
-        raw_string_literal, 
-        char_literal, 
-        number_literal, 
-        line_comment, 
-        block_comment, 
-        ident 
-    };
-    pub const keywords = std.StaticStringMap(Tag).initComptime( .{ 
-            .{ "if", .keyword_if }, 
-            .{ "else", .keyword_else }, 
-            .{ "while", .keyword_while }, 
-            .{ "for", .keyword_for }, 
-            .{ "in", .keyword_in }, 
-            .{ "match", .keyword_match }, 
-            .{ "fn", .keyword_fn }, 
-            .{ "async", .keyword_async }, 
-            .{ "await", .keyword_await }, 
-            .{ "inline", .keyword_inline }, 
-            .{ "extern", .keyword_extern }, 
-            .{ "export", .keyword_export }, 
-            .{ "priv", .keyword_priv }, 
-            .{ "pub", .keyword_pub }, 
-            .{ "let", .keyword_let }, 
-            .{ "mut", .keyword_mut }, 
-            .{ "return", .keyword_return }, 
-            .{ "break", .keyword_break }, 
-            .{ "continue", .keyword_continue }, 
-            .{ "struct", .keyword_struct }, 
-            .{ "enum", .keyword_enum }, 
-            .{ "test", .keyword_test }, 
-            .{ "union", .keyword_union }, 
-            .{ "use", .keyword_use }, 
-            .{ "mod", .keyword_mod }, 
-            .{ "comp", .keyword_comp }, 
-            .{ "true", .keyword_true }, 
-            .{ "false", .keyword_false }, 
-            .{ "as", .keyword_as }, 
-            .{ "static", .keyword_static },
-            .{ "type", .keyword_type },
-            .{ "const", .keyword_const }, 
-            .{ "unsafe", .keyword_unsafe }, 
-            .{ "impl", .keyword_impl }, 
-            .{ "move", .keyword_move },
-            .{ "self", .keyword_self }, 
-            .{ "trait", .keyword_trait },
-            .{ "when", .keyword_when },
-            .{ "Self", .keyword_Self },
-            .{ "where", .keyword_where },
-            .{ "macro", .keyword_macro },
-            .{ "new", .keyword_new },
-            .{ "do", .keyword_do }, 
-            .{ "try", .keyword_try } 
-    });
-
+    const State = enum { start, end, escape_char, string_literal, raw_string_literal, char_literal, number_literal, line_comment, block_comment, ident };
+    pub const keywords = std.StaticStringMap(Tag).initComptime(.{ .{ "if", .keyword_if }, .{ "else", .keyword_else }, .{ "while", .keyword_while }, .{ "for", .keyword_for }, .{ "in", .keyword_in }, .{ "match", .keyword_match }, .{ "fn", .keyword_fn }, .{ "async", .keyword_async }, .{ "await", .keyword_await }, .{ "inline", .keyword_inline }, .{ "extern", .keyword_extern }, .{ "export", .keyword_export }, .{ "priv", .keyword_priv }, .{ "pub", .keyword_pub }, .{ "let", .keyword_let }, .{ "mut", .keyword_mut }, .{ "return", .keyword_return }, .{ "break", .keyword_break }, .{ "continue", .keyword_continue }, .{ "struct", .keyword_struct }, .{ "enum", .keyword_enum }, .{ "test", .keyword_test }, .{ "union", .keyword_union }, .{ "use", .keyword_use }, .{ "mod", .keyword_mod }, .{ "comp", .keyword_comp }, .{ "true", .keyword_true }, .{ "false", .keyword_false }, .{ "as", .keyword_as }, .{ "static", .keyword_static }, .{ "type", .keyword_type }, .{ "const", .keyword_const }, .{ "unsafe", .keyword_unsafe }, .{ "impl", .keyword_impl }, .{ "move", .keyword_move }, .{ "self", .keyword_self }, .{ "trait", .keyword_trait }, .{ "when", .keyword_when }, .{ "Self", .keyword_Self }, .{ "where", .keyword_where }, .{ "macro", .keyword_macro }, .{ "new", .keyword_new }, .{ "do", .keyword_do }, .{ "try", .keyword_try } });
 
     fn is_double(self: *Lexer) bool {
         if (!self.has_next()) return false;
@@ -188,7 +125,12 @@ pub const Lexer = struct {
         self.index = save;
         return null;
     }
-
+    pub fn expect_token(self: *Lexer, tag: Tag) !Token {
+        if (self.consume_if_eq(&[_]Tag{tag})) |token| {
+            return token;
+        }
+        return error.ExpectedToken;
+    }
     pub fn peek_token2(self: *Lexer) Token {
         const saved = self.index;
         _ = self.next_token();

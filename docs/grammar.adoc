@@ -22,67 +22,83 @@ Everything in here is subject to change
 [source, ebnf]
 .Grammar
 ----
-expr = decl
 
-decl = var_decl | func_decl
+<expression> ::= <assignment>
 
-func_decl = "fn" id("(" (id ":" type)* ")" ("->" type)? | "(" id? ("," id)* ")" ("::" "(" type ("," type)* ")" "->" type)?
+<assignment> ::= <ternary>
+               | <unary> "=" <assignment>
+               | <unary> "+=" <assignment>
+               | <unary> "-=" <assignment>
+               | <unary> "*=" <assignment>
+               | <unary> "/=" <assignment>
+               | <unary> "%=" <assignment>
+               | <unary> "<<=" <assignment>
+               | <unary> ">>=" <assignment>
+               | <unary> "&=" <assignment>
+               | <unary> "^=" <assignment>
+               | <unary> "|=" <assignment>
 
-func = func_decl ("=>" expr | body)
+<ternary> ::= <logical_or>
+            | <logical_or> "?" <expression> ":" <ternary>
 
-generic = "<" (("'"? type_keyword)? ("," "'"? type_keyword)* | generic) ">
+<logical_or> ::= <logical_and>
+               | <logical_or> "||" <logical_and>
 
-type = "&"* (type_keyword | id) 
+<logical_and> ::= <bitwise_or>
+                | <logical_and> "&&" <bitwise_or>
 
-type_keyword = integer_types | floating_types | "str" | "char" | "bool" | id | "[" type_keyword "]"
+<bitwise_or> ::= <bitwise_xor>
+               | <bitwise_or> "|" <bitwise_xor>
 
-integer_types = ("i" | "u") ("8", "16", "32", "64", "128", "size")
+<bitwise_xor> ::= <bitwise_and>
+                | <bitwise_xor> "^" <bitwise_and>
 
-floating_types = "f32" | "f64"
+<bitwise_and> ::= <equality>
+                | <bitwise_and> "&" <equality>
 
-body = "{" expr* "}"
+<equality> ::= <relational>
+             | <equality> "==" <relational>
+             | <equality> "!=" <relational>
 
-var_decl = ("let" | "mut") id (":" type)? assignment?
+<relational> ::= <shift>
+               | <relational> "<" <shift>
+               | <relational> "<=" <shift>
+               | <relational> ">" <shift>
+               | <relational> ">=" <shift>
 
-assignment = binary_operators? "=" boolean+ 
+<shift> ::= <additive>
+          | <shift> "<<" <additive>
+          | <shift> ">>" <additive>
 
-boolean = comparison (">=" | "<=" | ">" | "<" | "!=" | "==" boolean)?
+<additive> ::= <multiplicative>
+             | <additive> "+" <multiplicative>
+             | <additive> "-" <multiplicative>
 
-comparison = additive ("+" | "-" comparison)?
+<multiplicative> ::= <unary>
+                   | <multiplicative> "*" <unary>
+                   | <multiplicative> "/" <unary>
+                   | <multiplicative> "%" <unary>
 
-additive = bitwise ("%" | "/" | "*" additive)?
+<unary> ::= <postfix>
+          | "+" <unary>
+          | "-" <unary>
+          | "!" <unary>
+          | "~" <unary>
+          | "*" <unary>
+          | "&" <unary>
+          | "sizeof" <unary>
+          | "(" <type> ")" <unary>    (* Type cast *)
 
-bitwise = unary ("|" | "~" | "&" | "<<" | ">>" bitwise)?
+<postfix> ::= <primary>
+            | <postfix> "[" <expression> "]"   (* Array indexing *)
+            | <postfix> "(" <argument_list> ")" (* Function call *)
+            | <postfix> "." <identifier>       (* Struct member access *)
+            | <postfix> "->" <identifier>      (* Pointer member access *)
 
-unary = "(" expr ")" | unary_operators? literal ("++" | "--")?
+<primary> ::= <identifier>
+            | <literal>
+            | "(" <expression> ")"
 
-binary_operators = "+" | "-" | "%" | "/" | "*"  | "|" | "~" | "&" | "<<" | ">>" 
-
-unary_operators = "-" | "+" | "!" | "~" | "&" | "^" | "*" | "++" | "--"
-
-literal = number | floating_point | string | char_literal | "true" | "false" | range | id | body | control
-
-control = ("while" | "loop" | "for" ) body | "if" boolean (body | expr) ("else if" body | "else" (body | expr))? | match_expr
-
-match_expr = //TODO
-
-number = [1-9] ([0-9]* | "_") | "0x" (hex_digit |  "_")+ | "0b" ([0-1] | "_")+ | "0o" ([0-7] | "_")+
-
-floating_point = number? "." number?
-
-hex_digit = [0-9a-fA-F]
-
-string = "\"" (char | escape)* "\" | "`" (char | newline)* "`"
-
-char_literal = "'" (char | escape) "'"
-
-escape = "\\" ("n" | "r" | "t" | "v" | "b" | "f" | "\" | "'" | "\"" | "0" | "x" hex_digit hex_digit | "u" {hex_digit, 4, 4} | "U" {hex_digit, 8,8}
-
-newline = "\n" | "\r\n" | "\r"
-
-char = {?}
-
-id = [_a-zA-Z] [_a-zA-Z0-9]*
-
-
+<argument_list> ::= <expression>
+                 | <expression> "," <argument_list>
 ----

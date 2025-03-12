@@ -46,7 +46,7 @@ pub const Tag = enum {
     eq2, //==
     noteq, // !=
     gt, //>
-    lt,//<
+    lt, //<
     lteq, //<=
     gteq, //>=
     shl, //<<
@@ -93,7 +93,7 @@ pub const Tag = enum {
     keyword_mod,
     keyword_comp,
     keyword_continue,
-    keyword_as, 
+    keyword_as,
     keyword_static,
     keyword_type,
     keyword_const,
@@ -104,7 +104,7 @@ pub const Tag = enum {
     keyword_trait,
     keyword_when,
     keyword_Self,
-    keyword_where, 
+    keyword_where,
     keyword_macro,
     keyword_new,
     keyword_do,
@@ -112,6 +112,10 @@ pub const Tag = enum {
     keyword_true,
     keyword_false,
 };
+pub const Token = struct {
+    start: usize,
+    end: usize,
+    tag: Tag,
+};
 
-
-
+pub const AstNode = union(enum) { token: Token, expr: *AstNode, assignment: struct { id: Token, expr: *AstNode } };
