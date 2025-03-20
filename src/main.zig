@@ -29,6 +29,7 @@ fn print_tree(node: ?*ast.Ast) void {
             std.debug.print(" {s} ", .{source[expr.op.start..expr.op.end]});
             print_tree(expr.expr);
         },
+        else => std.debug.print("unkown", .{}),
     }
 }
 

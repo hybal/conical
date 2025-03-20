@@ -118,4 +118,3 @@ pub const Token = struct {
     tag: Tag,
 };
 
-pub const AstNode = union(enum) { token: Token, expr: *AstNode, assignment: struct { id: Token, expr: *AstNode } };
