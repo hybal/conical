@@ -3,6 +3,7 @@ const lex = @import("lexer.zig");
 const types = @import("types.zig");
 const Ast = @import("Ast.zig").Ast;
 const Block = @import("Ast.zig").Block;
+const AstTypes = @import("Ast.zig");
 const mem = @import("mem.zig");
 gpa: std.mem.Allocator,
 lexer: lex.Lexer,
@@ -23,7 +24,7 @@ pub fn init_from_source(src: []const u8, gpa: std.mem.Allocator) @This() {
 pub fn parse(self: *@This()) !*Ast {
     var ast: *Ast = undefined;
     while (self.lexer.has_next()) {
-        ast = try self.ifstmt();
+        ast = try self.var_decl();
     }
     return ast;
 }
@@ -39,7 +40,12 @@ fn expect(self: *@This(), token: types.Tag) !void {
         return error.UnexpectedToken;
     }
 }
-
+fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |tok| {
+        return tok;
+    }
+    return error.UnexpectedToken;
+}
 fn block(self: *@This()) !*Ast {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket})) |_| {
         var exprs = std.ArrayList(*Ast).init(self.gpa);
@@ -62,6 +68,93 @@ fn optional_block(self: *@This()) !*Ast {
     return self.expression();
 }
 
+fn parse_type(self: *@This()) !AstTypes.Type {
+    var modifiers = std.ArrayList(AstTypes.TypeModifier).init(self.gpa);
+    while (self.lexer.consume_if_eq(&[_]types.Tag{.amp, .amp2, .star, .open_square, .keyword_mut, .keyword_const})) |mmod| {
+        var mod: AstTypes.TypeModifier = .Ref;
+        switch (mmod.tag) {
+            .amp => mod = .Ref,
+            .amp2 => {
+                mod = .Ref;
+                try modifiers.append(mod);
+            },
+            .star => mod = .Ptr,
+            .keyword_mut => {
+                if (modifiers.getLast() == .Ref) {
+                    modifiers.items[modifiers.items.len - 1] = .RefMut;
+                } else if (modifiers.getLast() == .Ptr) {
+                    modifiers.items[modifiers.items.len - 1] = .PtrMut;
+                } else {
+                    mod = .Mut;
+                    try modifiers.append(mod);
+                }
+                break;
+            },
+            .keyword_const => {
+                if (modifiers.getLast() == .Ref) {
+                    modifiers.items[modifiers.items.len - 1] = .RefConst;
+                } else if (modifiers.getLast() == .Ptr) {
+                    modifiers.items[modifiers.items.len - 1] = .PtrConst;
+                } else {
+                    mod = .Const;
+                    try modifiers.append(mod);
+                }
+                break;
+            },
+            .open_square => {
+                if (self.lexer.consume_if_eq(&[_]types.Tag{.int_literal})) |lit| {
+                    mod = .{ .Array = lit };
+                } else {
+                    mod = .Slice;
+                }
+                try self.expect(.close_square);
+            },
+            else => unreachable
+        }
+        try modifiers.append(mod);
+    }
+    var base_ty: AstTypes.Type = .{.base_type = .{ .primitive = .Unit}, .modifiers = if (modifiers.items.len > 0) try modifiers.toOwnedSlice() else null };
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.ident, .open_paren})) |ty| {
+        if (ty.tag == .open_paren) {
+            if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |_| {
+                if (modifiers.items.len != 0) {
+                    return error.UnitCannotHaveMods;
+                }
+            } else {
+                return error.ParenInTypeExprNotUnit;
+            }
+        } else {
+            if (AstTypes.PrimitiveType.prims.get(ty.span.get_string(self.lexer.buffer))) |val| {
+                base_ty.base_type = .{ .primitive = val };
+            } else {
+                base_ty.base_type = .{ .user = .{ .span = ty.span } };
+            }
+        }
+    }
+    return base_ty;
+}
+fn var_decl(self: *@This()) !*Ast {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_let, .keyword_mut})) |key| {
+        const ident = try self.expect_ret(.ident);
+        var ty: ?AstTypes.Type = null;
+        if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
+            ty = try self.parse_type();
+        }
+        var initial: ?*Ast = null;
+        if (self.lexer.is_next_token(.eq)) {
+            initial = try self.assignment();
+        }
+        const out: Ast = .{ .var_decl = .{
+            .is_mut = key.tag == .keyword_mut,
+            .ident = .{ .span = ident.span },
+            .ty = ty,
+            .initialize = initial
+        }};
+        return try mem.createWith(self.gpa, out);
+    }
+    return try self.ifstmt();
+}
+
 fn ifstmt(self: *@This()) !*Ast {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_if})) |_| {
         const condition = try self.expression();
@@ -81,21 +174,15 @@ fn ifstmt(self: *@This()) !*Ast {
 }
 
 fn assignment(self: *@This()) anyerror!*Ast {
-    const start = self.lexer.index;
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.ident})) |id| {
-        if (self.lexer.consume_if_eq(&[_]types.Tag{
-            .eq, .pluseq, .minuseq, .stareq, .slasheq, .percenteq, .shleq, .shreq, .ampeq, .careteq, .pipeeq
-        })) |token| {
-            const parent: Ast = .{ .assignment = .{
-                .id = id,
-                .op = token,
-                .expr = try self.ternary(),
-            }};
-            return try mem.createWith(self.gpa, parent);
-        } else {
-            self.lexer.index = start;
-        }
-    }
+    if (self.lexer.consume_if_eq(&[_]types.Tag{
+        .eq, .pluseq, .minuseq, .stareq, .slasheq, .percenteq, .shleq, .shreq, .ampeq, .careteq, .pipeeq
+    })) |token| {
+        const parent: Ast = .{ .assignment = .{
+            .op = token,
+            .expr = try self.ternary(),
+        }};
+        return try mem.createWith(self.gpa, parent);
+    } 
     return self.ternary();
 }
 
@@ -259,7 +346,7 @@ fn primary(self: *@This()) anyerror!*Ast {
         _ = try self.expect(.close_paren);
         return out;
     }
-    std.debug.print("Invalid: {s}\n", .{self.lexer.next_token().get_token_string(self.lexer.buffer)});
+    std.debug.print("Invalid: {s}\n", .{self.lexer.next_token().span.get_string(self.lexer.buffer)});
     return error.Invalid;
 }
 

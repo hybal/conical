@@ -3,7 +3,11 @@ const std = @import("std");
 
 pub const Span = struct {
     start: usize,
-    end: usize
+    end: usize,
+    pub fn get_string(self: *const Span, source: []const u8) []const u8 {
+        return source[self.start..self.end];
+    }
+
 };
 
 pub const Tag = enum {
@@ -123,8 +127,5 @@ pub const Token = struct {
     span: Span,
     tag: Tag,
     
-    pub fn get_token_string(self: *const Token, source: []const u8) []const u8 {
-        return source[self.span.start..self.span.end];
-    }
 };
 
