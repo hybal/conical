@@ -4,8 +4,8 @@ const ast = @import("Ast.zig");
 const parse = @import("parser.zig");
 
 const source =
-    \\ a = 1
-;
+    \\ if a == 1 { 1 } else if a == 3 {2}
+    ;
 
 fn print_tree(node: ?*ast.Ast) void {
     if (node == null) return;
@@ -18,6 +18,15 @@ fn print_tree(node: ?*ast.Ast) void {
             std.debug.print(" {s} ", .{expr.op.get_token_string(source)});
             print_tree(expr.right);
         },
+        .block => |blk| {
+            std.debug.print("{{\n", .{});
+            for (blk.exprs) |expr| {
+                std.debug.print("    ", .{});
+                print_tree(expr);
+                std.debug.print("\n", .{});
+            }
+            std.debug.print("}}\n", .{});
+        },
         .ternary => |expr| {
             print_tree(expr.condition);
             std.debug.print(" ? ", .{});
@@ -29,6 +38,15 @@ fn print_tree(node: ?*ast.Ast) void {
             std.debug.print(" {s} ", .{expr.id.get_token_string(source)});
             std.debug.print(" {s} ", .{expr.op.get_token_string(source)});
             print_tree(expr.expr);
+        },
+        .if_stmt => |stmt| {
+            std.debug.print("if ", .{});
+            print_tree(stmt.condition);
+            print_tree(stmt.block);
+            if (stmt.else_block) |eblk| {
+                std.debug.print("else ", .{});
+                print_tree(eblk);
+            }
         },
         else => std.debug.print("unkown", .{}),
     }

@@ -181,15 +181,12 @@ pub const Lexer = struct {
         self.index = save;
         return null;
     }
-    pub fn expect_token(self: *Lexer, tag: Tag) !Token {
-        if (self.consume_if_eq(&[_]Tag{tag})) |token| {
-            return token;
-        }
-        return error.ExpectedToken;
+    pub fn is_next_token(self: *Lexer, tag: Tag) bool {
+        return self.peek_token().tag == tag;
     }
-    pub fn peek_token2(self: *Lexer) Token {
+
+    pub fn peek_token(self: *Lexer) Token {
         const saved = self.index;
-        _ = self.next_token();
         const out = self.next_token();
         self.index = saved;
         return out;

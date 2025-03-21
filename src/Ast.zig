@@ -20,13 +20,13 @@ pub const Assignment = struct {
 
 pub const IfStmt = struct {
     condition: *Ast,
-    block: *Block,
-    else_block: ?*Block
+    block: *Ast,
+    else_block: ?*Ast
 };
 
 pub const WhileLoop = struct {
     condition: *Ast,
-    block: *Block
+    block: *Ast
 };
 
 pub const Ternary = struct {
@@ -35,9 +35,12 @@ pub const Ternary = struct {
     false_path: *Ast
 };
 
-//This is a seperate structure to allow for future expansion
 pub const Block = struct {
-    exprs: []Ast
+    exprs: []*Ast
+};
+
+pub const OptionalBlock = struct {
+    exprs: []*Ast
 };
 
 pub const Ast = union(enum) { 
@@ -48,6 +51,7 @@ pub const Ast = union(enum) {
     if_stmt: IfStmt,
     while_loop: WhileLoop,
     ternary: Ternary,
+    optional_block: OptionalBlock,
     block: Block,
     _,
 };

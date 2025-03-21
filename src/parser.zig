@@ -2,6 +2,7 @@ const std = @import("std");
 const lex = @import("lexer.zig");
 const types = @import("types.zig");
 const Ast = @import("Ast.zig").Ast;
+const Block = @import("Ast.zig").Block;
 const mem = @import("mem.zig");
 gpa: std.mem.Allocator,
 lexer: lex.Lexer,
@@ -22,12 +23,60 @@ pub fn init_from_source(src: []const u8, gpa: std.mem.Allocator) @This() {
 pub fn parse(self: *@This()) !*Ast {
     var ast: *Ast = undefined;
     while (self.lexer.has_next()) {
-        ast = try self.assignment();
+        ast = try self.ifstmt();
     }
     return ast;
 }
 
-fn expression(self: *@This()) !*Ast {
+fn expression(self: *@This()) anyerror!*Ast {
+    return try self.ifstmt();
+}
+
+fn expect(self: *@This(), token: types.Tag) !void {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |_| {
+        return;
+    } else {
+        return error.UnexpectedToken;
+    }
+}
+
+fn block(self: *@This()) !*Ast {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket})) |_| {
+        var exprs = std.ArrayList(*Ast).init(self.gpa);
+        while (self.lexer.has_next() and !self.lexer.is_next_token(.close_bracket)) {
+            try exprs.append(try self.expression());
+        } else if (!self.lexer.has_next()) {
+            return error.UnmatchedBracket;
+        }
+        try self.expect(.close_bracket);
+        const out: Ast = .{ .block = .{ .exprs = try exprs.toOwnedSlice() }};
+        return try mem.createWith(self.gpa, out);
+    } 
+    return error.RequiredBlock;
+}
+
+fn optional_block(self: *@This()) !*Ast {
+    if (self.lexer.is_next_token(.open_bracket)) {
+        return self.block();
+    }
+    return self.expression();
+}
+
+fn ifstmt(self: *@This()) !*Ast {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_if})) |_| {
+        const condition = try self.expression();
+        const then_block = try self.optional_block();
+        var else_block: ?*Ast = null;
+        if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_else})) |_| {
+            else_block = try self.optional_block();
+        }
+        const out: Ast = .{ .if_stmt = .{
+            .condition = condition,
+            .block = then_block,
+            .else_block = else_block
+        }};
+        return try mem.createWith(self.gpa, out);
+    }
     return try self.assignment();
 }
 
@@ -54,7 +103,7 @@ fn ternary(self: *@This()) !*Ast {
     var condition = try self.logical_or();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.question})) |_| {
         const true_path = try self.expression();
-        _ = try self.lexer.expect_token(.colon);
+        _ = try self.expect(.colon);
         const false_path = try self.ternary();
         const parent: Ast = .{ .ternary = .{
             .condition = condition,
@@ -191,7 +240,7 @@ fn multiplicative(self: *@This()) anyerror!*Ast {
     return left;
 }
 fn unary(self: *@This()) anyerror!*Ast {
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.plus, .minus, .bang, .tilde, .star, .amp})) |op| {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.plus, .minus, .bang, .tilde, .star, .amp, .semicolon})) |op| {
         const out: Ast = .{ .unary_expr = .{
             .op = op,
             .expr = try self.unary(),
@@ -207,9 +256,10 @@ fn primary(self: *@This()) anyerror!*Ast {
     }
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
         const out = try self.expression();
-        _ = try self.lexer.expect_token(.close_paren);
+        _ = try self.expect(.close_paren);
         return out;
     }
+    std.debug.print("Invalid: {s}\n", .{self.lexer.next_token().get_token_string(self.lexer.buffer)});
     return error.Invalid;
 }
 
