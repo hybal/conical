@@ -1,4 +1,11 @@
 const std = @import("std");
+
+
+pub const Span = struct {
+    start: usize,
+    end: usize
+};
+
 pub const Tag = enum {
     invalid,
     eof,
@@ -113,8 +120,11 @@ pub const Tag = enum {
     keyword_false,
 };
 pub const Token = struct {
-    start: usize,
-    end: usize,
+    span: Span,
     tag: Tag,
+    
+    pub fn get_token_string(self: *const Token, source: []const u8) []const u8 {
+        return source[self.span.start..self.span.end];
+    }
 };
 

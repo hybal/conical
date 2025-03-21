@@ -1,15 +1,53 @@
 const std = @import("std");
-const enums = @import("enums.zig");
+const types = @import("types.zig");
+
+pub const BinaryExpr = struct {
+    op: types.Token,
+    left: *Ast,
+    right: *Ast,
+};
+
+pub const UnaryExpr = struct {
+    op: types.Token,
+    expr: *Ast
+};
+
+pub const Assignment = struct {
+    id: types.Token,
+    op: types.Token,
+    expr: *Ast
+};
+
+pub const IfStmt = struct {
+    condition: *Ast,
+    block: *Block,
+    else_block: ?*Block
+};
+
+pub const WhileLoop = struct {
+    condition: *Ast,
+    block: *Block
+};
+
+pub const Ternary = struct {
+    condition: *Ast,
+    true_path: *Ast,
+    false_path: *Ast
+};
+
+//This is a seperate structure to allow for future expansion
+pub const Block = struct {
+    exprs: []Ast
+};
 
 pub const Ast = union(enum) { 
-    expr: struct {token: enums.Token, left: ?*Ast, right: ?*Ast, terminated: ?enums.Token}, 
-    assignment: struct { id: enums.Token, op: enums.Token, expr: *Ast}, //should probably move this to stmt
-    if_stmt: struct { condition: *Ast, block: *Ast, else_block: ?*Ast },
-    while_loop: struct { condition: *Ast, block: *Ast },
-    ternary: struct { condition: *Ast, true_path: *Ast, false_path: *Ast },
-    block: struct { expr: *Ast },
+    binary_expr: BinaryExpr,
+    unary_expr: UnaryExpr,
+    terminal: types.Token,
+    assignment: Assignment, 
+    if_stmt: IfStmt,
+    while_loop: WhileLoop,
+    ternary: Ternary,
+    block: Block,
     _,
-    pub fn create_token(tok: enums.Token, terminated: ?enums.Token) Ast {
-        return .{ .expr = .{ .token = tok, .left = null, .right = null, .terminated = terminated}};
-    }
 };

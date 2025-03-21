@@ -1,6 +1,6 @@
 const std = @import("std");
 const lex = @import("lexer.zig");
-const enums = @import("enums.zig");
+const types = @import("types.zig");
 const Ast = @import("Ast.zig").Ast;
 const mem = @import("mem.zig");
 gpa: std.mem.Allocator,
@@ -27,16 +27,14 @@ pub fn parse(self: *@This()) !*Ast {
     return ast;
 }
 
-
-
 fn expression(self: *@This()) !*Ast {
     return try self.assignment();
 }
 
 fn assignment(self: *@This()) anyerror!*Ast {
-    const saved = self.lexer.index;
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.ident})) |id| {
-        if (self.lexer.consume_if_eq(&[_]enums.Tag{
+    const start = self.lexer.index;
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.ident})) |id| {
+        if (self.lexer.consume_if_eq(&[_]types.Tag{
             .eq, .pluseq, .minuseq, .stareq, .slasheq, .percenteq, .shleq, .shreq, .ampeq, .careteq, .pipeeq
         })) |token| {
             const parent: Ast = .{ .assignment = .{
@@ -46,7 +44,7 @@ fn assignment(self: *@This()) anyerror!*Ast {
             }};
             return try mem.createWith(self.gpa, parent);
         } else {
-            self.lexer.index = saved;
+            self.lexer.index = start;
         }
     }
     return self.ternary();
@@ -54,7 +52,7 @@ fn assignment(self: *@This()) anyerror!*Ast {
 
 fn ternary(self: *@This()) !*Ast {
     var condition = try self.logical_or();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.question})) |_| {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.question})) |_| {
         const true_path = try self.expression();
         _ = try self.lexer.expect_token(.colon);
         const false_path = try self.ternary();
@@ -70,12 +68,11 @@ fn ternary(self: *@This()) !*Ast {
 
 fn logical_or(self: *@This()) !*Ast {
     var left = try self.logical_and();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.pipe2})) |pipe2| {
-        const parent: Ast = .{ .expr = .{
-            .token = pipe2,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.pipe2})) |pipe2| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = pipe2,
             .left = left,
             .right = try self.logical_or(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
@@ -83,12 +80,11 @@ fn logical_or(self: *@This()) !*Ast {
 }
 fn logical_and(self: *@This()) !*Ast {
     var left = try self.bitwise_or();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.amp2})) |amp2| {
-        const parent: Ast = .{ .expr = .{
-            .token = amp2,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.amp2})) |amp2| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = amp2,
             .left = left,
             .right = try self.logical_and(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
@@ -97,12 +93,11 @@ fn logical_and(self: *@This()) !*Ast {
 
 fn bitwise_or(self: *@This()) !*Ast {
     var left = try self.bitwise_xor();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.pipe})) |pipe| {
-        const parent: Ast = .{ .expr = .{
-            .token = pipe,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.pipe})) |pipe| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = pipe,
             .left = left,
             .right = try self.bitwise_or(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
@@ -110,12 +105,11 @@ fn bitwise_or(self: *@This()) !*Ast {
 }
 fn bitwise_xor(self: *@This()) anyerror!*Ast {
     var left = try self.bitwise_and();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.caret})) |caret| {
-        const parent: Ast = .{ .expr = .{
-            .token = caret,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.caret})) |caret| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = caret,
             .left = left,
             .right = try self.bitwise_xor(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
@@ -123,12 +117,11 @@ fn bitwise_xor(self: *@This()) anyerror!*Ast {
 }
 fn bitwise_and(self: *@This()) anyerror!*Ast {
     var left = try self.equality();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.amp})) |amp| {
-        const parent: Ast = .{ .expr = .{
-            .token = amp,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.amp})) |amp| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = amp,
             .left = left,
             .right = try self.bitwise_and(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
@@ -137,12 +130,11 @@ fn bitwise_and(self: *@This()) anyerror!*Ast {
 
 fn equality(self: *@This()) anyerror!*Ast {
     var left = try self.relational();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.eq2, .noteq})) |op| {
-        const parent: Ast = .{ .expr = .{
-            .token = op,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.eq2, .noteq})) |op| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = op,
             .left = left,
             .right = try self.equality(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
@@ -151,12 +143,11 @@ fn equality(self: *@This()) anyerror!*Ast {
 
 fn relational(self: *@This()) anyerror!*Ast {
     var left = try self.shift();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.lt, .lteq, .gt, .gteq})) |op| {
-        const parent: Ast = .{ .expr = .{
-            .token = op,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.lt, .lteq, .gt, .gteq})) |op| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = op,
             .left = left,
             .right = try self.relational(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
@@ -164,12 +155,11 @@ fn relational(self: *@This()) anyerror!*Ast {
 }
 fn shift(self: *@This()) anyerror!*Ast {
     var left = try self.additive();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.shl, .shr})) |op| {
-        const parent: Ast = .{ .expr = .{
-            .token = op,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.shl, .shr})) |op| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = op,
             .left = left,
             .right = try self.shift(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
@@ -178,12 +168,11 @@ fn shift(self: *@This()) anyerror!*Ast {
 
 fn additive(self: *@This()) anyerror!*Ast {
     var left = try self.multiplicative();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.plus, .minus})) |op| {
-        const parent: Ast = .{ .expr = .{
-            .token = op,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.plus, .minus})) |op| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = op,
             .left = left,
             .right = try self.additive(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
@@ -191,35 +180,32 @@ fn additive(self: *@This()) anyerror!*Ast {
 }
 fn multiplicative(self: *@This()) anyerror!*Ast {
     var left = try self.unary();
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.star, .slash, .percent})) |op| {
-        const parent: Ast = .{ .expr = .{
-            .token = op,
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.star, .slash, .percent})) |op| {
+        const parent: Ast = .{ .binary_expr = .{
+            .op = op,
             .left = left,
             .right = try self.multiplicative(),
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
         }};
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 fn unary(self: *@This()) anyerror!*Ast {
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.plus, .minus, .bang, .tilde, .star, .amp})) |op| {
-        const out: Ast = .{ .expr = .{
-            .token = op,
-            .left = try self.unary(),
-            .right = null,
-            .terminated = self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) 
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.plus, .minus, .bang, .tilde, .star, .amp})) |op| {
+        const out: Ast = .{ .unary_expr = .{
+            .op = op,
+            .expr = try self.unary(),
         }};
         return try mem.createWith(self.gpa, out);
     }
     return try self.primary();
 }
 fn primary(self: *@This()) anyerror!*Ast {
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.ident, .float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
-        const out: Ast = Ast.create_token(lit, self.lexer.consume_if_eq(&[_]enums.Tag{.semicolon}) );
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.ident, .float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
+        const out: Ast = .{ .terminal = lit };
         return try mem.createWith(self.gpa, out);
     }
-    if (self.lexer.consume_if_eq(&[_]enums.Tag{.open_paren})) |_| {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
         const out = try self.expression();
         _ = try self.lexer.expect_token(.close_paren);
         return out;

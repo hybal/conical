@@ -4,18 +4,19 @@ const ast = @import("Ast.zig");
 const parse = @import("parser.zig");
 
 const source =
-    \\ a = 1;
+    \\ a = 1
 ;
+
 fn print_tree(node: ?*ast.Ast) void {
     if (node == null) return;
     switch (node.?.*) {
-        .expr => |expr| {
+        .terminal => |term| {
+            std.debug.print(" {s} ", .{term.get_token_string(source)});
+        },
+        .binary_expr => |expr| {
             print_tree(expr.left);
-            std.debug.print(" {s} ", .{source[expr.token.start..expr.token.end]});
+            std.debug.print(" {s} ", .{expr.op.get_token_string(source)});
             print_tree(expr.right);
-            if (expr.terminated != null) {
-                std.debug.print(";", .{});
-            }
         },
         .ternary => |expr| {
             print_tree(expr.condition);
@@ -25,8 +26,8 @@ fn print_tree(node: ?*ast.Ast) void {
             print_tree(expr.false_path);
         },
         .assignment => |expr| {
-            std.debug.print(" {s} ", .{source[expr.id.start..expr.id.end]});
-            std.debug.print(" {s} ", .{source[expr.op.start..expr.op.end]});
+            std.debug.print(" {s} ", .{expr.id.get_token_string(source)});
+            std.debug.print(" {s} ", .{expr.op.get_token_string(source)});
             print_tree(expr.expr);
         },
         else => std.debug.print("unkown", .{}),
