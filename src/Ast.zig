@@ -92,6 +92,7 @@ pub const TypeModifier = union(enum) {
     Slice,
     Ref,
     Vector,
+    Comptime,
     Mut,
     Const,
     RefMut,
@@ -112,6 +113,7 @@ pub const TypeModifier = union(enum) {
             .Ptr => return "*",
             .PtrMut => return "*mut",
             .PtrConst => return "*const",
+            .Comptime => return "comp",
             else => unreachable
         }
     }
@@ -128,6 +130,7 @@ pub const Type = struct {
     modifiers: ?[]TypeModifier,
 };
 
+
 pub const VarDecl = struct {
     ident: Ident,
     ty: ?Type,
@@ -135,16 +138,20 @@ pub const VarDecl = struct {
     initialize: ?*Ast
 };
 
-pub const FnModifier = enum {
+pub const GlobalDeclMod = enum {
     Pub,
     Extern,
     Export,
+};
+
+pub const FnModifier = union(enum) {
     Pure,
     Async,
-    //CompTime
+    CompTime
 };
 pub const FnDecl = struct {
-    modifiers: ?[]FnModifier,
+    decl_mod: ?GlobalDeclMod,
+    fn_mod: ?FnModifier,
     ident: Ident,
     params: []struct { ident: Ident, ty: Type },
     return_ty: Type,

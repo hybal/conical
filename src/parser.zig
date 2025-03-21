@@ -133,6 +133,40 @@ fn parse_type(self: *@This()) !AstTypes.Type {
     }
     return base_ty;
 }
+
+fn try_decl_mod(self: *@This()) ?GlobalDeclMod {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_pub, .keyword_export, .keyword_extern})) |key| {
+        return switch (key.tag) {
+            .keyword_pub => .Pub,
+            .keyword_export => .Export,
+            .keyword_extern => .Extern
+        };
+    }
+    return null;
+}
+
+
+
+fn fn_decl(self: *@This()) !*Ast {
+    const start = self.lexer.index;
+    var decl_mod: ?AstTypes.GlobalDeclMod = null;
+    var fn_mod: ?AstTypes.FnModifier = null;
+    if (self.try_decl_mod()) |decl| {
+        decl_mod = decl;
+    }
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_async, .keyword_pure, .keyword_comp})) |fnm| {
+        fn_mod = switch (fnm.tag) {
+            .keyword_async => .Async,
+            .keyword_pure => .Pure,
+            .keyword_comp => .Comptime
+        };
+    }
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_fn})) |_| {
+        const ident = try self.expect_ret(.ident);
+        try self.expect(.open_paren);
+    }
+}
+
 fn var_decl(self: *@This()) !*Ast {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_let, .keyword_mut})) |key| {
         const ident = try self.expect_ret(.ident);
