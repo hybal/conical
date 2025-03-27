@@ -87,7 +87,8 @@ pub const Lexer = struct {
         .{ "macro", .keyword_macro },
         .{ "new", .keyword_new }, 
         .{ "do", .keyword_do }, 
-        .{ "try", .keyword_try } 
+        .{ "try", .keyword_try },
+        .{ "pure", .keyword_pure },
     });
 
     fn is_double(self: *Lexer) bool {

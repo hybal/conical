@@ -153,7 +153,8 @@ pub const FnDecl = struct {
     decl_mod: ?GlobalDeclMod,
     fn_mod: ?FnModifier,
     ident: Ident,
-    params: []struct { ident: Ident, ty: Type },
+    params: []Ident,
+    param_types: []Type,
     return_ty: Type,
     body: ?*Ast
 };
@@ -193,5 +194,6 @@ pub const Ast = union(enum) {
     optional_block: OptionalBlock,
     block: Block,
     var_decl: VarDecl,
+    fn_decl: FnDecl,
     _,
 };

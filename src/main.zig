@@ -4,7 +4,11 @@ const ast = @import("Ast.zig");
 const parse = @import("parser.zig");
 
 const source =
-    \\ mut a = 1 + 4
+    \\ fn add(a, b): (i32, i32) -> i32 {
+    \\    let a: i32 = 1
+    \\    mut b: i32 = 2
+    \\    b = 4
+    \\ }
     ;
 
 
@@ -33,6 +37,10 @@ fn print_tree(node: ?*ast.Ast) void {
             print_tree(expr.left);
             std.debug.print(" {s}", .{expr.op.span.get_string(source)});
             print_tree(expr.right);
+        },
+        .unary_expr => |expr| {
+            std.debug.print(" {s}", .{expr.op.span.get_string(source)});
+            print_tree(expr.expr);
         },
         .block => |blk| {
             std.debug.print("{{\n", .{});
@@ -73,6 +81,22 @@ fn print_tree(node: ?*ast.Ast) void {
                 std.debug.print("else", .{});
                 print_tree(eblk);
             }
+        },
+        .fn_decl => |fnc| {
+            std.debug.print("fn ", .{});
+            std.debug.print("{s}", .{fnc.ident.span.get_string(source)});
+            std.debug.print("(", .{});
+            for (fnc.params) |param| {
+                std.debug.print("{s}, ", .{ param.span.get_string(source) });
+            }
+            std.debug.print("): (", .{});
+            for (fnc.param_types) |ty| {
+                print_type(ty);
+                std.debug.print(", ", .{});
+            }
+            std.debug.print(") -> ", .{});
+            print_type(fnc.return_ty);
+            print_tree(fnc.body);
         },
         else => |thing| std.debug.print("unkown: {any}", .{thing}),
     }

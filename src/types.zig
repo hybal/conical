@@ -120,6 +120,7 @@ pub const Tag = enum {
     keyword_new,
     keyword_do,
     keyword_try,
+    keyword_pure,
     keyword_true,
     keyword_false,
 };

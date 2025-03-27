@@ -24,13 +24,13 @@ pub fn init_from_source(src: []const u8, gpa: std.mem.Allocator) @This() {
 pub fn parse(self: *@This()) !*Ast {
     var ast: *Ast = undefined;
     while (self.lexer.has_next()) {
-        ast = try self.var_decl();
+        ast = try self.fn_decl();
     }
     return ast;
 }
 
 fn expression(self: *@This()) anyerror!*Ast {
-    return try self.ifstmt();
+    return try self.fn_decl();
 }
 
 fn expect(self: *@This(), token: types.Tag) !void {
@@ -134,12 +134,13 @@ fn parse_type(self: *@This()) !AstTypes.Type {
     return base_ty;
 }
 
-fn try_decl_mod(self: *@This()) ?GlobalDeclMod {
+fn try_decl_mod(self: *@This()) ?AstTypes.GlobalDeclMod {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_pub, .keyword_export, .keyword_extern})) |key| {
         return switch (key.tag) {
             .keyword_pub => .Pub,
             .keyword_export => .Export,
-            .keyword_extern => .Extern
+            .keyword_extern => .Extern,
+            else => unreachable,
         };
     }
     return null;
@@ -148,7 +149,6 @@ fn try_decl_mod(self: *@This()) ?GlobalDeclMod {
 
 
 fn fn_decl(self: *@This()) !*Ast {
-    const start = self.lexer.index;
     var decl_mod: ?AstTypes.GlobalDeclMod = null;
     var fn_mod: ?AstTypes.FnModifier = null;
     if (self.try_decl_mod()) |decl| {
@@ -158,13 +158,61 @@ fn fn_decl(self: *@This()) !*Ast {
         fn_mod = switch (fnm.tag) {
             .keyword_async => .Async,
             .keyword_pure => .Pure,
-            .keyword_comp => .Comptime
+            .keyword_comp => .CompTime,
+            else => unreachable
         };
     }
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_fn})) |_| {
+        var params = std.ArrayList(AstTypes.Ident).init(self.gpa);
         const ident = try self.expect_ret(.ident);
         try self.expect(.open_paren);
+        while (!self.lexer.is_next_token(.close_paren)) {
+            const tok = self.lexer.next_token();
+            if (tok.tag == .ident) {
+                try params.append(.{ .span = tok.span });
+            } else if (tok.tag == .comma) {
+            } else {
+                return error.InvalidTokenInFunctionSignature;
+            }
+        }
+        _ = self.lexer.next_token();
+        var param_types = std.ArrayList(AstTypes.Type).init(self.gpa);
+        if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
+            try self.expect(.open_paren);
+            while (!self.lexer.is_next_token(.close_paren)) {
+                try param_types.append(try self.parse_type());
+                _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
+            }
+            _ = self.lexer.next_token();
+        }
+        if (param_types.items.len != params.items.len) {
+            return error.MismatchedParamToTypeLen;
+        }
+        var return_ty: AstTypes.Type = .{
+            .base_type = .{ .primitive = .Unit },
+            .modifiers = null
+        };
+        if (self.lexer.consume_if_eq(&[_]types.Tag{.thin_arrow})) |_| {
+            return_ty = try self.parse_type();
+        }
+        var blck: ?*Ast = null;
+        if (!self.lexer.is_next_token(.semicolon)) {
+            blck = try self.block();
+        } else {
+            _ = self.lexer.next_token();
+        }
+        const out: Ast = .{ .fn_decl = .{
+            .ident = .{ .span = ident.span },
+            .params = try params.toOwnedSlice(),
+            .param_types = try param_types.toOwnedSlice(),
+            .return_ty = return_ty,
+            .decl_mod = decl_mod,
+            .fn_mod = fn_mod,
+            .body = blck
+        }};
+        return try mem.createWith(self.gpa, out);
     }
+    return self.var_decl();
 }
 
 fn var_decl(self: *@This()) !*Ast {
