@@ -183,6 +183,8 @@ pub const OptionalBlock = struct {
     exprs: []*Ast
 };
 
+
+
 pub const Ast = union(enum) { 
     binary_expr: BinaryExpr,
     unary_expr: UnaryExpr,
@@ -195,5 +197,6 @@ pub const Ast = union(enum) {
     block: Block,
     var_decl: VarDecl,
     fn_decl: FnDecl,
+    terminated: *Ast,
     _,
 };

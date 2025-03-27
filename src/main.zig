@@ -5,9 +5,10 @@ const parse = @import("parser.zig");
 
 const source =
     \\ fn add(a, b): (i32, i32) -> i32 {
-    \\    let a: i32 = 1
-    \\    mut b: i32 = 2
-    \\    b = 4
+    \\    let a: i32 = 1;
+    \\    mut b: i32 = 2;
+    \\    b = 4;
+    \\    a + b;
     \\ }
     ;
 
@@ -97,6 +98,10 @@ fn print_tree(node: ?*ast.Ast) void {
             std.debug.print(") -> ", .{});
             print_type(fnc.return_ty);
             print_tree(fnc.body);
+        },
+        .terminated => |expr| {
+            print_tree(expr);
+            std.debug.print(";", .{});
         },
         else => |thing| std.debug.print("unkown: {any}", .{thing}),
     }

@@ -1,3 +1,4 @@
+//! This file contains the parser for the conical language, it does not do semantic analysis
 const std = @import("std");
 const lex = @import("lexer.zig");
 const types = @import("types.zig");
@@ -5,15 +6,20 @@ const Ast = @import("Ast.zig").Ast;
 const Block = @import("Ast.zig").Block;
 const AstTypes = @import("Ast.zig");
 const mem = @import("mem.zig");
+
+
 gpa: std.mem.Allocator,
 lexer: lex.Lexer,
 
+/// Initialize the parser from an already existing Lexer isntance
 pub fn init_from_lexer(in: lex.Lexer, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = in,
         .gpa = gpa
     };
 }
+
+/// Initialize the parser from source
 pub fn init_from_source(src: []const u8, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = lex.Lexer.init(src),
@@ -21,6 +27,7 @@ pub fn init_from_source(src: []const u8, gpa: std.mem.Allocator) @This() {
     };
 }
 
+/// The entrypoint for the parser
 pub fn parse(self: *@This()) !*Ast {
     var ast: *Ast = undefined;
     while (self.lexer.has_next()) {
@@ -29,10 +36,8 @@ pub fn parse(self: *@This()) !*Ast {
     return ast;
 }
 
-fn expression(self: *@This()) anyerror!*Ast {
-    return try self.fn_decl();
-}
 
+// expect a token type does not return anything
 fn expect(self: *@This(), token: types.Tag) !void {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |_| {
         return;
@@ -40,17 +45,30 @@ fn expect(self: *@This(), token: types.Tag) !void {
         return error.UnexpectedToken;
     }
 }
+
+// expect a token type and return it if it is valid
 fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |tok| {
         return tok;
     }
     return error.UnexpectedToken;
 }
+
+
+
+// a required block 
+// block = "{" stmt* "}"
 fn block(self: *@This()) !*Ast {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket})) |_| {
         var exprs = std.ArrayList(*Ast).init(self.gpa);
         while (self.lexer.has_next() and !self.lexer.is_next_token(.close_bracket)) {
-            try exprs.append(try self.expression());
+            const exp = try self.stmt();
+            if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |_| {
+                const termnt: Ast = .{ .terminated = exp };
+                try exprs.append(try mem.createWith(self.gpa, termnt)); 
+            } else {
+                try exprs.append(exp);
+            }
         } else if (!self.lexer.has_next()) {
             return error.UnmatchedBracket;
         }
@@ -61,13 +79,17 @@ fn block(self: *@This()) !*Ast {
     return error.RequiredBlock;
 }
 
+// an optional block
+// opt_block = block | stmt
 fn optional_block(self: *@This()) !*Ast {
     if (self.lexer.is_next_token(.open_bracket)) {
         return self.block();
     }
-    return self.expression();
+    return self.stmt();
 }
 
+// parse a type with modifiers and primitives
+// type = typemods* (primitivetype | ident)
 fn parse_type(self: *@This()) !AstTypes.Type {
     var modifiers = std.ArrayList(AstTypes.TypeModifier).init(self.gpa);
     while (self.lexer.consume_if_eq(&[_]types.Tag{.amp, .amp2, .star, .open_square, .keyword_mut, .keyword_const})) |mmod| {
@@ -134,6 +156,7 @@ fn parse_type(self: *@This()) !AstTypes.Type {
     return base_ty;
 }
 
+// trys to parse a global decleration modifier otherwise returns null
 fn try_decl_mod(self: *@This()) ?AstTypes.GlobalDeclMod {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_pub, .keyword_export, .keyword_extern})) |key| {
         return switch (key.tag) {
@@ -148,6 +171,8 @@ fn try_decl_mod(self: *@This()) ?AstTypes.GlobalDeclMod {
 
 
 
+// parses a function decleration
+// fn_decl = decl_mod? fn_mod? "fn" ident "(" param* ")" (":" "(" (type ",") | type ")" )? ("->" type)? block?
 fn fn_decl(self: *@This()) !*Ast {
     var decl_mod: ?AstTypes.GlobalDeclMod = null;
     var fn_mod: ?AstTypes.FnModifier = null;
@@ -215,6 +240,8 @@ fn fn_decl(self: *@This()) !*Ast {
     return self.var_decl();
 }
 
+// parses a variable decleration
+// var_decl = ("let" | "mut") (":" type)? ("=" expression)? ";"?
 fn var_decl(self: *@This()) !*Ast {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_let, .keyword_mut})) |key| {
         const ident = try self.expect_ret(.ident);
@@ -226,15 +253,26 @@ fn var_decl(self: *@This()) !*Ast {
         if (self.lexer.is_next_token(.eq)) {
             initial = try self.assignment();
         }
-        const out: Ast = .{ .var_decl = .{
+        var out: Ast = .{ .var_decl = .{
             .is_mut = key.tag == .keyword_mut,
             .ident = .{ .span = ident.span },
             .ty = ty,
             .initialize = initial
         }};
+        if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |_| {
+            out = .{ .terminated = try mem.createWith(self.gpa, out) };
+        }
         return try mem.createWith(self.gpa, out);
     }
     return try self.ifstmt();
+}
+
+fn stmt(self: *@This()) anyerror!*Ast {
+    return self.fn_decl();
+}
+
+fn expression(self: *@This()) anyerror!*Ast {
+    return self.ifstmt();
 }
 
 fn ifstmt(self: *@This()) !*Ast {
@@ -259,10 +297,13 @@ fn assignment(self: *@This()) anyerror!*Ast {
     if (self.lexer.consume_if_eq(&[_]types.Tag{
         .eq, .pluseq, .minuseq, .stareq, .slasheq, .percenteq, .shleq, .shreq, .ampeq, .careteq, .pipeeq
     })) |token| {
-        const parent: Ast = .{ .assignment = .{
+        var parent: Ast = .{ .assignment = .{
             .op = token,
             .expr = try self.ternary(),
         }};
+        if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |_| {
+            parent = .{ .terminated = try mem.createWith(self.gpa, parent) };
+        }
         return try mem.createWith(self.gpa, parent);
     } 
     return self.ternary();
