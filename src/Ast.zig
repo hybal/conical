@@ -1,22 +1,35 @@
 const std = @import("std");
 const types = @import("types.zig");
 
+/// Represents a binary expression of the form: left op right
 pub const BinaryExpr = struct {
-    op: types.Token,
-    left: *Ast,
-    right: *Ast,
+    op: types.Token, //the operation
+    left: *Ast, //left hand side of the operation
+    right: *Ast, //right hand side of the operation
 };
 
+/// Represents a unary expression of the form: op expr
 pub const UnaryExpr = struct {
-    op: types.Token,
-    expr: *Ast
+    op: types.Token, //the operation
+    expr: *Ast //the operation its applied to
 };
 
+
+/// Represents an lvalue or a value that is able to be used in an assignment operation: lvalue op= expr
+pub const LValue = struct {
+    ident: Ident,
+    derefs: usize, // the number of dereferences being applied
+    array_access: ?[]*Ast // a list of array accesses and the index being acessed
+};
+
+/// Represents an assignment operaton including compound assignment operations like += or *=
 pub const Assignment = struct {
     op: types.Token,
+    lvalue: LValue,
     expr: *Ast
 };
 
+/// Represents a builtin primitive type
 pub const PrimitiveType = union(enum) {
     I8,
     I16,
@@ -153,7 +166,7 @@ pub const FnDecl = struct {
     decl_mod: ?GlobalDeclMod,
     fn_mod: ?FnModifier,
     ident: Ident,
-    params: []Ident,
+    params: []Ident, //TODO: move parameter list into a list of VarDecl
     param_types: []Type,
     return_ty: Type,
     body: ?*Ast

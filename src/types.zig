@@ -1,5 +1,5 @@
 const std = @import("std");
-
+const Ast = @import("Ast.zig");
 
 pub const Span = struct {
     start: usize,
@@ -129,4 +129,14 @@ pub const Token = struct {
     tag: Tag,
     
 };
+
+
+pub const Symbol = struct {
+    ty: ?Ast.Type,
+    ident: Span,
+    ast: *Ast.Ast
+};
+
+
+pub const SymTab = std.StringHashMap(Symbol);
 

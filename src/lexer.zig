@@ -110,7 +110,7 @@ pub const Lexer = struct {
         return null;
     }
     pub fn has_next(self: *Lexer) bool {
-        return self.index < self.buffer.len;
+        return self.index < self.buffer.len - 1;
     }
     fn next(self: *Lexer) ?u8 {
         if (!self.has_next()) return null;
@@ -197,11 +197,7 @@ pub const Lexer = struct {
         var tag: Tag = .eof;
         while (self.has_next()) {
             switch (self.next() orelse 0) {
-                ' ',
-                '\n',
-                '\t',
-                '\r',
-                => {
+                '\n', ' ', 0x01...0x09, 0x0b...0x1f, 0x7f => {
                     start = self.index;
                     continue;
                 },

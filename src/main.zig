@@ -2,29 +2,24 @@ const std = @import("std");
 const lex = @import("lexer.zig");
 const ast = @import("Ast.zig");
 const parse = @import("parser.zig");
+const sema = @import("semantic_analysis.zig");
+const types = @import("types.zig");
 
-const source =
-    \\ fn add(a, b): (i32, i32) -> i32 {
-    \\    let a: i32 = 1;
-    \\    mut b: i32 = 2;
-    \\    b = 4;
-    \\    a + b;
-    \\ }
-    ;
 
+var source: []const u8 = "let a = 1;";
 
 fn print_type(ty: ast.Type) void {
     if (ty.modifiers) |mods| {
         for (mods) |mod| {
-            std.debug.print("{s}", .{mod.get_string(source)});
+            std.debug.print("{s} ", .{mod.get_string(source)});
         }
     }
     switch (ty.base_type) {
         .primitive => |val| {
-            std.debug.print(" prim<{s}>", .{val.get_string()});
+            std.debug.print("prim<{s}> ", .{val.get_string()});
         },
         .user => |val| {
-            std.debug.print(" {s}", .{val.span.get_string(source)});
+            std.debug.print("{s} ", .{val.span.get_string(source)});
         }
     }
 }
@@ -32,15 +27,15 @@ fn print_tree(node: ?*ast.Ast) void {
     if (node == null) return;
     switch (node.?.*) {
         .terminal => |term| {
-            std.debug.print(" {s}", .{term.span.get_string(source)});
+            std.debug.print("{s} ", .{term.span.get_string(source)});
         },
         .binary_expr => |expr| {
             print_tree(expr.left);
-            std.debug.print(" {s}", .{expr.op.span.get_string(source)});
+            std.debug.print("{s} ", .{expr.op.span.get_string(source)});
             print_tree(expr.right);
         },
         .unary_expr => |expr| {
-            std.debug.print(" {s}", .{expr.op.span.get_string(source)});
+            std.debug.print("{s} ", .{expr.op.span.get_string(source)});
             print_tree(expr.expr);
         },
         .block => |blk| {
@@ -60,32 +55,52 @@ fn print_tree(node: ?*ast.Ast) void {
             print_tree(expr.false_path);
         },
         .var_decl => |decl| {
-            std.debug.print(" {s}", .{if (decl.is_mut) "mut" else "let"});
-            std.debug.print(" {s}", .{decl.ident.span.get_string(source)});
+            std.debug.print("{s} ", .{if (decl.is_mut) "mut" else "let"});
+            std.debug.print("{s} ", .{decl.ident.span.get_string(source)});
             if (decl.ty) |ty| {
                 std.debug.print(": ", .{});
                 print_type(ty);
             }
             if (decl.initialize) |init| {
+                std.debug.print("= ", .{});
                 print_tree(init);
+                std.debug.print(";\n", .{});
             }
         },
         .assignment => |expr| {
-            std.debug.print(" {s}", .{expr.op.span.get_string(source)});
+            if (expr.lvalue.derefs > 0) {
+                for (0..expr.lvalue.derefs) |_| {
+                    std.debug.print("*", .{});
+                }
+            }
+            std.debug.print("{s}", .{expr.lvalue.ident.span.get_string(source)});
+            if (expr.lvalue.array_access) |arrs| {
+                for (arrs) |arr| {
+                    std.debug.print("[", .{});
+                    print_tree(arr);
+                    std.debug.print("]", .{});
+                }
+            }
+            std.debug.print(" {s} ", .{expr.op.span.get_string(source)});
             print_tree(expr.expr);
         },
         .if_stmt => |stmt| {
-            std.debug.print("if", .{});
+            std.debug.print("if ", .{});
             print_tree(stmt.condition);
             print_tree(stmt.block);
             if (stmt.else_block) |eblk| {
-                std.debug.print("else", .{});
+                std.debug.print("else ", .{});
                 print_tree(eblk);
             }
         },
+        .while_loop => |loop| {
+            std.debug.print("while ", .{});
+            print_tree(loop.condition);
+            print_tree(loop.block);
+        },
         .fn_decl => |fnc| {
             std.debug.print("fn ", .{});
-            std.debug.print("{s}", .{fnc.ident.span.get_string(source)});
+            std.debug.print("{s} ", .{fnc.ident.span.get_string(source)});
             std.debug.print("(", .{});
             for (fnc.params) |param| {
                 std.debug.print("{s}, ", .{ param.span.get_string(source) });
@@ -101,16 +116,38 @@ fn print_tree(node: ?*ast.Ast) void {
         },
         .terminated => |expr| {
             print_tree(expr);
-            std.debug.print(";", .{});
+            std.debug.print("; ", .{});
         },
-        else => |thing| std.debug.print("unkown: {any}", .{thing}),
+        else => |thing| std.debug.print("unkown: {any}\n", .{thing}),
     }
 }
 
 
+
+
 pub fn main() !void {
+    _ = sema;
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    
+    const args = try std.process.argsAlloc(gpa.allocator());
+    defer std.process.argsFree(gpa.allocator(), args);
+
+    if (args.len < 2) {
+        return error.NotEnoughCmdlineArgs;
+    }
+
+    const file = try std.fs.cwd().openFile(args[1], .{});
+    defer file.close();
+
+    source = try file.readToEndAlloc(gpa.allocator(), std.math.maxInt(usize));
     var parser = parse.init_from_source(source, gpa.allocator());
-    print_tree(try parser.parse());
+    var context = try sema.init_context(source, gpa.allocator());
+    const trees = try parser.parse();
+    for (trees) |tree| {
+        print_tree(tree);
+        std.debug.print("\n", .{});
+    }
+
+    try sema.resolve(&context, trees);
     std.debug.print("\n", .{});
 }

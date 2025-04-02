@@ -28,12 +28,12 @@ pub fn init_from_source(src: []const u8, gpa: std.mem.Allocator) @This() {
 }
 
 /// The entrypoint for the parser
-pub fn parse(self: *@This()) !*Ast {
-    var ast: *Ast = undefined;
+pub fn parse(self: *@This()) ![]*Ast {
+    var ast = std.ArrayList(*Ast).init(self.gpa);
     while (self.lexer.has_next()) {
-        ast = try self.fn_decl();
+        try ast.append(try self.stmt());
     }
-    return ast;
+    return ast.toOwnedSlice();
 }
 
 
@@ -42,6 +42,7 @@ fn expect(self: *@This(), token: types.Tag) !void {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |_| {
         return;
     } else {
+        std.debug.print("Expected: {}, got: {}\n", .{token, self.lexer.next_token().tag});
         return error.UnexpectedToken;
     }
 }
@@ -51,6 +52,7 @@ fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |tok| {
         return tok;
     }
+    std.debug.print("Expected: {}, got: {}\n", .{token, self.lexer.next_token().tag});
     return error.UnexpectedToken;
 }
 
@@ -196,6 +198,9 @@ fn fn_decl(self: *@This()) !*Ast {
             if (tok.tag == .ident) {
                 try params.append(.{ .span = tok.span });
             } else if (tok.tag == .comma) {
+                if (self.lexer.is_next_token(.close_paren)) {
+                    return error.UnfinishedParameterList;
+                }
             } else {
                 return error.InvalidTokenInFunctionSignature;
             }
@@ -206,7 +211,11 @@ fn fn_decl(self: *@This()) !*Ast {
             try self.expect(.open_paren);
             while (!self.lexer.is_next_token(.close_paren)) {
                 try param_types.append(try self.parse_type());
-                _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
+                if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {
+                    if (self.lexer.is_next_token(.close_paren)) {
+                        return error.UnfinishedTypeParamaterList;
+                    }
+                }
             }
             _ = self.lexer.next_token();
         }
@@ -250,8 +259,9 @@ fn var_decl(self: *@This()) !*Ast {
             ty = try self.parse_type();
         }
         var initial: ?*Ast = null;
-        if (self.lexer.is_next_token(.eq)) {
-            initial = try self.assignment();
+        if (self.lexer.consume_if_eq(&[_]types.Tag{.eq})) |_| {
+            initial = try self.expression();
+            try self.expect(.semicolon);
         }
         var out: Ast = .{ .var_decl = .{
             .is_mut = key.tag == .keyword_mut,
@@ -290,23 +300,61 @@ fn ifstmt(self: *@This()) !*Ast {
         }};
         return try mem.createWith(self.gpa, out);
     }
+    return try self.while_loop();
+}
+
+fn while_loop(self: *@This()) !*Ast {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_while})) |_| {
+        const condition = try self.expression();
+        const body = try self.block();
+        const out: Ast = .{ .while_loop = .{
+            .condition = condition,
+            .block = body
+        }};
+        return try mem.createWith(self.gpa, out);
+    }
     return try self.assignment();
 }
 
 fn assignment(self: *@This()) anyerror!*Ast {
-    if (self.lexer.consume_if_eq(&[_]types.Tag{
-        .eq, .pluseq, .minuseq, .stareq, .slasheq, .percenteq, .shleq, .shreq, .ampeq, .careteq, .pipeeq
-    })) |token| {
-        var parent: Ast = .{ .assignment = .{
-            .op = token,
-            .expr = try self.ternary(),
-        }};
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |_| {
-            parent = .{ .terminated = try mem.createWith(self.gpa, parent) };
-        }
-        return try mem.createWith(self.gpa, parent);
-    } 
+    if (self.lexer.is_next_token(.star) or self.lexer.is_next_token(.ident)) {
+        const saved = self.lexer.index;
+        const lval = try self.lvalue();
+        if (self.lexer.consume_if_eq(&[_]types.Tag{
+            .eq, .pluseq, .minuseq, .stareq, .slasheq, .percenteq, .shleq, .shreq, .ampeq, .careteq, .pipeeq
+        })) |token| {
+            var parent: Ast = .{ .assignment = .{
+                .op = token,
+                .lvalue = lval,
+                .expr = try self.expression(),
+            }};
+            if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |_| {
+                parent = .{ .terminated = try mem.createWith(self.gpa, parent) };
+            }
+            return try mem.createWith(self.gpa, parent);
+        } 
+        self.lexer.index = saved;
+    }
     return self.ternary();
+}
+
+fn lvalue(self: *@This()) !AstTypes.LValue {
+    var derefs: usize = 0;
+    while (self.lexer.consume_if_eq(&[_]types.Tag{.star})) |_| {
+        derefs += 1;
+    }
+    const ident = try self.expect_ret(.ident);
+    var arrs = std.ArrayList(*Ast).init(self.gpa);
+    while (self.lexer.consume_if_eq(&[_]types.Tag{.open_square})) |_| {
+        const exp = try self.expression();
+        try arrs.append(exp);
+        try self.expect(.close_square);
+    }
+    return .{
+        .ident = .{ .span = ident.span },
+        .derefs = derefs,
+        .array_access = if (arrs.items.len == 0) null else try arrs.toOwnedSlice()
+    };
 }
 
 fn ternary(self: *@This()) !*Ast {
@@ -450,7 +498,7 @@ fn multiplicative(self: *@This()) anyerror!*Ast {
     return left;
 }
 fn unary(self: *@This()) anyerror!*Ast {
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.plus, .minus, .bang, .tilde, .star, .amp, .semicolon})) |op| {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.minus, .bang, .tilde, .star, .amp, .semicolon})) |op| {
         const out: Ast = .{ .unary_expr = .{
             .op = op,
             .expr = try self.unary(),
@@ -468,6 +516,9 @@ fn primary(self: *@This()) anyerror!*Ast {
         const out = try self.expression();
         _ = try self.expect(.close_paren);
         return out;
+    }
+    if (self.lexer.is_next_token(.open_bracket)) {
+        return try self.block();
     }
     std.debug.print("Invalid: {s}\n", .{self.lexer.next_token().span.get_string(self.lexer.buffer)});
     return error.Invalid;
