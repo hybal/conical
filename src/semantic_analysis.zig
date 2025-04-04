@@ -44,6 +44,13 @@ pub const Context = struct {
 };
 
 
+pub fn resolve(self: *Context, trees: []*Ast) !void {
+    try resolve_global(self, trees);
+    for (trees) |tree| {
+        try resolve_local(self, tree);
+        std.debug.print("{any}\n", .{try type_check(self, tree)});
+    }
+}
 fn resolve_global(self: *Context, trees: []*Ast) !void {
     try self.symtab.append(types.SymTab.init(self.gpa));
     for (trees) |tree| {
@@ -74,17 +81,12 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
             },
             else => |val| {
                 std.debug.print("'{s}' is not allowed at a global scope.\n",.{@tagName(val)});
+                //return error.UnallowedOperation;
             }
         }
     }
 }
 
-pub fn resolve(self: *Context, trees: []*Ast) !void {
-    try resolve_global(self, trees);
-    for (trees) |tree| {
-        try resolve_local(self, tree);
-    }
-}
 
 fn resolve_local(self: *Context, tree: *Ast) !void {
     switch (tree.*) {
@@ -123,7 +125,7 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
             if (self.at_global) return;
             if (!self.contains(decl.ident.span.get_string(self.source))) {
                 try self.push(decl.ident.span.get_string(self.source), .{
-                    .ty = null,
+.ty = null,
                     .ident = decl.ident.span,
                     .ast = tree
                 });
@@ -177,7 +179,7 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
         },
         .ternary => |expr| {
             try resolve_local(self, expr.condition);
-            try resolve_local(self, expr.true_path);
+ try resolve_local(self, expr.true_path);
             try resolve_local(self, expr.false_path);
         },
         .if_stmt => |stmt| {
@@ -202,6 +204,43 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
 }
 
 
+fn type_check(self: *Context, tree: *Ast) !ast.Type {
+    switch (tree.*) {
+        .terminal => |term| {
+            var out_type: ast.Type = .{ .base_type = .{ .primitive = .Unit }, .modifiers = null };
+            var modifiers = std.ArrayList(ast.TypeModifier).init(self.gpa);
+            switch (term.tag) {
+                .int_literal => out_type.base_type = .{ .primitive = .I32 }, //TODO: automatically widen the type to acomodate a larger literal / automatically determine sign
+                .float_literal => out_type.base_type = .{ .primitive = .F32 },
+                .string_literal, .raw_string_literal => {
+                    out_type.base_type = .{ .primitive = .U8 };
+                    try modifiers.append(.Slice);
+                },
+                .char_literal => out_type.base_type = .{ .primitive = .U8 },
+                else => {}
+            }
+            out_type.modifiers = try modifiers.toOwnedSlice();
+            return out_type;
+        },
+        .binary_expr => |expr| {
+            const left = try type_check(self, expr.left);
+            const right = try type_check(self, expr.right);
+            if (left.base_type == .user) {
+                if (right.base_type == .primitive) return error.TypeMismatch;
+                const rid = right.base_type.user.span;
+                const lid = left.base_type.user.span;
+                if (rid.start != lid.start or rid.end != lid.end) return error.TypeMismatch;
+                return error.OperatorNotDefinedBetweenUserTypes; //TODO: allow for operator overloading
+            } else {
+                if (right.base_type != .primitive) return error.TypeMismatch;
+                if (left.base_type.primitive != right.base_type.primitive) return error.TypeMismatch;
+                return left;
+            }
+        },
+        else => {}
+    }
+    unreachable;
+}
 
 
 

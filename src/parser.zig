@@ -512,7 +512,7 @@ fn primary(self: *@This()) anyerror!*Ast {
         const out: Ast = .{ .terminal = lit };
         return try mem.createWith(self.gpa, out);
     }
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| { //TODO: add support for unit ()
         const out = try self.expression();
         _ = try self.expect(.close_paren);
         return out;

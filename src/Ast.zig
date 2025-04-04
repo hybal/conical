@@ -30,7 +30,7 @@ pub const Assignment = struct {
 };
 
 /// Represents a builtin primitive type
-pub const PrimitiveType = union(enum) {
+pub const PrimitiveType = enum {
     I8,
     I16,
     I32,
