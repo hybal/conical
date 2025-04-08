@@ -2,9 +2,10 @@ const std = @import("std");
 const ast = @import("Ast.zig");
 const Ast = ast.Ast;
 
+const diag = @import("diag.zig");
 const types = @import("types.zig");
 
-pub fn init_context(source: []const u8, gpa: std.mem.Allocator) !Context {
+pub fn init_context(source: []const u8, session: *diag.Session, gpa: std.mem.Allocator) !Context {
     return .{
         .symtab = .init(gpa),
         .scope = 0,
@@ -14,6 +15,7 @@ pub fn init_context(source: []const u8, gpa: std.mem.Allocator) !Context {
         .in_condition = false,
         .in_loop = false,
         .at_global = true,
+        .session = session,
     };
 }
 
@@ -26,6 +28,7 @@ pub const Context = struct {
     in_condition: bool,
     in_loop: bool,
     at_global: bool,
+    session: *diag.Session,
     fn contains(self: *@This(), key: []const u8) bool {
         for (0..self.symtab.items.len) |i| {
             if (self.symtab.items[self.symtab.items.len - 1 - i].contains(key)) {
@@ -54,7 +57,7 @@ pub fn resolve(self: *Context, trees: []*Ast) !void {
 fn resolve_global(self: *Context, trees: []*Ast) !void {
     try self.symtab.append(types.SymTab.init(self.gpa));
     for (trees) |tree| {
-        switch (tree.*) {
+        switch (tree.node) {
             .var_decl => |decl| {
                 if (!self.contains(decl.ident.span.get_string(self.source))) {
                     try self.push(decl.ident.span.get_string(self.source), .{
@@ -75,13 +78,13 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
                         .ast = tree
                     });
                 } else {
-                    std.debug.print("Function Shadows Previous Decleration: {s}", .{decl.ident.span.get_string(self.source)});
+                    try self.session.emit(.Error, tree.span, "Function Shadows Previous Decleration");
                     return error.FunctionShadowsPreviousDecleration;
                 }
             },
-            else => |val| {
-                std.debug.print("'{s}' is not allowed at a global scope.\n",.{@tagName(val)});
-                //return error.UnallowedOperation;
+            else => |_| {
+                try self.session.emit(.Error, tree.span, "Invalid operation at the global scope");
+                return error.UnallowedOperation;
             }
         }
     }
@@ -89,7 +92,7 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
 
 
 fn resolve_local(self: *Context, tree: *Ast) !void {
-    switch (tree.*) {
+    switch (tree.node) {
         .var_decl => |decl| {
             if (self.at_global) {
                 if (decl.initialize) |init| {
@@ -154,7 +157,7 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
                 return error.UnknownIdentifier;
             }
             if (self.get(expr.lvalue.ident.span.get_string(self.source))) |sym| {
-                switch (sym.ast.*) {
+                switch (sym.ast.node) {
                     .var_decl => |decl| {
                         if (!decl.is_mut) {
                             return error.AssignmentToImmutableVariable;
@@ -205,7 +208,7 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
 
 
 fn type_check(self: *Context, tree: *Ast) !ast.Type {
-    switch (tree.*) {
+    switch (tree.node) {
         .terminal => |term| {
             var out_type: ast.Type = .{ .base_type = .{ .primitive = .Unit }, .modifiers = null };
             var modifiers = std.ArrayList(ast.TypeModifier).init(self.gpa);

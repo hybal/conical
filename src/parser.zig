@@ -2,28 +2,32 @@
 const std = @import("std");
 const lex = @import("lexer.zig");
 const types = @import("types.zig");
+const AstNode = @import("Ast.zig").AstNode;
 const Ast = @import("Ast.zig").Ast;
 const Block = @import("Ast.zig").Block;
 const AstTypes = @import("Ast.zig");
 const mem = @import("mem.zig");
-
+const diag = @import("diag.zig");
 
 gpa: std.mem.Allocator,
 lexer: lex.Lexer,
+session: *diag.Session,
 
 /// Initialize the parser from an already existing Lexer isntance
-pub fn init_from_lexer(in: lex.Lexer, gpa: std.mem.Allocator) @This() {
+pub fn init_from_lexer(in: lex.Lexer, session: *diag.Session, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = in,
-        .gpa = gpa
+        .gpa = gpa,
+        .session = session
     };
 }
 
 /// Initialize the parser from source
-pub fn init_from_source(src: []const u8, gpa: std.mem.Allocator) @This() {
+pub fn init_from_source(src: []const u8, session: *diag.Session, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = lex.Lexer.init(src),
-        .gpa = gpa
+        .gpa = gpa,
+        .session = session
     };
 }
 
@@ -61,23 +65,32 @@ fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
 // a required block 
 // block = "{" stmt* "}"
 fn block(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index
+    };
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket})) |_| {
+        span.start = self.lexer.index;
+        span.end = self.lexer.index;
         var exprs = std.ArrayList(*Ast).init(self.gpa);
         while (self.lexer.has_next() and !self.lexer.is_next_token(.close_bracket)) {
             const exp = try self.stmt();
             if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |_| {
-                const termnt: Ast = .{ .terminated = exp };
+                const termnt: Ast = Ast.create(.{ .terminated = exp }, span);
                 try exprs.append(try mem.createWith(self.gpa, termnt)); 
             } else {
                 try exprs.append(exp);
             }
         } else if (!self.lexer.has_next()) {
+            try self.session.emit(.Error, span, "Unclosed curly-bracket");
             return error.UnmatchedBracket;
         }
         try self.expect(.close_bracket);
-        const out: Ast = .{ .block = .{ .exprs = try exprs.toOwnedSlice() }};
+        span.end = self.lexer.index;
+        const out: Ast = Ast.create(.{ .block = .{ .exprs = try exprs.toOwnedSlice() }}, span);
         return try mem.createWith(self.gpa, out);
     } 
+    try self.session.emit(.Error, span, "Expected a block");
     return error.RequiredBlock;
 }
 
@@ -93,8 +106,19 @@ fn optional_block(self: *@This()) !*Ast {
 // parse a type with modifiers and primitives
 // type = typemods* (primitivetype | ident)
 fn parse_type(self: *@This()) !AstTypes.Type {
+    
     var modifiers = std.ArrayList(AstTypes.TypeModifier).init(self.gpa);
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index
+    };
+    var is_at_start = false;
     while (self.lexer.consume_if_eq(&[_]types.Tag{.amp, .amp2, .star, .open_square, .keyword_mut, .keyword_const})) |mmod| {
+        if (!is_at_start) {
+            span.start = self.lexer.index;
+            is_at_start = true;
+        }
+        
         var mod: AstTypes.TypeModifier = .Ref;
         switch (mmod.tag) {
             .amp => mod = .Ref,
@@ -139,12 +163,18 @@ fn parse_type(self: *@This()) !AstTypes.Type {
     }
     var base_ty: AstTypes.Type = .{.base_type = .{ .primitive = .Unit}, .modifiers = if (modifiers.items.len > 0) try modifiers.toOwnedSlice() else null };
     if (self.lexer.consume_if_eq(&[_]types.Tag{.ident, .open_paren})) |ty| {
+        if (!is_at_start) {
+            span.start = self.lexer.index;
+        }
         if (ty.tag == .open_paren) {
             if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |_| {
-                if (modifiers.items.len != 0) {
+                if (base_ty.modifiers != null) {
+                    span.end = self.lexer.index;
+                    try self.session.emit(.Error, span, "Unit type cannot have modifiers");
                     return error.UnitCannotHaveMods;
                 }
             } else {
+                try self.session.emit(.Error, span, "Types cannot currently have paranthesis other than unit");
                 return error.ParenInTypeExprNotUnit;
             }
         } else {
@@ -178,6 +208,10 @@ fn try_decl_mod(self: *@This()) ?AstTypes.GlobalDeclMod {
 fn fn_decl(self: *@This()) !*Ast {
     var decl_mod: ?AstTypes.GlobalDeclMod = null;
     var fn_mod: ?AstTypes.FnModifier = null;
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
     if (self.try_decl_mod()) |decl| {
         decl_mod = decl;
     }
@@ -199,27 +233,35 @@ fn fn_decl(self: *@This()) !*Ast {
                 try params.append(.{ .span = tok.span });
             } else if (tok.tag == .comma) {
                 if (self.lexer.is_next_token(.close_paren)) {
+                    try self.session.emit(.Error, span, "Paramter list contains an extra comma");
                     return error.UnfinishedParameterList;
                 }
             } else {
+                try self.session.emit(.Error, span, "Function signature contains invalid token");
                 return error.InvalidTokenInFunctionSignature;
             }
         }
         _ = self.lexer.next_token();
         var param_types = std.ArrayList(AstTypes.Type).init(self.gpa);
         if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
-            try self.expect(.open_paren);
-            while (!self.lexer.is_next_token(.close_paren)) {
-                try param_types.append(try self.parse_type());
-                if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {
-                    if (self.lexer.is_next_token(.close_paren)) {
-                        return error.UnfinishedTypeParamaterList;
+            if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
+                while (!self.lexer.is_next_token(.close_paren)) {
+                    try param_types.append(try self.parse_type());
+                    if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {
+                        if (self.lexer.is_next_token(.close_paren)) {
+                            try self.session.emit(.Error, span, "Type parameter list contains an extra comma");
+                            return error.UnfinishedTypeParamaterList;
+                        }
                     }
                 }
+                _ = self.lexer.next_token();
+            } else {
+                try param_types.append(try self.parse_type());
             }
-            _ = self.lexer.next_token();
         }
         if (param_types.items.len != params.items.len) {
+            span.end = self.lexer.index;
+            try self.session.emit(.Error, span, try std.fmt.allocPrint(self.gpa, "Type list is shorter than the parameter list. Expected: {}, got: {}", .{params.items.len, param_types.items.len}));
             return error.MismatchedParamToTypeLen;
         }
         var return_ty: AstTypes.Type = .{
@@ -235,7 +277,8 @@ fn fn_decl(self: *@This()) !*Ast {
         } else {
             _ = self.lexer.next_token();
         }
-        const out: Ast = .{ .fn_decl = .{
+        span.end = self.lexer.index;
+        const out: Ast = Ast.create(.{ .fn_decl = .{
             .ident = .{ .span = ident.span },
             .params = try params.toOwnedSlice(),
             .param_types = try param_types.toOwnedSlice(),
@@ -243,7 +286,7 @@ fn fn_decl(self: *@This()) !*Ast {
             .decl_mod = decl_mod,
             .fn_mod = fn_mod,
             .body = blck
-        }};
+        }}, span);
         return try mem.createWith(self.gpa, out);
     }
     return self.var_decl();
@@ -252,6 +295,11 @@ fn fn_decl(self: *@This()) !*Ast {
 // parses a variable decleration
 // var_decl = ("let" | "mut") (":" type)? ("=" expression)? ";"?
 fn var_decl(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_let, .keyword_mut})) |key| {
         const ident = try self.expect_ret(.ident);
         var ty: ?AstTypes.Type = null;
@@ -263,14 +311,16 @@ fn var_decl(self: *@This()) !*Ast {
             initial = try self.expression();
             try self.expect(.semicolon);
         }
-        var out: Ast = .{ .var_decl = .{
+        span.end = self.lexer.index;
+        var out: Ast = Ast.create(.{ .var_decl = .{
             .is_mut = key.tag == .keyword_mut,
             .ident = .{ .span = ident.span },
             .ty = ty,
             .initialize = initial
-        }};
+        }}, span);
         if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |_| {
-            out = .{ .terminated = try mem.createWith(self.gpa, out) };
+            span.end = self.lexer.index;
+            out = Ast.create(.{ .terminated = try mem.createWith(self.gpa, out)}, span);
         }
         return try mem.createWith(self.gpa, out);
     }
@@ -286,6 +336,13 @@ fn expression(self: *@This()) anyerror!*Ast {
 }
 
 fn ifstmt(self: *@This()) !*Ast {
+
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
+
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_if})) |_| {
         const condition = try self.expression();
         const then_block = try self.optional_block();
@@ -293,43 +350,57 @@ fn ifstmt(self: *@This()) !*Ast {
         if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_else})) |_| {
             else_block = try self.optional_block();
         }
-        const out: Ast = .{ .if_stmt = .{
+        span.end = self.lexer.index;
+        const out: Ast = Ast.create(.{ .if_stmt = .{
             .condition = condition,
             .block = then_block,
             .else_block = else_block
-        }};
+        }}, span);
         return try mem.createWith(self.gpa, out);
     }
     return try self.while_loop();
 }
 
 fn while_loop(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_while})) |_| {
         const condition = try self.expression();
         const body = try self.block();
-        const out: Ast = .{ .while_loop = .{
+        span.end = self.lexer.index;
+        const out: Ast = Ast.create(.{ .while_loop = .{
             .condition = condition,
             .block = body
-        }};
+        }}, span);
         return try mem.createWith(self.gpa, out);
     }
     return try self.assignment();
 }
 
 fn assignment(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     if (self.lexer.is_next_token(.star) or self.lexer.is_next_token(.ident)) {
         const saved = self.lexer.index;
         const lval = try self.lvalue();
         if (self.lexer.consume_if_eq(&[_]types.Tag{
             .eq, .pluseq, .minuseq, .stareq, .slasheq, .percenteq, .shleq, .shreq, .ampeq, .careteq, .pipeeq
         })) |token| {
-            var parent: Ast = .{ .assignment = .{
+            span.end = self.lexer.index;
+            var parent: Ast = Ast.create(.{ .assignment = .{
                 .op = token,
                 .lvalue = lval,
                 .expr = try self.expression(),
-            }};
+            }}, span);
             if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |_| {
-                parent = .{ .terminated = try mem.createWith(self.gpa, parent) };
+                span.end = self.lexer.index;
+                parent = Ast.create(.{ .terminated = try mem.createWith(self.gpa, parent) }, span);
             }
             return try mem.createWith(self.gpa, parent);
         } 
@@ -358,158 +429,236 @@ fn lvalue(self: *@This()) !AstTypes.LValue {
 }
 
 fn ternary(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var condition = try self.logical_or();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.question})) |_| {
         const true_path = try self.expression();
         _ = try self.expect(.colon);
         const false_path = try self.ternary();
-        const parent: Ast = .{ .ternary = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .ternary = .{
             .condition = condition,
             .true_path = true_path,
             .false_path = false_path,
-        }};
+        }}, span);
         condition = try mem.createWith(self.gpa, parent);
     }
     return condition;
 }
 
 fn logical_or(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.logical_and();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.pipe2})) |pipe2| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = pipe2,
             .left = left,
             .right = try self.logical_or(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 fn logical_and(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.bitwise_or();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.amp2})) |amp2| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = amp2,
             .left = left,
             .right = try self.logical_and(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 
 fn bitwise_or(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.bitwise_xor();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.pipe})) |pipe| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = pipe,
             .left = left,
             .right = try self.bitwise_or(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 fn bitwise_xor(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.bitwise_and();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.caret})) |caret| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = caret,
             .left = left,
             .right = try self.bitwise_xor(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 fn bitwise_and(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.equality();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.amp})) |amp| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = amp,
             .left = left,
             .right = try self.bitwise_and(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 
 fn equality(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.relational();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.eq2, .noteq})) |op| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = op,
             .left = left,
             .right = try self.equality(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 
 fn relational(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.shift();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.lt, .lteq, .gt, .gteq})) |op| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = op,
             .left = left,
             .right = try self.relational(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 fn shift(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.additive();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.shl, .shr})) |op| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = op,
             .left = left,
             .right = try self.shift(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 
 fn additive(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.multiplicative();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.plus, .minus})) |op| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = op,
             .left = left,
             .right = try self.additive(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 fn multiplicative(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     var left = try self.unary();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.star, .slash, .percent})) |op| {
-        const parent: Ast = .{ .binary_expr = .{
+        span.end = self.lexer.index;
+        const parent: Ast = Ast.create(.{ .binary_expr = .{
             .op = op,
             .left = left,
             .right = try self.multiplicative(),
-        }};
+        }}, span);
         left = try mem.createWith(self.gpa, parent);
     }
     return left;
 }
 fn unary(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     if (self.lexer.consume_if_eq(&[_]types.Tag{.minus, .bang, .tilde, .star, .amp, .semicolon})) |op| {
-        const out: Ast = .{ .unary_expr = .{
+        span.end = self.lexer.index;
+        const out: Ast = Ast.create(.{ .unary_expr = .{
             .op = op,
             .expr = try self.unary(),
-        }};
+        }}, span);
         return try mem.createWith(self.gpa, out);
     }
     return try self.primary();
 }
 fn primary(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
     if (self.lexer.consume_if_eq(&[_]types.Tag{.ident, .float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
-        const out: Ast = .{ .terminal = lit };
+        span.end = self.lexer.index;
+        const out: Ast = Ast.create(.{ .terminal = lit }, span);
         return try mem.createWith(self.gpa, out);
     }
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| { //TODO: add support for unit ()
@@ -520,7 +669,8 @@ fn primary(self: *@This()) anyerror!*Ast {
     if (self.lexer.is_next_token(.open_bracket)) {
         return try self.block();
     }
-    std.debug.print("Invalid: {s}\n", .{self.lexer.next_token().span.get_string(self.lexer.buffer)});
+    span.end = self.lexer.index;
+    try self.session.emit(.Error, span, "Unexpected token");
     return error.Invalid;
 }
 

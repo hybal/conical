@@ -1,4 +1,5 @@
 const std = @import("std");
+const mem = @import("mem.zig");
 const types = @import("types.zig");
 
 /// Represents a binary expression of the form: left op right
@@ -197,8 +198,18 @@ pub const OptionalBlock = struct {
 };
 
 
+pub const Ast = struct {
+    node: AstNode,
+    span: types.Span,
+    pub fn create(node: AstNode, span: types.Span) @This() {
+        return .{
+            .node = node,
+            .span = span
+        };
+    }
+};
 
-pub const Ast = union(enum) { 
+pub const AstNode = union(enum) { 
     binary_expr: BinaryExpr,
     unary_expr: UnaryExpr,
     terminal: types.Token,

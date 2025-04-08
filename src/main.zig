@@ -4,6 +4,7 @@ const ast = @import("Ast.zig");
 const parse = @import("parser.zig");
 const sema = @import("semantic_analysis.zig");
 const types = @import("types.zig");
+const diag = @import("diag.zig");
 
 
 var source: []const u8 = "let a = 1;";
@@ -25,7 +26,7 @@ fn print_type(ty: ast.Type) void {
 }
 fn print_tree(node: ?*ast.Ast) void {
     if (node == null) return;
-    switch (node.?.*) {
+    switch (node.?.node) {
         .terminal => |term| {
             std.debug.print("{s} ", .{term.span.get_string(source)});
         },
@@ -125,8 +126,7 @@ fn print_tree(node: ?*ast.Ast) void {
 
 
 
-pub fn main() !void {
-    _ = sema;
+pub fn main() !u8 {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
     
     const args = try std.process.argsAlloc(gpa.allocator());
@@ -140,14 +140,21 @@ pub fn main() !void {
     defer file.close();
 
     source = try file.readToEndAlloc(gpa.allocator(), std.math.maxInt(usize));
-    var parser = parse.init_from_source(source, gpa.allocator());
-    var context = try sema.init_context(source, gpa.allocator());
-    const trees = try parser.parse();
+    var session = diag.Session.init(gpa.allocator(), source);
+    var parser = parse.init_from_source(source, &session, gpa.allocator());
+    var context = try sema.init_context(source, &session, gpa.allocator());
+    const trees = parser.parse() catch {
+        try session.flush(std.io.getStdErr().writer());
+        return 1;
+    };
     for (trees) |tree| {
         print_tree(tree);
         std.debug.print("\n", .{});
     }
 
-    try sema.resolve(&context, trees);
-    std.debug.print("\n", .{});
+    sema.resolve(&context, trees) catch {
+        try session.flush(std.io.getStdErr().writer());
+        return 1;
+    };
+    return 0;
 }

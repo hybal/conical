@@ -131,11 +131,11 @@ pub const Lexer = struct {
     }
     fn parse_line_comment(self: *Lexer) void {
         while (self.has_next()) {
-            switch (self.next() orelse 0) {
-                '\n', 0x01...0x09, 0x0b...0x1f, 0x7f => {
+            switch (self.peek() orelse 0) {
+                '\n', 0x01...0x09, 0x0b...0x1f, 0x7f, 0 => {
                     break;
                 },
-                else => {},
+                else => _ = self.next(),
             }
         }
     }
