@@ -193,7 +193,7 @@ pub const Block = struct {
     exprs: []*Ast
 };
 
-pub const OptionalBlock = struct {
+pub const OptionalBlock = struct { //TODO: Merge with block
     exprs: []*Ast
 };
 

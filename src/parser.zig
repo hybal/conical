@@ -46,7 +46,6 @@ fn expect(self: *@This(), token: types.Tag) !void {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |_| {
         return;
     } else {
-        std.debug.print("Expected: {}, got: {}\n", .{token, self.lexer.next_token().tag});
         return error.UnexpectedToken;
     }
 }
@@ -55,9 +54,10 @@ fn expect(self: *@This(), token: types.Tag) !void {
 fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |tok| {
         return tok;
+    } else {
+        try self.session.emit(.Error, self.lexer.next_token().span, "Unexepected token ret");
+        return error.UnexpectedToken;
     }
-    std.debug.print("Expected: {}, got: {}\n", .{token, self.lexer.next_token().tag});
-    return error.UnexpectedToken;
 }
 
 
@@ -85,7 +85,7 @@ fn block(self: *@This()) !*Ast {
             try self.session.emit(.Error, span, "Unclosed curly-bracket");
             return error.UnmatchedBracket;
         }
-        try self.expect(.close_bracket);
+        _ = self.lexer.next_token();
         span.end = self.lexer.index;
         const out: Ast = Ast.create(.{ .block = .{ .exprs = try exprs.toOwnedSlice() }}, span);
         return try mem.createWith(self.gpa, out);
@@ -155,7 +155,10 @@ fn parse_type(self: *@This()) !AstTypes.Type {
                 } else {
                     mod = .Slice;
                 }
-                try self.expect(.close_square);
+                self.expect(.close_square) catch |err| {
+                    try self.session.emit(.Error, span, "Expected a closing square bracket '['");
+                    return err;
+                };
             },
             else => unreachable
         }
@@ -169,6 +172,7 @@ fn parse_type(self: *@This()) !AstTypes.Type {
         if (ty.tag == .open_paren) {
             if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |_| {
                 if (base_ty.modifiers != null) {
+                    span.start = self.lexer.index;
                     span.end = self.lexer.index;
                     try self.session.emit(.Error, span, "Unit type cannot have modifiers");
                     return error.UnitCannotHaveMods;
@@ -226,7 +230,10 @@ fn fn_decl(self: *@This()) !*Ast {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_fn})) |_| {
         var params = std.ArrayList(AstTypes.Ident).init(self.gpa);
         const ident = try self.expect_ret(.ident);
-        try self.expect(.open_paren);
+        self.expect(.open_paren) catch |err| {
+            try self.session.emit(.Error, span, "Expected an open parenthesis");
+            return err;
+        };
         while (!self.lexer.is_next_token(.close_paren)) {
             const tok = self.lexer.next_token();
             if (tok.tag == .ident) {
@@ -309,7 +316,11 @@ fn var_decl(self: *@This()) !*Ast {
         var initial: ?*Ast = null;
         if (self.lexer.consume_if_eq(&[_]types.Tag{.eq})) |_| {
             initial = try self.expression();
-            try self.expect(.semicolon);
+            self.expect(.semicolon) catch |err| {
+                span.end = self.lexer.index;
+                try self.session.emit(.Error, span, "Expected a semicolon at the end of assignment");
+                return err;
+            };
         }
         span.end = self.lexer.index;
         var out: Ast = Ast.create(.{ .var_decl = .{
@@ -410,6 +421,10 @@ fn assignment(self: *@This()) anyerror!*Ast {
 }
 
 fn lvalue(self: *@This()) !AstTypes.LValue {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
     var derefs: usize = 0;
     while (self.lexer.consume_if_eq(&[_]types.Tag{.star})) |_| {
         derefs += 1;
@@ -417,9 +432,15 @@ fn lvalue(self: *@This()) !AstTypes.LValue {
     const ident = try self.expect_ret(.ident);
     var arrs = std.ArrayList(*Ast).init(self.gpa);
     while (self.lexer.consume_if_eq(&[_]types.Tag{.open_square})) |_| {
+        const sq = self.lexer.index;
         const exp = try self.expression();
         try arrs.append(exp);
-        try self.expect(.close_square);
+        self.expect(.close_square) catch |err| {
+            span.start = sq;
+            span.end = self.lexer.index;
+            try self.session.emit(.Error, span, "Unclosed square bracket");
+            return err;
+        };
     }
     return .{
         .ident = .{ .span = ident.span },
@@ -437,7 +458,11 @@ fn ternary(self: *@This()) !*Ast {
     var condition = try self.logical_or();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.question})) |_| {
         const true_path = try self.expression();
-        _ = try self.expect(.colon);
+        self.expect(.colon) catch |err| {
+            span.end = self.lexer.index;
+            try self.session.emit(.Error, span, "Expected ':'");
+            return err;
+        };
         const false_path = try self.ternary();
         span.end = self.lexer.index;
         const parent: Ast = Ast.create(.{ .ternary = .{
@@ -663,14 +688,17 @@ fn primary(self: *@This()) anyerror!*Ast {
     }
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| { //TODO: add support for unit ()
         const out = try self.expression();
-        _ = try self.expect(.close_paren);
+        self.expect(.close_paren) catch |err| {
+            try self.session.emit(.Error, span, "Expected a closing parenthesis");
+            return err;
+        };
         return out;
     }
     if (self.lexer.is_next_token(.open_bracket)) {
         return try self.block();
     }
     span.end = self.lexer.index;
-    try self.session.emit(.Error, span, "Unexpected token");
+    try self.session.emit(.Error, span, "Invalid token");
     return error.Invalid;
 }
 

@@ -125,7 +125,7 @@ pub const Lexer = struct {
         if (self.index + 1 >= self.buffer.len) return null;
         return self.buffer[self.index + 1];
     }
-    fn get(self: *Lexer) u8 {
+    pub fn get(self: *Lexer) u8 {
         if (self.index == 0) return self.buffer[self.index];
         return self.buffer[self.index - 1];
     }

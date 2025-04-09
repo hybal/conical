@@ -48,11 +48,12 @@ pub const Session = struct {
     pub fn flush(self: *@This(), writer: anytype) !void {
         for (self.diags.items) |diag| {
             const line, const col = self.get_loc(diag);
-            const src_line = std.mem.trim(u8, self.get_line(diag), " \t\r\n");
-            const new_start = @intFromPtr(src_line.ptr) - @intFromPtr(self.source.ptr);
-            const start = diag.span.end - new_start;
+            const src_span = self.get_line(diag);
+            const src_line = self.source[src_span.start..src_span.end];
+            //const new_start = @intFromPtr(src_line.ptr) - @intFromPtr(self.source.ptr);
+            //const start = diag.span.end - new_start;
             try writer.print(
-                "{s}{s} [{};{}]:\x1b[0m {s}\n\t{s}\n\t{s}\n",
+                "{s}{s} [{};{}]:\x1b[0m {s}\n{s}\n{s}\n",
                 .{
                     diag.severity.get_color(),
                     @tagName(diag.severity),
@@ -60,51 +61,47 @@ pub const Session = struct {
                     col,
                     diag.message,
                     src_line,
-                    try self.get_marker_line(start)
+                    try self.get_marker_line(src_span.length)
                 });
                     
         }
     }
     
-    fn is_eol(char: u8) bool {
-        return switch (char) {
-            0x0...0x1F, 0x7F => true,
-            else => false
-        };
-    }
-
-    fn get_marker_line(self: *@This(), cursor: usize) ![]const u8 {
+    fn get_marker_line(self: *@This(), cursor: usize) ![] const u8 {
         var out = std.ArrayList(u8).init(self.gpa);
-        try out.appendNTimes(' ', cursor);
+        try out.appendNTimes('-', cursor);
         try out.append('^');
         return out.toOwnedSlice();
     }
-    fn get_line(self: *@This(), diag: Diag) []const u8 {
+    fn get_line(self: *@This(), diag: Diag) struct {length: usize, start: usize, end: usize}  {
         var start = diag.span.start;
+        var length: usize = 0;
         var end = diag.span.end;
-        //if (start == end and start != 0) {
-        //    start -= 1;
-        //}
         var found_start = false;
         var found_end = false;
-        while (true) {
+        while (!found_start or !found_end) {
             if (!found_start) {
-                if (is_eol(self.source[start]) or start == 0) {
-                    found_start = true;
-                } else {
-                    start -= 1;
+                switch (self.source[start]) {
+                    '\n', '\r', 0 => found_start = true,
+                    '\t' => {
+                        length += 8;
+                        start -= 1;
+                    },
+                    else => {
+                        start -= 1;
+                        length += 1;
+                    }
                 }
             }
             if (!found_end) {
-                if (is_eol(self.source[end]) or end == self.source.len) {
-                    found_end = true;
-                } else {
-                    end += 1;
+                switch(self.source[end]) {
+                    '\n', '\r', 0 => found_end = true,
+                    '\t' => end += 7,
+                    else => end += 1
                 }
             }
-            if (found_start and found_end) break;
         }
-        return self.source[start..end];
+        return .{.length = length, .start = start, .end = end};
     }
 
     fn get_loc(self: *@This(), diag: Diag) struct { usize, usize } {
@@ -122,7 +119,10 @@ pub const Session = struct {
                     line += 1;
                     col = 0;
                 },
-                else => col += 1
+                else => |val| switch(val) {
+                    '\t' => col += 7,
+                    else => col += 1
+                }
             }
         }
         return .{ line, col};
