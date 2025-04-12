@@ -127,8 +127,8 @@ fn print_tree(node: ?*ast.Ast) void {
 
 
 pub fn main() !u8 {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    
+    var child: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    var gpa = std.heap.ArenaAllocator.init(child.allocator());
     const args = try std.process.argsAlloc(gpa.allocator());
     defer std.process.argsFree(gpa.allocator(), args);
 

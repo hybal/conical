@@ -46,7 +46,6 @@ pub const PrimitiveType = enum {
     USize,
     F32,
     F64,
-    F128,
     Bool,
     Str,
     Rune, //may not be needed
@@ -67,7 +66,6 @@ pub const PrimitiveType = enum {
             .USize => "usize",
             .F32 => "f32",
             .F64 => "f64",
-            .F128 => "f128",
             .Bool => "bool",
             .Str => "str",
             .Rune => "rune",
@@ -89,7 +87,6 @@ pub const PrimitiveType = enum {
         .{ "usize", .USize },
         .{ "f32", .F32 },
         .{ "f64", .F64 },
-        .{ "f128", .F128 },
         .{ "bool", .Bool },
         .{ "str", .Str },
         .{ "rune", .Rune },
