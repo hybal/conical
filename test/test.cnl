@@ -1,6 +1,4 @@
-fn main() {
-    let a: &() = 1
+fn main() -> i32 {
+    let a = 2;
+    2
 }
-
-
-

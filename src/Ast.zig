@@ -16,17 +16,11 @@ pub const UnaryExpr = struct {
 };
 
 
-/// Represents an lvalue or a value that is able to be used in an assignment operation: lvalue op= expr
-pub const LValue = struct {
-    ident: Ident,
-    derefs: usize, // the number of dereferences being applied
-    array_access: ?[]*Ast // a list of array accesses and the index being acessed
-};
 
 /// Represents an assignment operaton including compound assignment operations like += or *=
 pub const Assignment = struct {
     op: types.Token,
-    lvalue: LValue,
+    lvalue: *Ast,
     expr: *Ast
 };
 
@@ -139,6 +133,7 @@ pub const Type = struct {
         user: Ident
     },
     modifiers: ?[]TypeModifier,
+    pub const unit: Type = .{ .base_type = .{ .primitive = .Unit}, .modifiers = null};
 };
 
 
@@ -190,11 +185,6 @@ pub const Block = struct {
     exprs: []*Ast
 };
 
-pub const OptionalBlock = struct { //TODO: Merge with block
-    exprs: []*Ast
-};
-
-
 pub const Ast = struct {
     node: AstNode,
     span: types.Span,
@@ -214,7 +204,6 @@ pub const AstNode = union(enum) {
     if_stmt: IfStmt,
     while_loop: WhileLoop,
     ternary: Ternary,
-    optional_block: OptionalBlock,
     block: Block,
     var_decl: VarDecl,
     fn_decl: FnDecl,

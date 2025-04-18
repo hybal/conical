@@ -69,19 +69,7 @@ fn print_tree(node: ?*ast.Ast) void {
             }
         },
         .assignment => |expr| {
-            if (expr.lvalue.derefs > 0) {
-                for (0..expr.lvalue.derefs) |_| {
-                    std.debug.print("*", .{});
-                }
-            }
-            std.debug.print("{s}", .{expr.lvalue.ident.span.get_string(source)});
-            if (expr.lvalue.array_access) |arrs| {
-                for (arrs) |arr| {
-                    std.debug.print("[", .{});
-                    print_tree(arr);
-                    std.debug.print("]", .{});
-                }
-            }
+            print_tree(expr.lvalue);
             std.debug.print(" {s} ", .{expr.op.span.get_string(source)});
             print_tree(expr.expr);
         },
@@ -127,8 +115,9 @@ fn print_tree(node: ?*ast.Ast) void {
 
 
 pub fn main() !u8 {
-    var child: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    var gpa = std.heap.ArenaAllocator.init(child.allocator());
+    const page_allocator = std.heap.page_allocator;
+    var gpa = std.heap.ArenaAllocator.init(page_allocator);
+    
     const args = try std.process.argsAlloc(gpa.allocator());
     defer std.process.argsFree(gpa.allocator(), args);
 
@@ -143,18 +132,18 @@ pub fn main() !u8 {
     var session = diag.Session.init(gpa.allocator(), source);
     var parser = parse.init_from_source(source, &session, gpa.allocator());
     var context = try sema.init_context(source, &session, gpa.allocator());
-    const trees = parser.parse() catch {
+    const trees = parser.parse() catch |err| {
         try session.flush(std.io.getStdErr().writer());
-        return 1;
+        return err;
     };
     for (trees) |tree| {
         print_tree(tree);
         std.debug.print("\n", .{});
     }
 
-    sema.resolve(&context, trees) catch {
+    sema.resolve(&context, trees) catch |err| {
         try session.flush(std.io.getStdErr().writer());
-        return 1;
+        return err;
     };
     return 0;
 }

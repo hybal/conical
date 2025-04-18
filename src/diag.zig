@@ -50,8 +50,6 @@ pub const Session = struct {
             const line, const col = self.get_loc(diag);
             const src_span = self.get_line(diag);
             const src_line = self.source[src_span.start..src_span.end];
-            //const new_start = @intFromPtr(src_line.ptr) - @intFromPtr(self.source.ptr);
-            //const start = diag.span.end - new_start;
             try writer.print(
                 "{s}{s} [{};{}]:\x1b[0m {s}\n{s}\n{s}\n",
                 .{
@@ -75,8 +73,8 @@ pub const Session = struct {
     }
     fn get_line(self: *@This(), diag: Diag) struct {length: usize, start: usize, end: usize}  {
         var start = diag.span.start;
-        var length: usize = 0;
         var end = diag.span.end;
+        var length: usize = 0;
         var found_start = false;
         var found_end = false;
         while (!found_start or !found_end) {
@@ -84,7 +82,7 @@ pub const Session = struct {
                 switch (self.source[start]) {
                     '\n', '\r', 0 => found_start = true,
                     '\t' => {
-                        length += 8;
+                        length += 4;
                         start -= 1;
                     },
                     else => {
@@ -96,7 +94,6 @@ pub const Session = struct {
             if (!found_end) {
                 switch(self.source[end]) {
                     '\n', '\r', 0 => found_end = true,
-                    '\t' => end += 7,
                     else => end += 1
                 }
             }

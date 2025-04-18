@@ -22,13 +22,13 @@ pub const Tag = enum {
     ident, // [a-zA-Z_] [a-zA-Z_0-9]*
     //Symbols
     plus, //+
-    pluseq,
+    pluseq, //+=
     plus2, //++
     minus, //-
-    minuseq,
+    minuseq, //-=
     minus2, //--
     slash, // /
-    slasheq,
+    slasheq, // /=
     back_slash, //\
     star, //*
     stareq, //*=
