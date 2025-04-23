@@ -134,6 +134,7 @@ pub const Type = struct {
     },
     modifiers: ?[]TypeModifier,
     pub const unit: Type = .{ .base_type = .{ .primitive = .Unit}, .modifiers = null};
+    pub const Bool: Type = .{ .base_type = .{ .primitive = .Bool}, .modifiers = null};
 };
 
 

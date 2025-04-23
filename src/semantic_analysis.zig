@@ -1,7 +1,7 @@
 const std = @import("std");
 const ast = @import("Ast.zig");
 const Ast = ast.Ast;
-
+const main = @import("main.zig");
 const diag = @import("diag.zig");
 const types = @import("types.zig");
 
@@ -44,6 +44,10 @@ pub const Context = struct {
         if (self.symtab.items.len == 0) return null;
         return self.symtab.getLast().get(key);
     }
+    fn getScope(self: *@This()) ?types.SymTab {
+        if (self.symtab.items.len == 0) return null;
+        return self.symtab.getLast();
+    }
 };
 
 
@@ -51,6 +55,8 @@ pub fn resolve(self: *Context, trees: []*Ast) !void {
     try resolve_global(self, trees);
     for (trees) |tree| {
         try resolve_local(self, tree);
+        main.print_type(try type_check(self, tree));
+        std.debug.print("\n", .{});
     }
 }
 fn resolve_global(self: *Context, trees: []*Ast) !void {
@@ -94,14 +100,6 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
     switch (tree.node) {
         .var_decl => |*decl| {
             if (self.at_global) {
-                if (decl.initialize) |init| {
-                    try resolve_local(self, init);
-                    if (decl.ty) |ty| {
-                        try check_type_equality(self, try type_check(self, init), ty);
-                    } else {
-                        decl.ty = try type_check(self, init);
-                    }
-                }
                 return;
             }
             if (!self.contains(decl.ident.span.get_string(self.source))) {
@@ -126,9 +124,12 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
                 }
                 const prev_in_func = self.in_func;
                 self.in_func = true;
+                const prev_in_global = self.at_global;
+                self.at_global = false;
                 try resolve_local(self, body);
-                try check_type_equality(self, decl.return_ty, try type_check(self, body));
+                //try check_type_equality(self, decl.return_ty, try type_check(self, body));
                 self.in_func = prev_in_func;
+                self.at_global = prev_in_global;
             }
             if (self.at_global) return;
             if (!self.contains(decl.ident.span.get_string(self.source))) {
@@ -194,29 +195,41 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
         else => |val| {
             std.debug.print("Unsupported operation: {s}\n", .{@tagName(val)});
             return error.UnsupportedOperation;
-        }
+}
     }
 }
 
-//TODO: Check that operators work with the types
 //TODO: Do type coercian
 fn type_check(self: *Context, tree: *Ast) !ast.Type {
     switch (tree.node) {
         .terminal => |term| {
-            var out_type: ast.Type = .{ .base_type = .{ .primitive = .Unit }, .modifiers = null };
-            var modifiers = std.ArrayList(ast.TypeModifier).init(self.gpa);
+            var out_type: ast.Type = ast.Type.unit;
             switch (term.tag) {
                 .int_literal => out_type.base_type = .{ .primitive = .I32 }, //TODO: automatically widen the type to acomodate a larger literal / automatically determine sign
                 .float_literal => out_type.base_type = .{ .primitive = .F32 },
                 .string_literal, .raw_string_literal => {
                     out_type.base_type = .{ .primitive = .U8 };
+                    var modifiers = std.ArrayList(ast.TypeModifier).init(self.gpa);
                     try modifiers.append(.Slice);
+                    out_type.modifiers = try modifiers.toOwnedSlice();
                 },
                 .char_literal => out_type.base_type = .{ .primitive = .U8 },
                 .keyword_true, .keyword_false => out_type.base_type = .{ .primitive = .Bool },
+                .ident => {
+                    const val = self.get(term.span.get_string(self.source));
+                    if (val == null) {
+                        std.debug.print("Unknown Identifier: {s}\n", .{term.span.get_string(self.source)});
+                        return error.UnknownIdentifier;
+                    }
+                    
+                    const nval = val.?;
+                    if (nval.ty == null) {
+                        _ = try type_check(self, nval.ast);
+                    }
+                    out_type = nval.ty.?;
+                },
                 else => {}
             }
-            out_type.modifiers = try modifiers.toOwnedSlice();
             return out_type;
         },
         .terminated => |expr| {
@@ -226,16 +239,19 @@ fn type_check(self: *Context, tree: *Ast) !ast.Type {
         .binary_expr => |expr| {
             const left = try type_check(self, expr.left);
             const right = try type_check(self, expr.right);
-            try check_type_equality(self, left, right);
             switch (expr.op.tag) {
                 .plus, .minus, .slash, .star, .caret, .percent,
                 .pipe, .amp, .shl, .shr => {
+                    try check_type_equality(self, left, right);
                     return left;
                 },
-                .pipe2, .amp2, .eq2, .noteq, .lt, .lteq, .gt, .gteq => {
-                    var out = ast.Type.unit;
-                    out.base_type.primitive = .Bool;
-                    return out;
+                .eq2, .noteq, .lt, .lteq, .gt, .gteq => {
+                    try check_type_equality(self, left, right);
+                    return ast.Type.Bool;
+                },
+                .pipe2, .amp2 => {
+                    try check_type_equality(self, ast.Type.Bool, left);
+                    return ast.Type.Bool;
                 },
                 else => unreachable
             }
@@ -255,7 +271,7 @@ fn type_check(self: *Context, tree: *Ast) !ast.Type {
         .fn_decl => |decl| {
             if (decl.body) |body| {
                 const ret = try type_check(self, body);
-                try check_type_equality(self, ret, decl.return_ty);
+                try check_type_equality(self, decl.return_ty, ret);
             }
             return decl.return_ty;
         },
@@ -291,9 +307,39 @@ fn type_check(self: *Context, tree: *Ast) !ast.Type {
             try check_type_equality(self, blk, ast.Type.unit);
             return ast.Type.unit;
         },
-        else => {}
+        .ternary => |expr| {
+            var bol = ast.Type.unit;
+            bol.base_type.primitive = .Bool;
+            try check_type_equality(self, try type_check(self, expr.condition), bol);
+            const out = try type_check(self, expr.true_path);
+            try check_type_equality(self,
+                out,
+                try type_check(self, expr.false_path)
+            );
+            return out;
+        },
+        .var_decl => |stmt| {
+            if (stmt.ty == null and stmt.initialize == null) {
+                try self.session.emit(.Error, tree.span, "Variable declerations without initializations must have explicit types");
+                return error.UntypedVariable;
+            }
+            var ty = stmt.ty;
+            if (ty == null) {
+                ty = try type_check(self, stmt.initialize.?);
+            } else if (stmt.initialize) |initt| {
+                try check_type_equality(self,
+                    ty.?,
+                    try type_check(self, initt)
+                );
+            }
+            var sym = self.getScope().?.getPtr(stmt.ident.span.get_string(self.source)) orelse return error.UnknownIdentifier;
+            sym.ty = ty;
+            
+            return ast.Type.unit;
+
+        },
+        else => unreachable
     }
-    unreachable;
 }
 
 
@@ -314,7 +360,7 @@ fn check_type_equality(self: *Context, left: ast.Type, right: ast.Type) !void {
             return error.TypeMismatch;
         }
         if (left.base_type.primitive != right.base_type.primitive) {
-            std.debug.print("Expected Type: {any}, got: {any}\n", .{left.base_type.primitive, right.base_type.primitive});
+            std.debug.print("Expected Type: {s}, got: {s}\n", .{@tagName(left.base_type.primitive), @tagName(right.base_type.primitive)});
             return error.TypeMismatch;
         }
     }

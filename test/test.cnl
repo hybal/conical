@@ -1,4 +1,10 @@
-fn main() -> i32 {
-    let a = 2;
-    2
+fn main() -> bool {
+    let a = if true {
+        false
+    } else {
+        true
+    };
+    a || true
 }
+
+

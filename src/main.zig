@@ -9,7 +9,7 @@ const diag = @import("diag.zig");
 
 var source: []const u8 = "let a = 1;";
 
-fn print_type(ty: ast.Type) void {
+pub fn print_type(ty: ast.Type) void {
     if (ty.modifiers) |mods| {
         for (mods) |mod| {
             std.debug.print("{s} ", .{mod.get_string(source)});
