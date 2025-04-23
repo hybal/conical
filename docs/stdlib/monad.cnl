@@ -1,9 +1,0 @@
-mod std::core::Monad;
-
-fn id<T>(x) :: T->T => x;
-
-trait Monad<M<_>> {
-    fn pure<A> :: A->M<A>;
-    fn bind<A, B> :: (M<A>, A->M<B>) -> M<B>;
-}
-

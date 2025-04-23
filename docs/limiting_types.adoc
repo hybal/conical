@@ -1,9 +1,0 @@
-= Limiting Types
-:hardbreaks:
-
-Limiting types are types that have certain constraints that define how they can and cannot be used. For example, you can make an integer only accept a certain range of numbers by "limiting" it to those numbers.
-[conical, source]
-----
-type ZeroToOne = f32 where $v >= 0.0 && $v <= 1.0;
-----
-here $v represents the value that is being assigned. Note that the expression after the `where` must be able to be evaluated at compile-time.
