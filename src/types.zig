@@ -7,6 +7,11 @@ pub const Span = struct {
     pub fn get_string(self: *const Span, source: []const u8) []const u8 {
         return source[self.start..self.end];
     }
+    pub fn merge(self: *@This(), other: Span) @This() {
+        self.start = @min(self.start, other.start);
+        self.end = @max(self.end, other.end);
+        return self.*;
+    }
 
 };
 

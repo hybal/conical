@@ -4,6 +4,7 @@ const Ast = ast.Ast;
 const main = @import("main.zig");
 const diag = @import("diag.zig");
 const types = @import("types.zig");
+const mem = @import("mem.zig");
 
 pub fn init_context(source: []const u8, session: *diag.Session, gpa: std.mem.Allocator) !Context {
     return .{
@@ -42,7 +43,12 @@ pub const Context = struct {
     }
     fn get(self: *@This(), key: []const u8) ?types.Symbol {
         if (self.symtab.items.len == 0) return null;
-        return self.symtab.getLast().get(key);
+        for (0..self.symtab.items.len) |i| {
+            if (self.symtab.items[self.symtab.items.len - 1 - i].get(key)) |val| {
+                return val;
+            }
+        }
+        return null;
     }
     fn getScope(self: *@This()) ?types.SymTab {
         if (self.symtab.items.len == 0) return null;
@@ -77,8 +83,20 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
             },
             .fn_decl => |decl| {
                 if (!self.contains(decl.ident.span.get_string(self.source))) {
+                    var args = std.ArrayList(ast.Type).init(self.gpa);
+                    for (decl.param_types) |ty| {
+                        try args.append(ty);
+                    }
                     try self.push(decl.ident.span.get_string(self.source), .{
-                        .ty = decl.return_ty,
+                        .ty = .{
+                            .base_type = .{
+                                .func = .{
+                                    .args = try args.toOwnedSlice(),
+                                    .ret = try mem.createWith(self.gpa, decl.return_ty),
+                                },
+                            },
+                            .modifiers = null
+                        },
                         .ident = decl.ident.span,
                         .ast = tree
                     });
@@ -127,14 +145,25 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
                 const prev_in_global = self.at_global;
                 self.at_global = false;
                 try resolve_local(self, body);
-                //try check_type_equality(self, decl.return_ty, try type_check(self, body));
                 self.in_func = prev_in_func;
                 self.at_global = prev_in_global;
             }
             if (self.at_global) return;
             if (!self.contains(decl.ident.span.get_string(self.source))) {
+                var args = std.ArrayList(ast.Type).init(self.gpa);
+                for (decl.param_types) |ty| {
+                    try args.append(ty);
+                }
                 try self.push(decl.ident.span.get_string(self.source), .{
-.ty = null,
+                    .ty = .{
+                        .base_type = .{
+                            .func = .{
+                                .args = try args.toOwnedSlice(),
+                                .ret = try mem.createWith(self.gpa, decl.return_ty),
+                            },
+                        },
+                        .modifiers = null
+                    },
                     .ident = decl.ident.span,
                     .ast = tree
                 });
@@ -191,6 +220,12 @@ fn resolve_local(self: *Context, tree: *Ast) !void {
             self.in_loop = true;
             try resolve_local(self, stmt.block);
             self.in_loop = in_loop_prev;
+        },
+        .fn_call => |expr| {
+            try resolve_local(self, expr.func);
+            for (expr.args) |fnc| {
+                try resolve_local(self, fnc);
+            }
         },
         else => |val| {
             std.debug.print("Unsupported operation: {s}\n", .{@tagName(val)});
@@ -273,7 +308,11 @@ fn type_check(self: *Context, tree: *Ast) !ast.Type {
                 const ret = try type_check(self, body);
                 try check_type_equality(self, decl.return_ty, ret);
             }
-            return decl.return_ty;
+            const out = self.get(decl.ident.span.get_string(self.source));
+            if (out) |t| {
+                return t.ty.?;
+            }
+            return error.UnknownIdentifier;
         },
         .block => |expr| {
             for(expr.exprs[0..expr.exprs.len - 1]) |exp| {
@@ -336,6 +375,15 @@ fn type_check(self: *Context, tree: *Ast) !ast.Type {
             sym.ty = ty;
             
             return ast.Type.unit;
+
+        },
+        .fn_call => |expr| {
+            const left = try type_check(self, expr.func);
+            if (left.base_type != .func) {
+                try self.session.emit(.Error, tree.span, "Attempt to call a non-function type");
+                return error.NonFunctionCall;
+            }
+            return left.base_type.func.ret.*;
 
         },
         else => unreachable

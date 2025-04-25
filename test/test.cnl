@@ -1,10 +1,10 @@
-fn main() -> bool {
-    let a = if true {
-        false
-    } else {
-        true
-    };
-    a || true
+fn main() -> i32 {
+    let a = add(1, 2);
+    a
+}
+
+fn add(a, b): (i32, i32) -> i32 {
+    a + b
 }
 
 

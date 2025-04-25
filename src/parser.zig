@@ -640,8 +640,36 @@ fn unary(self: *@This()) anyerror!*Ast {
         }}, span);
         return try mem.createWith(self.gpa, out);
     }
-    return try self.primary();
+    return try self.fn_call();
 }
+
+
+fn fn_call(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index
+    };
+
+    const left = try self.primary();
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
+        var args = std.ArrayList(*Ast).init(self.gpa);
+        while (!self.lexer.is_next_token(.close_paren)) {
+            try args.append(try self.expression());
+            if (!self.lexer.is_next_token(.close_paren)) {
+                try self.expect(.comma);
+            }
+        }
+        try self.expect(.close_paren);
+        span.end = self.lexer.index;
+        const out: Ast = Ast.create(.{ .fn_call = .{
+            .func = left,
+            .args = try args.toOwnedSlice()
+        }}, span);
+        return try mem.createWith(self.gpa, out);
+    }
+    return left;
+}
+
 fn primary(self: *@This()) anyerror!*Ast {
     var span: types.Span = .{
         .start = self.lexer.index,

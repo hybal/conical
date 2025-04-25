@@ -21,7 +21,16 @@ pub fn print_type(ty: ast.Type) void {
         },
         .user => |val| {
             std.debug.print("{s} ", .{val.span.get_string(source)});
-        }
+        },
+        .func => |func| {
+            std.debug.print("(", .{});
+            for (func.args) |arg| {
+                print_type(arg);
+                std.debug.print(",", .{});
+            }
+            std.debug.print(") -> ", .{});
+            print_type(func.ret.*);
+        },
     }
 }
 fn print_tree(node: ?*ast.Ast) void {
@@ -106,6 +115,15 @@ fn print_tree(node: ?*ast.Ast) void {
         .terminated => |expr| {
             print_tree(expr);
             std.debug.print("; ", .{});
+        },
+        .fn_call => |expr| {
+            print_tree(expr.func);
+            std.debug.print("(", .{});
+            for (expr.args) |arg| {
+                print_tree(arg);
+                std.debug.print(", ", .{});
+            }
+            std.debug.print(")", .{});
         },
         else => |thing| std.debug.print("unkown: {any}\n", .{thing}),
     }

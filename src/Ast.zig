@@ -127,9 +127,16 @@ pub const TypeModifier = union(enum) {
 pub const Ident = struct {
     span: types.Span,
 };
+
+pub const FuncType = struct {
+    args: []Type,
+    ret: *Type
+};
+
 pub const Type = struct {
     base_type: union(enum) {
         primitive: PrimitiveType,
+        func: FuncType,
         user: Ident
     },
     modifiers: ?[]TypeModifier,
@@ -165,6 +172,12 @@ pub const FnDecl = struct {
     return_ty: Type,
     body: ?*Ast
 };
+
+pub const FnCall = struct {
+    func: *Ast,
+    args: []*Ast
+};
+
 pub const IfStmt = struct {
     condition: *Ast,
     block: *Ast,
@@ -208,6 +221,7 @@ pub const AstNode = union(enum) {
     block: Block,
     var_decl: VarDecl,
     fn_decl: FnDecl,
+    fn_call: FnCall,
     terminated: *Ast,
     _,
 };
