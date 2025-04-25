@@ -178,6 +178,18 @@ pub const FnCall = struct {
     args: []*Ast
 };
 
+
+pub const Struct = struct {
+    ident: Ident,
+    fields: std.StringHashMap(Type)
+};
+
+
+pub const Enum = struct {
+    ident: Ident,
+    varients: std.StringHashMap(?Type)
+};
+
 pub const IfStmt = struct {
     condition: *Ast,
     block: *Ast,

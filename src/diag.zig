@@ -48,8 +48,8 @@ pub const Session = struct {
     pub fn flush(self: *@This(), writer: anytype) !void {
         for (self.diags.items) |diag| {
             const line, const col = self.get_loc(diag);
-            const src_span = self.get_line(diag);
-            const src_line = self.source[src_span.start..src_span.end];
+            //const src_span = self.get_line(diag);
+            //const src_line = self.source[src_span.start..src_span.end];
             try writer.print(
                 "{s}{s} [{};{}]:\x1b[0m {s}\n{s}\n{s}\n",
                 .{
@@ -58,8 +58,8 @@ pub const Session = struct {
                     line,
                     col,
                     diag.message,
-                    src_line,
-                    try self.get_marker_line(src_span.length)
+                    self.source[diag.span.start..diag.span.end],
+                    try self.get_marker_line(diag.span.end - diag.span.start)
                 });
                     
         }
