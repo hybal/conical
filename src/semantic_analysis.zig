@@ -227,6 +227,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
             return error.Unknown;
         },
         .block => |expr| {
+            if (expr.exprs.len == 0) {
+                return ast.Type.unit;
+            }
             try self.symtab.append(types.SymTab.init(self.gpa));
             for(expr.exprs[0..expr.exprs.len - 1]) |exp| {
                 try check_type_equality(self, tree.span, ast.Type.unit, try analyze(self, exp) );
@@ -294,7 +297,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
         .fn_call => |expr| {
             const left = try analyze(self, expr.func);
             if (left.base_type != .func) {
-                try self.session.emit(.Error, tree.span, "Attempt to call a non-function type");
+                try self.session.emit(.Error, expr.func.span, "Attempt to call a non-function type");
                 return error.NonFunctionCall;
             }
             return left.base_type.func.ret.*;
