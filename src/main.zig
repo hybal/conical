@@ -154,14 +154,15 @@ pub fn main() !u8 {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
+    sema.resolve(&context, trees) catch |err| {
+        try session.flush(std.io.getStdErr().writer());
+        return err;
+    };
+
     for (trees) |tree| {
         print_tree(tree);
         std.debug.print("\n", .{});
     }
 
-    sema.resolve(&context, trees) catch |err| {
-        try session.flush(std.io.getStdErr().writer());
-        return err;
-    };
     return 0;
 }

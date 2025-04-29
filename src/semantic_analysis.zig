@@ -41,10 +41,10 @@ pub const Context = struct {
     fn push(self: *@This(), key: []const u8, value: types.Symbol) !void {
         try self.symtab.items[self.symtab.items.len-1].put(key, value);
     }
-    fn get(self: *@This(), key: []const u8) ?types.Symbol {
+    fn get(self: *@This(), key: []const u8) ?*types.Symbol {
         if (self.symtab.items.len == 0) return null;
         for (0..self.symtab.items.len) |i| {
-            if (self.symtab.items[self.symtab.items.len - 1 - i].get(key)) |val| {
+            if (self.symtab.items[self.symtab.items.len - 1 - i].getPtr(key)) |val| {
                 return val;
             }
         }
@@ -60,8 +60,7 @@ pub const Context = struct {
 pub fn resolve(self: *Context, trees: []*Ast) !void {
     try resolve_global(self, trees);
     for (trees) |tree| {
-        main.print_type(try analyze(self, tree));
-        std.debug.print("\n", .{});
+        _ = try analyze(self, tree);
     }
 }
 fn resolve_global(self: *Context, trees: []*Ast) !void {
@@ -172,9 +171,36 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
             }
         },
         .unary_expr => |expr| {
-            const ty = try analyze(self, expr.expr);
+            var ty = try analyze(self, expr.expr);
             switch (expr.op.tag) {
-                .minus, .tilde, .star, .amp => return ty,
+                .minus, .tilde => return ty,
+                .amp => {
+                    var mods: std.ArrayList(ast.TypeModifier) = undefined;
+                    if (ty.modifiers) |modd| {
+                        mods = .fromOwnedSlice(self.gpa, modd);
+                    } else {
+                        mods = .init(self.gpa);
+                    }
+                    try mods.append(.Ref);
+                    ty.modifiers = try mods.toOwnedSlice();
+                    return ty;
+                },
+                .star => {
+                    if (ty.modifiers == null 
+                        or ty.modifiers.?.len == 0
+                        or ty.modifiers.?[0] != .Ref) {
+                        try self.session.emit(.Error, expr.expr.span, "Dereference of non-reference type");
+                        return error.InvalidDeref;
+                    } 
+
+                    var mods: std.ArrayList(ast.TypeModifier) = undefined;
+                    if (ty.modifiers) |modd| {
+                        mods = .fromOwnedSlice(self.gpa, modd);
+                    } 
+                    _ = mods.orderedRemove(0);
+                    ty.modifiers = try mods.toOwnedSlice();
+                    return ty;
+                },
                 .bang => {
                     return ast.Type.Bool;
                 },
@@ -203,7 +229,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                     });
                 } 
             }
-            
+
             if (decl.body) |body| {
                 try self.symtab.append(types.SymTab.init(self.gpa));
                 for (decl.params, 0..) |param, i| {
@@ -275,24 +301,27 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
             );
             return out;
         },
-        .var_decl => |stmt| {
-
-            if(!self.contains(stmt.ident.span.get_string(self.source))) {
-                if (stmt.ty == null and stmt.initialize == null) {
-                    try self.session.emit(.Error, tree.span, "Variable decleration without initialization must have an explicit type");
-                    return error.VariableDeclerationWithoutExplicitType;
-                }
-                var ty = stmt.ty;
-                if (ty == null) {
-                    ty = try analyze(self, stmt.initialize.?);
-                }
+        .var_decl => |*stmt| {
+            if (stmt.ty == null and stmt.initialize == null) {
+                try self.session.emit(.Error, tree.span, "Variable decleration without initialization must have an explicit type");
+                return error.VariableDeclerationWithoutExplicitType;
+            }
+            var ty = stmt.ty;
+            if (ty == null) {
+                ty = try analyze(self, stmt.initialize.?);
+                stmt.ty = ty;
+            }
+            if (!self.contains(stmt.ident.span.get_string(self.source))) {
                 try self.push(stmt.ident.span.get_string(self.source), .{
                     .ty = ty,
                     .ident = stmt.ident.span,
                     .ast = tree
                 });
-            } 
-            return self.get(stmt.ident.span.get_string(self.source)).?.ty.?;
+            } else {
+                var val = self.get(stmt.ident.span.get_string(self.source)).?;
+                val.ty = ty;
+            }
+            return ast.Type.unit;
         },
         .fn_call => |expr| {
             const left = try analyze(self, expr.func);
@@ -309,30 +338,27 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
 
 
 fn check_type_equality(self: *Context, span: types.Span, left: ast.Type, right: ast.Type) !void {
-    if (left.base_type == .user) {
-        if (right.base_type == .primitive) {
-            return error.TypeMismatch;
-        }
-        const rid = right.base_type.user.span;
-        const lid = left.base_type.user.span;
-        if (rid.start != lid.start or rid.end != lid.end) {
-            const msg = try std.fmt.allocPrint(self.gpa, "Expected Type: {s}, got: {s}\n", .{rid.get_string(self.source), lid.get_string(self.source)});
-            try self.session.emit(.Error, span, msg);
-            return error.TypeMismatch;
-
-        }
-        return error.OperatorNotDefinedBetweenUserTypes; 
+    var lhash: u64 = 0;
+    var rhash: u64 = 0;
+    if (left.chash == null) {
+        lhash = left.hash();
     } else {
-        if (right.base_type != .primitive) {
-            return error.TypeMismatch;
-        }
-        if (left.base_type.primitive != right.base_type.primitive) {
-            const msg = try std.fmt.allocPrint(self.gpa, "Expected Type: {s}, got: {s}\n", .{@tagName(left.base_type.primitive), @tagName(right.base_type.primitive)});
-            try self.session.emit(.Error, span, msg);
-            return error.TypeMismatch;
-        }
+        lhash = left.chash.?;
+    }
+    if (right.chash == null) {
+        rhash = right.hash();
+    } else {
+        rhash = right.chash.?;
     }
 
+    if (lhash != rhash) {
+        const msg = try std.fmt.allocPrint(self.gpa,
+            "Expected Type: {s}, got: {any}\n", 
+            .{@tagName(left.base_type.primitive), right}
+        );
+        try self.session.emit(.Error, span, msg);
+        return error.TypeMismatch;
+    }
 }
 
 

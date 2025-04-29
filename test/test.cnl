@@ -1,9 +1,7 @@
 
 fn main() -> i32 {
-    fn sub(a, b): (i32, i32) -> i32 {
-        a - b
-    }
-    true == false ? 1
+    let b = 1;
+    &b
 }
 fn add(a, b): (i32, i32) -> i32 {
     a + b + 1

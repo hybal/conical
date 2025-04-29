@@ -185,7 +185,7 @@ fn parse_type(self: *@This()) !AstTypes.Type {
             if (AstTypes.PrimitiveType.prims.get(ty.span.get_string(self.lexer.buffer))) |val| {
                 base_ty.base_type = .{ .primitive = val };
             } else {
-                base_ty.base_type = .{ .user = .{ .span = ty.span } };
+                base_ty.base_type = .{ .user = .{ .span = ty.span, .value = ty.span.get_string(self.lexer.buffer) } };
             }
         }
     }
@@ -238,7 +238,7 @@ fn fn_decl(self: *@This()) !*Ast {
         while (!self.lexer.is_next_token(.close_paren)) {
             const tok = self.lexer.next_token();
             if (tok.tag == .ident) {
-                try params.append(.{ .span = tok.span });
+                try params.append(.{ .span = tok.span, .value = tok.span.get_string(self.lexer.buffer)});
             } else if (tok.tag == .comma) {
                 if (self.lexer.is_next_token(.close_paren)) {
                     try self.session.emit(.Error, span, "Parameter list contains an extra comma");
@@ -285,7 +285,7 @@ fn fn_decl(self: *@This()) !*Ast {
             _ = self.lexer.next_token();
         }
         const out: Ast = Ast.create(.{ .fn_decl = .{
-            .ident = .{ .span = ident.span },
+            .ident = .{ .span = ident.span, .value = ident.span.get_string(self.lexer.buffer)},
             .params = try params.toOwnedSlice(),
             .param_types = try param_types.toOwnedSlice(),
             .return_ty = return_ty,
@@ -326,7 +326,7 @@ fn var_decl(self: *@This()) !*Ast {
         }
         var out: Ast = Ast.create(.{ .var_decl = .{
             .is_mut = key.tag == .keyword_mut,
-            .ident = .{ .span = ident.span },
+            .ident = .{ .span = ident.span, .value = ident.span.get_string(self.lexer.buffer)},
             .ty = ty,
             .initialize = initial
         }}, span);

@@ -89,7 +89,11 @@ pub const PrimitiveType = enum {
     pub fn from_string(str: []const u8) ?@This() {
         return prims.get(str);
     }
-    //will need to decide if c types are builtin or in stdlib
+
+
+    pub fn hash(self: *const @This()) u64 {
+        return @intFromEnum(self.*);
+    }
 };
 
 pub const TypeModifier = union(enum) {
@@ -122,15 +126,45 @@ pub const TypeModifier = union(enum) {
             else => unreachable
         }
     }
+    pub fn equal(self: *const @This(), other: @This()) bool {
+        if (self.Array) |sarr| {
+            if (other.Array) |oarr| {
+                return sarr.tag == oarr.tag;
+            }
+            return true;
+        }
+        return self == other;
+    }
+
+    pub fn hash(self: *const @This()) u64 {
+        switch (self.*) {
+            .Array => |val| {
+                //IMPORTANT: Make sure to keep this up to date with the last enum varient
+                return @intFromEnum(@This().PtrConst) + @intFromEnum(val.tag);
+            },
+            else => {
+                return @intFromEnum(self.*);
+            }
+        }
+    }
 };
 
 pub const Ident = struct {
     span: types.Span,
+    value: []const u8
 };
 
 pub const FuncType = struct {
     args: []Type,
-    ret: *Type
+    ret: *Type, //This is only a pointer because zig complains
+
+    
+    pub fn hash(self: *const @This(), hasher: *std.hash.Fnv1a_64) void {
+        hasher.update(std.mem.asBytes(&self.ret.*.hash()));
+        for (self.args) |arg| {
+            hasher.update(std.mem.asBytes(&(arg.hash())));
+        }
+    }
 };
 
 pub const Type = struct {
@@ -140,8 +174,34 @@ pub const Type = struct {
         user: Ident
     },
     modifiers: ?[]TypeModifier,
+    chash: ?u64 = null,
     pub const unit: Type = .{ .base_type = .{ .primitive = .Unit}, .modifiers = null};
     pub const Bool: Type = .{ .base_type = .{ .primitive = .Bool}, .modifiers = null};
+
+    pub fn equal(self: *const @This(), other: @This()) bool {
+        return self.hash() == other.hash();
+    }
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        switch (self.base_type) {
+            .primitive => |prim| {
+                hasher.update(std.mem.asBytes(&(prim.hash())));
+            },
+            .func => |func| {
+                func.hash(&hasher);
+            },
+            .user => |ident| {
+                hasher.update(ident.value);
+            }
+        }
+        if (self.modifiers) |mods| {
+            for (mods) |mod| {
+                hasher.update(std.mem.asBytes(&mod.hash()));
+            }
+        }
+
+        return hasher.final();
+    }
 };
 
 
