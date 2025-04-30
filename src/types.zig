@@ -136,7 +136,7 @@ pub const Token = struct {
 
 
 pub const Symbol = struct {
-    ty: ?Ast.Type,
+    ty: ?Ast.TypeId,
     ident: Span,
     ast: *Ast.Ast
 };

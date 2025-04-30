@@ -175,13 +175,11 @@ pub const Type = struct {
     },
     modifiers: ?[]TypeModifier,
     chash: ?u64 = null,
-    pub const unit: Type = .{ .base_type = .{ .primitive = .Unit}, .modifiers = null};
-    pub const Bool: Type = .{ .base_type = .{ .primitive = .Bool}, .modifiers = null};
 
-    pub fn equal(self: *const @This(), other: @This()) bool {
-        return self.hash() == other.hash();
-    }
     pub fn hash(self: *const @This()) u64 {
+        if (self.chash) |hsh| {
+            return hsh;
+        }
         var hasher = std.hash.Fnv1a_64.init();
         switch (self.base_type) {
             .primitive => |prim| {
@@ -202,12 +200,26 @@ pub const Type = struct {
 
         return hasher.final();
     }
+
+    pub fn equal(self: *const @This(), other: *const @This()) bool {
+        return self.hash() == other.hash();
+    }
+
+    pub fn createPrimitive(prim: PrimitiveType, modifiers: ?[]TypeModifier) @This() {
+        return .{
+            .base_type = .{
+                .primitive = prim,
+            },
+            .modifiers = modifiers
+        };
+    }
+
 };
 
 
 pub const VarDecl = struct {
     ident: Ident,
-    ty: ?Type,
+    ty: ?TypeId,
     is_mut: bool,
     initialize: ?*Ast
 };
@@ -228,8 +240,8 @@ pub const FnDecl = struct {
     fn_mod: ?FnModifier,
     ident: Ident,
     params: []Ident, //TODO: move parameter list into a list of VarDecl
-    param_types: []Type,
-    return_ty: Type,
+    param_types: []TypeId,
+    return_ty: TypeId,
     body: ?*Ast
 };
 
@@ -270,6 +282,8 @@ pub const Ternary = struct {
 pub const Block = struct {
     exprs: []*Ast
 };
+
+pub const TypeId = u64;
 
 pub const Ast = struct {
     node: AstNode,

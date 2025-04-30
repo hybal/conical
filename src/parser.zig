@@ -168,7 +168,7 @@ fn parse_type(self: *@This()) !AstTypes.Type {
         }
         try modifiers.append(mod);
     }
-    var base_ty: AstTypes.Type = .{.base_type = .{ .primitive = .Unit}, .modifiers = if (modifiers.items.len > 0) try modifiers.toOwnedSlice() else null };
+    var base_ty: AstTypes.Type = .createPrimitive(.Unit, if (modifiers.items.len > 0) try modifiers.toOwnedSlice() else null );
     if (self.lexer.consume_if_eq(&[_]types.Tag{.ident, .open_paren})) |ty| {
         if (ty.tag == .open_paren) {
             if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |_| {
@@ -250,11 +250,11 @@ fn fn_decl(self: *@This()) !*Ast {
             }
         }
         _ = self.lexer.next_token();
-        var param_types = std.ArrayList(AstTypes.Type).init(self.gpa);
+        var param_types = std.ArrayList(AstTypes.TypeId).init(self.gpa);
         if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
             if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
                 while (!self.lexer.is_next_token(.close_paren)) {
-                    try param_types.append(try self.parse_type());
+                    try param_types.append((try self.parse_type()).hash());
                     if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {
                         if (self.lexer.is_next_token(.close_paren)) {
                             try self.session.emit(.Error, span, "Type parameter list contains an extra comma");
@@ -264,7 +264,7 @@ fn fn_decl(self: *@This()) !*Ast {
                 }
                 _ = self.lexer.next_token();
             } else {
-                try param_types.append(try self.parse_type());
+                try param_types.append((try self.parse_type()).hash());
             }
         }
         span.merge(.{.start = span.start, .end = self.lexer.index});
@@ -272,7 +272,7 @@ fn fn_decl(self: *@This()) !*Ast {
             try self.session.emit(.Error, span, try std.fmt.allocPrint(self.gpa, "Type list is shorter than the parameter list. Expected: {}, got: {}", .{params.items.len, param_types.items.len}));
             return error.MismatchedParamToTypeLen;
         }
-        var return_ty: AstTypes.Type = AstTypes.Type.unit;
+        var return_ty: AstTypes.Type = AstTypes.Type.createPrimitive(.Unit, null);
         if (self.lexer.consume_if_eq(&[_]types.Tag{.thin_arrow})) |_| {
             return_ty = try self.parse_type();
             span.merge(.{.start = span.start, .end = self.lexer.index});

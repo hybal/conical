@@ -70,7 +70,7 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
             .var_decl => |decl| {
                 if (!self.contains(decl.ident.span.get_string(self.source))) {
                     try self.push(decl.ident.span.get_string(self.source), .{
-                        .ty = decl.ty,
+                        .ty = if (decl.ty) |ty| ty else null,
                         .ident = decl.ident.span,
                         .ast = tree
                     });
@@ -112,11 +112,13 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
 }
 
 
+
+
 //TODO: Do type coercian
 fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
     switch (tree.node) {
         .terminal => |term| {
-            var out_type: ast.Type = ast.Type.unit;
+            var out_type: ast.Type = ast.Type.createPrimitive(.Unit);
             switch (term.tag) {
                 .int_literal => out_type.base_type = .{ .primitive = .I32 }, //TODO: automatically widen the type to acomodate a larger literal / automatically determine sign
                 .float_literal => out_type.base_type = .{ .primitive = .F32 },
@@ -148,7 +150,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
         },
         .terminated => |expr| {
             _ = try analyze(self, expr);
-            return ast.Type.unit;
+            return ast.Type.createPrimitive(.Unit);
         },
         .binary_expr => |expr| {
             const left = try analyze(self, expr.left);
@@ -161,11 +163,11 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                 },
                 .eq2, .noteq, .lt, .lteq, .gt, .gteq => {
                     try check_type_equality(self, tree.span, left, right);
-                    return ast.Type.Bool;
+                    return ast.Type.createPrimitive(.Bool);
                 },
                 .pipe2, .amp2 => {
-                    try check_type_equality(self, tree.span, ast.Type.Bool, left);
-                    return ast.Type.Bool;
+                    try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Bool), left);
+                    return ast.Type.createPrimitive(.Bool);
                 },
                 else => unreachable
             }
@@ -173,7 +175,8 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
         .unary_expr => |expr| {
             var ty = try analyze(self, expr.expr);
             switch (expr.op.tag) {
-                .minus, .tilde => return ty,
+                .minus,
+                .tilde => return ty,
                 .amp => {
                     var mods: std.ArrayList(ast.TypeModifier) = undefined;
                     if (ty.modifiers) |modd| {
@@ -202,7 +205,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                     return ty;
                 },
                 .bang => {
-                    return ast.Type.Bool;
+                    return ast.Type.createPrimitive(.Bool);
                 },
                 else => unreachable
             }
@@ -248,17 +251,18 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                 self.in_func = prev_in_func;
                 self.at_global = prev_in_global;
                 _ = self.symtab.pop();
-                return ast.Type.unit;
+                return ast.Type.createPrimitive(.Unit);
             }
             return error.Unknown;
         },
         .block => |expr| {
             if (expr.exprs.len == 0) {
-                return ast.Type.unit;
+                try self.session.emit(.Warning, tree.span, "Empty block");
+                return ast.Type.createPrimitive(.Unit);
             }
             try self.symtab.append(types.SymTab.init(self.gpa));
             for(expr.exprs[0..expr.exprs.len - 1]) |exp| {
-                try check_type_equality(self, tree.span, ast.Type.unit, try analyze(self, exp) );
+                try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Unit), try analyze(self, exp) );
             }
             const out = try analyze(self, expr.exprs[expr.exprs.len - 1]);
             _ = self.symtab.pop();
@@ -268,30 +272,30 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
             const lvalue = try analyze(self, stmt.lvalue);
             const assigned = try analyze(self, stmt.expr);
             try check_type_equality(self, tree.span, lvalue, assigned);
-            return ast.Type.unit;
+            return ast.Type.createPrimitive(.Unit);
         },
         .if_stmt => |stmt| {
             const cond = try analyze(self, stmt.condition);
-            var bol = ast.Type.unit;
+            var bol = ast.Type.createPrimitive(.Unit);
             bol.base_type.primitive = .Bool;
             try check_type_equality(self, tree.span, cond, bol);
             const blk = try analyze(self, stmt.block);
-            if (stmt.else_block == null) return ast.Type.unit;
+            if (stmt.else_block == null) return ast.Type.createPrimitive(.Unit);
             const else_block = stmt.else_block.?;
             try check_type_equality(self, tree.span, blk, try analyze(self, else_block));
             return blk;
         },
         .while_loop => |stmt| {
             const cond = try analyze(self, stmt.condition);
-            var bol = ast.Type.unit;
+            var bol = ast.Type.createPrimitive(.Unit);
             bol.base_type.primitive = .Bool;
             try check_type_equality(self, tree.span, cond, bol);
             const blk = try analyze(self, stmt.block);
-            try check_type_equality(self, tree.span, blk, ast.Type.unit);
-            return ast.Type.unit;
+            try check_type_equality(self, tree.span, blk, ast.Type.createPrimitive(.Unit));
+            return ast.Type.createPrimitive(.Unit);
         },
         .ternary => |expr| {
-            var bol = ast.Type.unit;
+            var bol = ast.Type.createPrimitive(.Unit);
             bol.base_type.primitive = .Bool;
             try check_type_equality(self, tree.span, try analyze(self, expr.condition), bol);
             const out = try analyze(self, expr.true_path);
@@ -321,7 +325,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                 var val = self.get(stmt.ident.span.get_string(self.source)).?;
                 val.ty = ty;
             }
-            return ast.Type.unit;
+            return ast.Type.createPrimitive(.Unit);
         },
         .fn_call => |expr| {
             const left = try analyze(self, expr.func);

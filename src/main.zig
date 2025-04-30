@@ -158,6 +158,7 @@ pub fn main() !u8 {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
+    try session.flush(std.io.getStdErr().writer());
 
     for (trees) |tree| {
         print_tree(tree);

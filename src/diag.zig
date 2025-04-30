@@ -50,6 +50,7 @@ pub const Session = struct {
             const line, const col = self.get_loc(diag);
             const src_span = self.get_line(diag);
             const src_line = self.source[src_span.start..src_span.end];
+            _ = src_line;
             try writer.print(
                 "{s}{s} [{};{}]: {s}\x1b[0m\n{s}\n{s}{s}\x1b[0m\n",
                 .{
@@ -58,9 +59,9 @@ pub const Session = struct {
                     line,
                     col,
                     diag.message,
-                    src_line,
+                    diag.span.get_string(self.source),
                     diag.severity.get_color(),
-                    try self.get_marker_line(src_span.length, diag.span)
+                    try self.get_marker_line(0, .{.start = 0, .end = diag.span.end - diag.span.start})
                 });
                     
         }
