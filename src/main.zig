@@ -9,7 +9,8 @@ const diag = @import("diag.zig");
 
 var source: []const u8 = "let a = 1;";
 
-pub fn print_type(ty: ast.Type) void {
+pub fn print_type(type_map: *types.TypeTbl, tyid: ast.TypeId) void {
+    const ty = type_map.get(tyid).?;
     if (ty.modifiers) |mods| {
         for (mods) |mod| {
             std.debug.print("{s} ", .{mod.get_string(source)});
@@ -25,76 +26,76 @@ pub fn print_type(ty: ast.Type) void {
         .func => |func| {
             std.debug.print("(", .{});
             for (func.args) |arg| {
-                print_type(arg);
+                print_type(type_map, arg);
                 std.debug.print(",", .{});
             }
             std.debug.print(") -> ", .{});
-            print_type(func.ret.*);
+            print_type(type_map, func.ret);
         },
     }
 }
-fn print_tree(node: ?*ast.Ast) void {
+fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
     if (node == null) return;
     switch (node.?.node) {
         .terminal => |term| {
             std.debug.print("{s} ", .{term.span.get_string(source)});
         },
         .binary_expr => |expr| {
-            print_tree(expr.left);
+            print_tree(type_map, expr.left);
             std.debug.print("{s} ", .{expr.op.span.get_string(source)});
-            print_tree(expr.right);
+            print_tree(type_map, expr.right);
         },
         .unary_expr => |expr| {
             std.debug.print("{s} ", .{expr.op.span.get_string(source)});
-            print_tree(expr.expr);
+            print_tree(type_map, expr.expr);
         },
         .block => |blk| {
             std.debug.print("{{\n", .{});
             for (blk.exprs) |expr| {
                 std.debug.print("    ", .{});
-                print_tree(expr);
+                print_tree(type_map, expr);
                 std.debug.print("\n", .{});
             }
             std.debug.print("}}\n", .{});
         },
         .ternary => |expr| {
-            print_tree(expr.condition);
+            print_tree(type_map, expr.condition);
             std.debug.print(" ? ", .{});
-            print_tree(expr.true_path);
+            print_tree(type_map, expr.true_path);
             std.debug.print(" : ", .{});
-            print_tree(expr.false_path);
+            print_tree(type_map, expr.false_path);
         },
         .var_decl => |decl| {
             std.debug.print("{s} ", .{if (decl.is_mut) "mut" else "let"});
             std.debug.print("{s} ", .{decl.ident.span.get_string(source)});
             if (decl.ty) |ty| {
                 std.debug.print(": ", .{});
-                print_type(ty);
+                print_type(type_map, ty);
             }
             if (decl.initialize) |init| {
                 std.debug.print("= ", .{});
-                print_tree(init);
+                print_tree(type_map, init);
                 std.debug.print(";\n", .{});
             }
         },
         .assignment => |expr| {
-            print_tree(expr.lvalue);
+            print_tree(type_map, expr.lvalue);
             std.debug.print(" {s} ", .{expr.op.span.get_string(source)});
-            print_tree(expr.expr);
+            print_tree(type_map, expr.expr);
         },
         .if_stmt => |stmt| {
             std.debug.print("if ", .{});
-            print_tree(stmt.condition);
-            print_tree(stmt.block);
+            print_tree(type_map, stmt.condition);
+            print_tree(type_map, stmt.block);
             if (stmt.else_block) |eblk| {
                 std.debug.print("else ", .{});
-                print_tree(eblk);
+                print_tree(type_map, eblk);
             }
         },
         .while_loop => |loop| {
             std.debug.print("while ", .{});
-            print_tree(loop.condition);
-            print_tree(loop.block);
+            print_tree(type_map, loop.condition);
+            print_tree(type_map, loop.block);
         },
         .fn_decl => |fnc| {
             std.debug.print("fn ", .{});
@@ -105,22 +106,22 @@ fn print_tree(node: ?*ast.Ast) void {
             }
             std.debug.print("): (", .{});
             for (fnc.param_types) |ty| {
-                print_type(ty);
+                print_type(type_map, ty);
                 std.debug.print(", ", .{});
             }
             std.debug.print(") -> ", .{});
-            print_type(fnc.return_ty);
-            print_tree(fnc.body);
+            print_type(type_map, fnc.return_ty);
+            print_tree(type_map, fnc.body);
         },
         .terminated => |expr| {
-            print_tree(expr);
+            print_tree(type_map, expr);
             std.debug.print("; ", .{});
         },
         .fn_call => |expr| {
-            print_tree(expr.func);
+            print_tree(type_map, expr.func);
             std.debug.print("(", .{});
             for (expr.args) |arg| {
-                print_tree(arg);
+                print_tree(type_map, arg);
                 std.debug.print(", ", .{});
             }
             std.debug.print(")", .{});
@@ -134,10 +135,10 @@ fn print_tree(node: ?*ast.Ast) void {
 
 pub fn main() !u8 {
     const page_allocator = std.heap.page_allocator;
-    var gpa = std.heap.ArenaAllocator.init(page_allocator);
-    
-    const args = try std.process.argsAlloc(gpa.allocator());
-    defer std.process.argsFree(gpa.allocator(), args);
+    var arena_alloc = std.heap.ArenaAllocator.init(page_allocator);
+    const gpa = arena_alloc.allocator();
+    const args = try std.process.argsAlloc(gpa);
+    defer std.process.argsFree(gpa, args);
 
     if (args.len < 2) {
         return error.NotEnoughCmdlineArgs;
@@ -146,10 +147,11 @@ pub fn main() !u8 {
     const file = try std.fs.cwd().openFile(args[1], .{});
     defer file.close();
 
-    source = try file.readToEndAlloc(gpa.allocator(), std.math.maxInt(usize));
-    var session = diag.Session.init(gpa.allocator(), source);
-    var parser = parse.init_from_source(source, &session, gpa.allocator());
-    var context = try sema.init_context(source, &session, gpa.allocator());
+    source = try file.readToEndAlloc(gpa, std.math.maxInt(usize));
+    var session = diag.Session.init(gpa, source);
+    var type_map = try types.init_type_map(gpa); 
+    var parser = parse.init_from_source(source, &session, &type_map, gpa);
+    var context = try sema.init_context(source, &session, &type_map, gpa);
     const trees = parser.parse() catch |err| {
         try session.flush(std.io.getStdErr().writer());
         return err;
@@ -161,7 +163,7 @@ pub fn main() !u8 {
     try session.flush(std.io.getStdErr().writer());
 
     for (trees) |tree| {
-        print_tree(tree);
+        print_tree(&type_map, tree);
         std.debug.print("\n", .{});
     }
 

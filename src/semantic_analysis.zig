@@ -6,9 +6,10 @@ const diag = @import("diag.zig");
 const types = @import("types.zig");
 const mem = @import("mem.zig");
 
-pub fn init_context(source: []const u8, session: *diag.Session, gpa: std.mem.Allocator) !Context {
+pub fn init_context(source: []const u8, session: *diag.Session, type_map: *types.TypeTbl, gpa: std.mem.Allocator) !Context {
     return .{
         .symtab = .init(gpa),
+        .type_map = type_map,
         .scope = 0,
         .source = source,
         .gpa = gpa,
@@ -22,6 +23,7 @@ pub fn init_context(source: []const u8, session: *diag.Session, gpa: std.mem.All
 
 pub const Context = struct {
     symtab: std.ArrayList(types.SymTab),
+    type_map: *types.TypeTbl,
     scope: usize,
     source: []const u8,
     gpa: std.mem.Allocator,
@@ -81,20 +83,23 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
             },
             .fn_decl => |decl| {
                 if (!self.contains(decl.ident.span.get_string(self.source))) {
-                    var args = std.ArrayList(ast.Type).init(self.gpa);
+                    var args = std.ArrayList(ast.TypeId).init(self.gpa);
                     for (decl.param_types) |ty| {
                         try args.append(ty);
                     }
-                    try self.push(decl.ident.span.get_string(self.source), .{
-                        .ty = .{
-                            .base_type = .{
-                                .func = .{
-                                    .args = try args.toOwnedSlice(),
-                                    .ret = try mem.createWith(self.gpa, decl.return_ty),
-                                },
+                    const fnctype: ast.Type = .{
+                        .base_type = .{
+                            .func = .{
+                                .args = try args.toOwnedSlice(),
+                                .ret = decl.return_ty,
                             },
-                            .modifiers = null
                         },
+                        .modifiers = null,
+                    };
+                    const fnctypeid = fnctype.hash();
+                    _ = try self.type_map.getOrPutValue(fnctypeid, fnctype);
+                    try self.push(decl.ident.span.get_string(self.source), .{
+                        .ty = fnctypeid,
                         .ident = decl.ident.span,
                         .ast = tree
                     });
@@ -115,10 +120,10 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
 
 
 //TODO: Do type coercian
-fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
+fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
     switch (tree.node) {
         .terminal => |term| {
-            var out_type: ast.Type = ast.Type.createPrimitive(.Unit);
+            var out_type: ast.Type = ast.Type.createPrimitive(.Unit, null);
             switch (term.tag) {
                 .int_literal => out_type.base_type = .{ .primitive = .I32 }, //TODO: automatically widen the type to acomodate a larger literal / automatically determine sign
                 .float_literal => out_type.base_type = .{ .primitive = .F32 },
@@ -142,15 +147,16 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                     if (nval.ty == null) {
                         _ = try analyze(self, nval.ast);
                     }
-                    out_type = nval.ty.?;
+                    out_type = self.type_map.get(nval.ty.?).?;
                 },
                 else => {}
             }
-            return out_type;
+            _ = try self.type_map.getOrPutValue(out_type.hash(), out_type);
+            return out_type.hash();
         },
         .terminated => |expr| {
             _ = try analyze(self, expr);
-            return ast.Type.createPrimitive(.Unit);
+            return ast.Type.createPrimitive(.Unit, null).hash();
         },
         .binary_expr => |expr| {
             const left = try analyze(self, expr.left);
@@ -163,20 +169,20 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                 },
                 .eq2, .noteq, .lt, .lteq, .gt, .gteq => {
                     try check_type_equality(self, tree.span, left, right);
-                    return ast.Type.createPrimitive(.Bool);
+                    return ast.Type.createPrimitive(.Bool, null).hash();
                 },
                 .pipe2, .amp2 => {
-                    try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Bool), left);
-                    return ast.Type.createPrimitive(.Bool);
+                    try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Bool, null).hash(), left);
+                    return ast.Type.createPrimitive(.Bool, null).hash();
                 },
                 else => unreachable
             }
         },
         .unary_expr => |expr| {
-            var ty = try analyze(self, expr.expr);
+            var ty = self.type_map.get(try analyze(self, expr.expr)).?;
             switch (expr.op.tag) {
                 .minus,
-                .tilde => return ty,
+                .tilde => return ty.hash(),
                 .amp => {
                     var mods: std.ArrayList(ast.TypeModifier) = undefined;
                     if (ty.modifiers) |modd| {
@@ -184,9 +190,10 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                     } else {
                         mods = .init(self.gpa);
                     }
-                    try mods.append(.Ref);
+                    try mods.insert(0,.Ref);
                     ty.modifiers = try mods.toOwnedSlice();
-                    return ty;
+                    _ = try self.type_map.getOrPutValue(ty.hash() ,ty);
+                    return ty.hash();
                 },
                 .star => {
                     if (ty.modifiers == null 
@@ -202,10 +209,10 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                     } 
                     _ = mods.orderedRemove(0);
                     ty.modifiers = try mods.toOwnedSlice();
-                    return ty;
+                    return ty.hash();
                 },
                 .bang => {
-                    return ast.Type.createPrimitive(.Bool);
+                    return ast.Type.createPrimitive(.Bool, null).hash();
                 },
                 else => unreachable
             }
@@ -213,20 +220,22 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
         .fn_decl => |decl| {
             if (!self.at_global) {
                 if (!self.contains(decl.ident.span.get_string(self.source))) {
-                    var args = std.ArrayList(ast.Type).init(self.gpa);
+                    var args = std.ArrayList(ast.TypeId).init(self.gpa);
                     for (decl.param_types) |ty| {
                         try args.append(ty);
                     }
-                    try self.push(decl.ident.span.get_string(self.source), .{
-                        .ty = .{
-                            .base_type = .{
-                                .func = .{
-                                    .args = try args.toOwnedSlice(),
-                                    .ret = try mem.createWith(self.gpa, decl.return_ty),
-                                },
-                                },
-                            .modifiers = null
+                    const func_type: ast.Type = .{
+                        .base_type = .{
+                            .func = .{
+                                .args = try args.toOwnedSlice(),
+                                .ret = decl.return_ty,
+                            },
                         },
+                        .modifiers = null,
+                    };
+                    _ = try self.type_map.getOrPutValue(func_type.hash(), func_type);
+                    try self.push(decl.ident.span.get_string(self.source), .{
+                        .ty = func_type.hash(),
                         .ident = decl.ident.span,
                         .ast = tree
                     });
@@ -251,18 +260,18 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                 self.in_func = prev_in_func;
                 self.at_global = prev_in_global;
                 _ = self.symtab.pop();
-                return ast.Type.createPrimitive(.Unit);
+                return ast.Type.createPrimitive(.Unit, null).hash();
             }
             return error.Unknown;
         },
         .block => |expr| {
             if (expr.exprs.len == 0) {
                 try self.session.emit(.Warning, tree.span, "Empty block");
-                return ast.Type.createPrimitive(.Unit);
+                return ast.Type.createPrimitive(.Unit, null).hash();
             }
             try self.symtab.append(types.SymTab.init(self.gpa));
             for(expr.exprs[0..expr.exprs.len - 1]) |exp| {
-                try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Unit), try analyze(self, exp) );
+                try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Unit, null).hash(), try analyze(self, exp) );
             }
             const out = try analyze(self, expr.exprs[expr.exprs.len - 1]);
             _ = self.symtab.pop();
@@ -272,31 +281,28 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
             const lvalue = try analyze(self, stmt.lvalue);
             const assigned = try analyze(self, stmt.expr);
             try check_type_equality(self, tree.span, lvalue, assigned);
-            return ast.Type.createPrimitive(.Unit);
+            return ast.Type.createPrimitive(.Unit, null).hash();
         },
         .if_stmt => |stmt| {
             const cond = try analyze(self, stmt.condition);
-            var bol = ast.Type.createPrimitive(.Unit);
-            bol.base_type.primitive = .Bool;
+            const bol = ast.Type.createPrimitive(.Bool, null).hash();
             try check_type_equality(self, tree.span, cond, bol);
             const blk = try analyze(self, stmt.block);
-            if (stmt.else_block == null) return ast.Type.createPrimitive(.Unit);
+            if (stmt.else_block == null) return ast.Type.createPrimitive(.Unit, null).hash();
             const else_block = stmt.else_block.?;
             try check_type_equality(self, tree.span, blk, try analyze(self, else_block));
             return blk;
         },
         .while_loop => |stmt| {
             const cond = try analyze(self, stmt.condition);
-            var bol = ast.Type.createPrimitive(.Unit);
-            bol.base_type.primitive = .Bool;
+            const bol = ast.Type.createPrimitive(.Bool, null).hash();
             try check_type_equality(self, tree.span, cond, bol);
             const blk = try analyze(self, stmt.block);
-            try check_type_equality(self, tree.span, blk, ast.Type.createPrimitive(.Unit));
-            return ast.Type.createPrimitive(.Unit);
+            try check_type_equality(self, tree.span, blk, ast.Type.createPrimitive(.Unit, null).hash());
+            return ast.Type.createPrimitive(.Unit, null).hash();
         },
         .ternary => |expr| {
-            var bol = ast.Type.createPrimitive(.Unit);
-            bol.base_type.primitive = .Bool;
+            const bol = ast.Type.createPrimitive(.Bool, null).hash();
             try check_type_equality(self, tree.span, try analyze(self, expr.condition), bol);
             const out = try analyze(self, expr.true_path);
             try check_type_equality(self, tree.span,
@@ -325,15 +331,15 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
                 var val = self.get(stmt.ident.span.get_string(self.source)).?;
                 val.ty = ty;
             }
-            return ast.Type.createPrimitive(.Unit);
+            return ast.Type.createPrimitive(.Unit, null).hash();
         },
         .fn_call => |expr| {
             const left = try analyze(self, expr.func);
-            if (left.base_type != .func) {
+            if (self.type_map.get(left).?.base_type != .func) {
                 try self.session.emit(.Error, expr.func.span, "Attempt to call a non-function type");
                 return error.NonFunctionCall;
             }
-            return left.base_type.func.ret.*;
+            return self.type_map.get(left).?.base_type.func.ret;
 
         },
         else => unreachable
@@ -341,24 +347,13 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.Type {
 }
 
 
-fn check_type_equality(self: *Context, span: types.Span, left: ast.Type, right: ast.Type) !void {
-    var lhash: u64 = 0;
-    var rhash: u64 = 0;
-    if (left.chash == null) {
-        lhash = left.hash();
-    } else {
-        lhash = left.chash.?;
-    }
-    if (right.chash == null) {
-        rhash = right.hash();
-    } else {
-        rhash = right.chash.?;
-    }
-
-    if (lhash != rhash) {
+fn check_type_equality(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId) !void {
+    if (left != right) {
+        const leftty = self.type_map.get(left).?;
+        const rightty = self.type_map.get(right).?;
         const msg = try std.fmt.allocPrint(self.gpa,
-            "Expected Type: {s}, got: {any}\n", 
-            .{@tagName(left.base_type.primitive), right}
+            "Expected Type: {s}, got: {s}\n", 
+            .{try leftty.get_string(self.type_map, self.gpa, self.source), try rightty.get_string(self.type_map, self.gpa, self.source)}
         );
         try self.session.emit(.Error, span, msg);
         return error.TypeMismatch;

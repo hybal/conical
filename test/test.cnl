@@ -1,10 +1,7 @@
 
 fn main() -> i32 {
-    let b = 1;
-    {
-        
-    }
-    b
+    let b = 1.6;
+    &b
 }
 
 fn wee(a): u32 -> u32 {

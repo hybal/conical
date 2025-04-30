@@ -143,4 +143,22 @@ pub const Symbol = struct {
 
 
 pub const SymTab = std.StringHashMap(Symbol);
+pub const TypeTbl = std.HashMap(Ast.TypeId, Ast.Type, std.hash_map.AutoContext(Ast.TypeId), 80);
+
+pub fn init_type_map(gpa: std.mem.Allocator) !TypeTbl {
+    var out: TypeTbl = .init(gpa);
+    inline for (@typeInfo(Ast.PrimitiveType).@"enum".fields) |field| {
+        const val = Ast.Type.createPrimitive(@enumFromInt(field.value), null);
+        try out.put(val.hash(), val);
+    }
+    return out;
+}
+
+pub const CompUnit = struct {
+    file: []const u8,
+    ast: []Ast.Ast,
+    symbol_table: SymTab,
+    type_table: TypeTbl, 
+};
+
 

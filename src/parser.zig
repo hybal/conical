@@ -14,22 +14,25 @@ const types = @import("types.zig");
 gpa: std.mem.Allocator,
 lexer: lex.Lexer,
 session: *diag.Session,
+type_map: *types.TypeTbl,
 
 /// Initialize the parser from an already existing Lexer isntance
-pub fn init_from_lexer(in: lex.Lexer, session: *diag.Session, gpa: std.mem.Allocator) @This() {
+pub fn init_from_lexer(in: lex.Lexer, session: *diag.Session, type_map: *types.TypeTbl, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = in,
         .gpa = gpa,
-        .session = session
+        .session = session,
+        .type_map = type_map,
     };
 }
 
 /// Initialize the parser from source
-pub fn init_from_source(src: []const u8, session: *diag.Session, gpa: std.mem.Allocator) @This() {
+pub fn init_from_source(src: []const u8, session: *diag.Session, type_map: *types.TypeTbl, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = lex.Lexer.init(src),
         .gpa = gpa,
-        .session = session
+        .session = session,
+        .type_map = type_map,
     };
 }
 
@@ -284,11 +287,13 @@ fn fn_decl(self: *@This()) !*Ast {
         } else {
             _ = self.lexer.next_token();
         }
+        const retid = return_ty.hash();
+        _ = try self.type_map.getOrPutValue(retid, return_ty);
         const out: Ast = Ast.create(.{ .fn_decl = .{
             .ident = .{ .span = ident.span, .value = ident.span.get_string(self.lexer.buffer)},
             .params = try params.toOwnedSlice(),
             .param_types = try param_types.toOwnedSlice(),
-            .return_ty = return_ty,
+            .return_ty = retid,
             .decl_mod = decl_mod,
             .fn_mod = fn_mod,
             .body = blck
@@ -324,10 +329,15 @@ fn var_decl(self: *@This()) !*Ast {
                 return err;
             };
         }
+        var tyid: ?u64 = null;
+        if (ty) |tyy| {
+            tyid = tyy.hash();
+            _ = try self.type_map.getOrPutValue(tyid.?, tyy);
+        }
         var out: Ast = Ast.create(.{ .var_decl = .{
             .is_mut = key.tag == .keyword_mut,
             .ident = .{ .span = ident.span, .value = ident.span.get_string(self.lexer.buffer)},
-            .ty = ty,
+            .ty = tyid,
             .initialize = initial
         }}, span);
         if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |tok| {

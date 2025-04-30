@@ -114,7 +114,7 @@ pub const Session = struct {
 
     fn get_loc(self: *@This(), diag: Diag) struct { usize, usize } {
         var line: usize = 1;
-        var col: usize = 0;
+        var col: usize = 1;
         for (self.source, 0..) |char, i| {
             if (i == diag.span.start) break; 
             switch (char) {

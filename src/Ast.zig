@@ -155,14 +155,26 @@ pub const Ident = struct {
 };
 
 pub const FuncType = struct {
-    args: []Type,
-    ret: *Type, //This is only a pointer because zig complains
+    args: []TypeId,
+    ret: TypeId, 
 
-    
+    pub fn get_string(self: *const @This(), type_map: *types.TypeTbl, gpa: std.mem.Allocator, source: []const u8) anyerror![]const u8 {
+        var out = std.ArrayList(u8).init(gpa);
+        try out.appendSlice("fn (");
+        for (self.args, 0..) |arg, i| {
+            try out.appendSlice(try type_map.get(arg).?.get_string(type_map, gpa, source));
+            if (i < self.args.len - 1) {
+                try out.appendSlice(", ");
+            }
+        }
+        try out.appendSlice(") -> ");
+        try out.appendSlice(try type_map.get(self.ret).?.get_string(type_map, gpa, source));
+        return try out.toOwnedSlice();
+    }
     pub fn hash(self: *const @This(), hasher: *std.hash.Fnv1a_64) void {
-        hasher.update(std.mem.asBytes(&self.ret.*.hash()));
+        hasher.update(std.mem.asBytes(&self.ret));
         for (self.args) |arg| {
-            hasher.update(std.mem.asBytes(&(arg.hash())));
+            hasher.update(std.mem.asBytes(&arg));
         }
     }
 };
@@ -199,6 +211,22 @@ pub const Type = struct {
         }
 
         return hasher.final();
+    }
+
+    pub fn get_string(self: *const @This(), type_map: *types.TypeTbl, gpa: std.mem.Allocator, source: []const u8) ![]const u8 {
+        var out = std.ArrayList(u8).init(gpa);
+        if (self.modifiers) |mods| {
+            for (mods) |mod| {
+                try out.appendSlice(mod.get_string(source));
+            }
+        }
+
+        switch (self.base_type) {
+            .primitive => |val| try out.appendSlice(val.get_string()),
+            .func => |func| try out.appendSlice(try func.get_string(type_map, gpa, source)),
+            .user => |val| try out.appendSlice(val.value)
+        }
+        return try out.toOwnedSlice();
     }
 
     pub fn equal(self: *const @This(), other: *const @This()) bool {
