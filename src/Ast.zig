@@ -184,6 +184,7 @@ pub const Type = struct {
         primitive: PrimitiveType,
         func: FuncType,
         strct: Struct,
+        @"enum": Enum,
         user: Ident
     },
     modifiers: ?[]TypeModifier,
@@ -203,6 +204,9 @@ pub const Type = struct {
             },
             .strct => |strct| {
                 strct.hash(&hasher);
+            },
+            .@"enum" => |en| {
+                en.hash(&hasher);
             },
             .user => |ident| {
                 hasher.update(ident.value);
@@ -229,6 +233,7 @@ pub const Type = struct {
             .primitive => |val| try out.appendSlice(val.get_string()),
             .func => |func| try out.appendSlice(try func.get_string(type_map, gpa, source)),
             .strct => |strct| try out.appendSlice(try strct.get_string(gpa, type_map, source)),
+            .@"enum" => |enm| try out.appendSlice(try enm.get_string(gpa, type_map, source)),
             .user => |val| try out.appendSlice(val.value)
         }
         return try out.toOwnedSlice();
@@ -280,8 +285,38 @@ pub const TypeDecl = struct {
 };
 
 pub const Enum = struct { //TODO:finalize syntax
-    ident: Ident,
-    varients: std.StringHashMap(?TypeId)
+    variants: std.StringHashMap(?TypeId),
+
+    pub fn hash(self: *const @This(), hasher: *std.hash.Fnv1a_64) void {
+        var iter = self.variants.iterator();
+        while (iter.next()) |entry| {
+            const id = entry.key_ptr.*;
+            const ty = entry.value_ptr.*;
+            hasher.update(id);
+            if (ty) |tyy| {
+                hasher.update(std.mem.asBytes(&tyy));
+            }
+        }
+    }
+
+    pub fn get_string(self: *const @This(), gpa: std.mem.Allocator, type_map: *types.TypeTbl, source: []const u8) anyerror![]const u8 {
+        var out = std.ArrayList(u8).init(gpa);
+        var iter = self.variants.iterator();
+        try out.appendSlice("enum { ");
+        while (iter.next()) |entry| {
+            const value = entry.value_ptr.*;
+            const key = entry.key_ptr.*;
+            try out.appendSlice(key);
+            if (value) |val| {
+                try out.appendSlice(": ");
+                try out.appendSlice(try type_map.get(val).?.get_string(type_map, gpa, source));
+                try out.appendSlice(", ");
+            }
+        }
+        try out.appendSlice(" }");
+        return try out.toOwnedSlice();
+    }
+
 };
 
 pub const VarDecl = struct {

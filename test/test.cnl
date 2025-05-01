@@ -3,6 +3,10 @@ type Pos = struct {
    y: i32;
 };
 
+type Option = enum {
+    Some: i32,
+    None
+};
 fn main() -> i32 {
     let a: i32 = 1;
     a

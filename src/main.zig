@@ -33,6 +33,12 @@ pub fn print_type(type_map: *types.TypeTbl, tyid: ast.TypeId) void {
             }
             std.debug.print("}}", .{});
         },
+        .@"enum" => |enm| {
+            std.debug.print("{s}", .{
+                enm.get_string(std.heap.page_allocator, type_map, source)
+                    catch "err",
+            });
+        },
         .func => |func| {
             std.debug.print("(", .{});
             for (func.args) |arg| {

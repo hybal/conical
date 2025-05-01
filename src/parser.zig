@@ -207,6 +207,30 @@ fn parse_type(self: *@This()) !AstTypes.Type { //TODO:parse structs and enums
         }
         try self.expect(.close_bracket);
         base_ty.base_type = .{ .strct = .{ .fields = fields } };
+    } else if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_enum})) |_| {
+        try self.expect(.open_bracket);
+        var variants = std.StringHashMap(?AstTypes.TypeId).init(self.gpa);
+
+        while (!self.lexer.is_next_token(.close_bracket)) {
+            const ident = try self.expect_ret(.ident);
+            var var_ty: ?AstTypes.TypeId = null;
+            if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
+                var_ty = (try self.parse_type()).hash();
+            }
+            if (!self.lexer.is_next_token(.comma) and !self.lexer.is_next_token(.close_bracket)) {
+                span.merge(.{ .start = span.start, .end = self.lexer.index});
+                try self.session.emit(.Error, span, "Missing comma");
+                return error.MissingCommaInEnum;
+            }
+            _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
+            variants.putNoClobber(ident.span.get_string(self.lexer.buffer), var_ty) catch {
+                span.merge(.{ .start = span.start, .end = self.lexer.index});
+                try self.session.emit(.Error, span, "Duplicate enum variant");
+                return error.DuplicateEnumVariant;
+            };
+        }
+        try self.expect(.close_bracket);
+        base_ty.base_type = .{ .@"enum" = .{ .variants = variants } };
     }
     return base_ty;
 }
