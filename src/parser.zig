@@ -117,7 +117,7 @@ fn optional_block(self: *@This()) !*Ast {
 
 // parse a type with modifiers and primitives
 // type = typemods* (primitivetype | ident)
-fn parse_type(self: *@This()) !AstTypes.Type {
+fn parse_type(self: *@This()) !AstTypes.Type { //TODO:parse structs and enums
     
     var modifiers = std.ArrayList(AstTypes.TypeModifier).init(self.gpa);
     var span: types.Span = .{
@@ -346,7 +346,34 @@ fn var_decl(self: *@This()) !*Ast {
         }
         return try mem.createWith(self.gpa, out);
     }
-    return try self.ifstmt();
+    return try self.type_decl();
+}
+
+fn type_decl(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_type})) |_| {
+        const ident = try self.expect_ret(.ident);
+        try self.expect(.eq);
+        const ty = try self.parse_type();
+        try self.expect(.semicolon);
+        const tyid = ty.hash();
+        span.end = self.lexer.index;
+        _ = try self.type_map.getOrPutValue(tyid, ty);
+        const out: Ast = Ast.create(.{ .type_decl = .{
+            .ident = .{ 
+                .span = ident.span,
+                .value = ident.span.get_string(self.lexer.buffer)
+            },
+            .ty = tyid,
+        }}, span);
+        return try mem.createWith(self.gpa, out);
+    }
+    return self.ifstmt();
+
 }
 
 fn stmt(self: *@This()) anyerror!*Ast {

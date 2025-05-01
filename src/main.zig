@@ -23,6 +23,9 @@ pub fn print_type(type_map: *types.TypeTbl, tyid: ast.TypeId) void {
         .user => |val| {
             std.debug.print("{s} ", .{val.span.get_string(source)});
         },
+        .strct => |strct| {
+            std.debug.print("struct {s} ", .{strct.ident.value});
+        },
         .func => |func| {
             std.debug.print("(", .{});
             for (func.args) |arg| {
@@ -125,6 +128,11 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
                 std.debug.print(", ", .{});
             }
             std.debug.print(")", .{});
+        },
+        .type_decl => |decl| {
+            std.debug.print("type {s} = ", .{decl.ident.value});
+            print_type(type_map, decl.ty);
+            std.debug.print(";", .{});
         },
         else => |thing| std.debug.print("unkown: {any}\n", .{thing}),
     }

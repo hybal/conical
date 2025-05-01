@@ -183,6 +183,7 @@ pub const Type = struct {
     base_type: union(enum) {
         primitive: PrimitiveType,
         func: FuncType,
+        strct: Struct,
         user: Ident
     },
     modifiers: ?[]TypeModifier,
@@ -199,6 +200,9 @@ pub const Type = struct {
             },
             .func => |func| {
                 func.hash(&hasher);
+            },
+            .strct => |strct| {
+                strct.hash(&hasher);
             },
             .user => |ident| {
                 hasher.update(ident.value);
@@ -224,6 +228,7 @@ pub const Type = struct {
         switch (self.base_type) {
             .primitive => |val| try out.appendSlice(val.get_string()),
             .func => |func| try out.appendSlice(try func.get_string(type_map, gpa, source)),
+            .strct => |strct| try out.appendSlice(try strct.get_string(gpa)),
             .user => |val| try out.appendSlice(val.value)
         }
         return try out.toOwnedSlice();
@@ -244,6 +249,38 @@ pub const Type = struct {
 
 };
 
+pub const Struct = struct {
+    ident: Ident,
+    fields: std.StringHashMap(TypeId),
+
+    pub fn hash(self: *const @This(), hasher: *std.hash.Fnv1a_64) void {
+        hasher.update(self.ident.value);
+
+        var iterator = self.fields.valueIterator();
+        while (iterator.next()) |val| {
+            hasher.update(std.mem.asBytes(&val));
+        }
+    }
+
+    pub fn get_string(self: *const @This(), gpa: std.mem.Allocator) ![]const u8 {
+        var out = std.ArrayList(u8).init(gpa);
+        try out.appendSlice("struct ");
+        try out.appendSlice(self.ident.value);
+        return try out.toOwnedSlice();
+    }
+};
+
+pub const TypeDecl = struct {
+    ty: TypeId,
+    ident: Ident,
+    //Eventually will have constraints here
+    //This will also actually be an expression since you can do weird comptime things
+};
+
+pub const Enum = struct { //TODO:finalize syntax
+    ident: Ident,
+    varients: std.StringHashMap(?TypeId)
+};
 
 pub const VarDecl = struct {
     ident: Ident,
@@ -279,16 +316,6 @@ pub const FnCall = struct {
 };
 
 
-pub const Struct = struct {
-    ident: Ident,
-    fields: std.StringHashMap(Type)
-};
-
-
-pub const Enum = struct {
-    ident: Ident,
-    varients: std.StringHashMap(?Type)
-};
 
 pub const IfStmt = struct {
     condition: *Ast,
@@ -336,6 +363,7 @@ pub const AstNode = union(enum) {
     var_decl: VarDecl,
     fn_decl: FnDecl,
     fn_call: FnCall,
+    type_decl: TypeDecl,
     terminated: *Ast,
     _,
 };

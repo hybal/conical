@@ -1,11 +1,12 @@
+type Pos = i32;
 
 fn main() -> i32 {
-    let b = 1.6;
-    &b
+    let a: Pos = 5.5;
+    a
 }
 
-fn wee(a): u32 -> u32 {
-    let b: u32 = 1;
+fn wee(a): i32 -> i32 {
+    let b: i32 = 1;
     b
 }
 

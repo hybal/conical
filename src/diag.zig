@@ -45,6 +45,7 @@ pub const Session = struct {
         });
     }
 
+    //FIXME: this is completely broken
     pub fn flush(self: *@This(), writer: anytype) !void {
         for (self.diags.items) |diag| {
             const line, const col = self.get_loc(diag);
@@ -113,7 +114,7 @@ pub const Session = struct {
     }
 
     fn get_loc(self: *@This(), diag: Diag) struct { usize, usize } {
-        var line: usize = 1;
+        var line: usize = 2;
         var col: usize = 1;
         for (self.source, 0..) |char, i| {
             if (i == diag.span.start) break; 
@@ -128,7 +129,7 @@ pub const Session = struct {
                     col = 0;
                 },
                 else => |val| switch(val) {
-                    '\t' => col += 7,
+                    '\t' => col += 8,
                     else => col += 1
                 }
             }
