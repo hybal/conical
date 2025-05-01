@@ -228,7 +228,7 @@ pub const Type = struct {
         switch (self.base_type) {
             .primitive => |val| try out.appendSlice(val.get_string()),
             .func => |func| try out.appendSlice(try func.get_string(type_map, gpa, source)),
-            .strct => |strct| try out.appendSlice(try strct.get_string(gpa)),
+            .strct => |strct| try out.appendSlice(try strct.get_string(gpa, type_map, source)),
             .user => |val| try out.appendSlice(val.value)
         }
         return try out.toOwnedSlice();
@@ -250,22 +250,24 @@ pub const Type = struct {
 };
 
 pub const Struct = struct {
-    ident: Ident,
     fields: std.StringHashMap(TypeId),
 
     pub fn hash(self: *const @This(), hasher: *std.hash.Fnv1a_64) void {
-        hasher.update(self.ident.value);
-
         var iterator = self.fields.valueIterator();
         while (iterator.next()) |val| {
             hasher.update(std.mem.asBytes(&val));
         }
     }
 
-    pub fn get_string(self: *const @This(), gpa: std.mem.Allocator) ![]const u8 {
+    pub fn get_string(self: *const @This(), gpa: std.mem.Allocator, type_map: *types.TypeTbl, source: []const u8) anyerror![]const u8 {
         var out = std.ArrayList(u8).init(gpa);
-        try out.appendSlice("struct ");
-        try out.appendSlice(self.ident.value);
+        try out.appendSlice("struct { ");
+        var iter = self.fields.iterator();
+        while (iter.next()) |val| {
+            try out.appendSlice(val.key_ptr.*);
+            try out.appendSlice(": ");
+            try out.appendSlice(try (type_map.get(val.value_ptr.*).?.get_string(type_map, gpa, source)));
+        }
         return try out.toOwnedSlice();
     }
 };
@@ -355,6 +357,7 @@ pub const AstNode = union(enum) {
     binary_expr: BinaryExpr,
     unary_expr: UnaryExpr,
     terminal: types.Token,
+    unit,
     assignment: Assignment, 
     if_stmt: IfStmt,
     while_loop: WhileLoop,

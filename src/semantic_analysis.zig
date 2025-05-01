@@ -365,6 +365,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             }
             return decl.ty;
         },
+        .unit => {
+            return ast.Type.createPrimitive(.Unit, null).hash();
+        },
         else => unreachable
     }
 }
@@ -386,14 +389,15 @@ fn coerce(self: *Context, left: ast.TypeId, right: ast.TypeId) !bool {
     return lft == rit;
 }
 
+//FIXME: make sure to check that user types actually exist
 
 fn check_type_equality(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId) !void {
-    if (!try coerce(self, left, right)) {
+        if (!try coerce(self, left, right)) {
         const leftty = try self.type_map.get(left).?.get_string(self.type_map, self.gpa, self.source);
 
         const rightty = try self.type_map.get(right).?.get_string(self.type_map, self.gpa, self.source);
         const msg = try std.fmt.allocPrint(self.gpa,
-            "Expected Type: {s}, got: {s}\n", 
+            "Expected Type: {s}, got: {s}", 
             .{leftty, rightty}
         );
         try self.session.emit(.Error, span, msg);

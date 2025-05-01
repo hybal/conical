@@ -57,6 +57,7 @@ fn expect(self: *@This(), token: types.Tag) !void {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |_| {
         return;
     } else {
+        try self.session.emit(.Error, self.lexer.next_token().span, "Unexepected token");
         return error.UnexpectedToken;
     }
 }
@@ -184,13 +185,28 @@ fn parse_type(self: *@This()) !AstTypes.Type { //TODO:parse structs and enums
                 try self.session.emit(.Error, span, "Types cannot currently have paranthesis other than unit");
                 return error.ParenInTypeExprNotUnit;
             }
-        } else {
-            if (AstTypes.PrimitiveType.prims.get(ty.span.get_string(self.lexer.buffer))) |val| {
-                base_ty.base_type = .{ .primitive = val };
-            } else {
-                base_ty.base_type = .{ .user = .{ .span = ty.span, .value = ty.span.get_string(self.lexer.buffer) } };
-            }
+        } else if (AstTypes.PrimitiveType.prims.get(ty.span.get_string(self.lexer.buffer))) |val| {
+            base_ty.base_type = .{ .primitive = val };
+        }  else {
+            base_ty.base_type = .{ .user = .{ .span = ty.span, .value = ty.span.get_string(self.lexer.buffer) } };
         }
+    } else if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_struct})) |_|{
+        try self.expect(.open_bracket);
+        var fields = std.StringHashMap(AstTypes.TypeId).init(self.gpa);
+
+        while (!self.lexer.is_next_token(.close_bracket)) {
+            const ident = try self.expect_ret(.ident);
+            try self.expect(.colon);
+            const field_type = try self.parse_type();
+            try self.expect(.semicolon); //NOTE: could possibly change to commas, not sure
+            fields.putNoClobber(ident.span.get_string(self.lexer.buffer), field_type.hash()) catch {
+                span.merge(.{ .start = span.start, .end = self.lexer.index});
+                try self.session.emit(.Error, span, "Struct with duplicate fields");
+                return error.DuplicateFields;
+            };
+        }
+        try self.expect(.close_bracket);
+        base_ty.base_type = .{ .strct = .{ .fields = fields } };
     }
     return base_ty;
 }
@@ -751,6 +767,11 @@ fn primary(self: *@This()) anyerror!*Ast {
         return try mem.createWith(self.gpa, out);
     }
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |tok| { //TODO: add support for unit ()
+        if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |ctok| {
+            span.merge(ctok.span);
+            const out: Ast = Ast.create(.unit, span);
+            return try mem.createWith(self.gpa, out);
+        }
         span.start = tok.span.start;
         span.end = self.lexer.index;
         const out = try self.expression();

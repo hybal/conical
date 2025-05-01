@@ -1,7 +1,10 @@
-type Pos = i32;
+type Pos = struct {
+   x: i32;
+   y: i32;
+};
 
 fn main() -> i32 {
-    let a: Pos = 5.5;
+    let a: i32 = 1;
     a
 }
 

@@ -24,7 +24,14 @@ pub fn print_type(type_map: *types.TypeTbl, tyid: ast.TypeId) void {
             std.debug.print("{s} ", .{val.span.get_string(source)});
         },
         .strct => |strct| {
-            std.debug.print("struct {s} ", .{strct.ident.value});
+            std.debug.print("struct {{ ", .{});
+            var iter = strct.fields.iterator();
+            while (iter.next()) |val| {
+                std.debug.print("{s}: ", .{val.key_ptr.*});
+                std.debug.print("{s}; ", .{type_map.get(val.value_ptr.*).?.get_string(type_map, std.heap.page_allocator, source) catch "err"});
+
+            }
+            std.debug.print("}}", .{});
         },
         .func => |func| {
             std.debug.print("(", .{});
