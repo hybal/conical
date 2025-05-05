@@ -110,7 +110,7 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
             },
             .type_decl => |decl| {
                 if (self.contains(decl.ident.span.get_string(self.source))) {
-                    return error.VariableShadowsPreviousDecleration;
+                    return error.TypeShadowsPreviousDecleration;
                 }
                 try self.push(decl.ident.span.get_string(self.source), .{
                     .ty = decl.ty,
@@ -363,7 +363,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     .ast = tree,
                 });
             }
-            return decl.ty;
+            return ast.Type.createPrimitive(.Unit, null).hash();
         },
         .unit => {
             return ast.Type.createPrimitive(.Unit, null).hash();
@@ -372,27 +372,32 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
     }
 }
 
-
-fn coerce(self: *Context, left: ast.TypeId, right: ast.TypeId) !bool {
+//FIXME: span is wrong
+fn coerce(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId) !bool {
     var lft = left;
     var rit = right;
     if (self.type_map.get(left)) |leftty| {
         if (leftty.base_type == .user and self.contains(leftty.base_type.user.value)) {
             lft = self.get(leftty.base_type.user.value).?.ty.?;
-        }
+        } else if (leftty.base_type == .user) {
+            try self.session.emit(.Error, span, "User type does not exist");
+            return error.UndefinedType;
+        } 
     }
     if (self.type_map.get(right)) |rightty| {
         if (rightty.base_type == .user and self.contains(rightty.base_type.user.value)) {
             rit = self.get(rightty.base_type.user.value).?.ty.?;
+        } else if (rightty.base_type == .user) {
+            try self.session.emit(.Error, span, "User type does not exist");
+            return error.UndefinedType;
         }
     }
     return lft == rit;
 }
 
-//FIXME: make sure to check that user types actually exist
 
 fn check_type_equality(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId) !void {
-        if (!try coerce(self, left, right)) {
+        if (!try coerce(self, span, left, right)) {
         const leftty = try self.type_map.get(left).?.get_string(self.type_map, self.gpa, self.source);
 
         const rightty = try self.type_map.get(right).?.get_string(self.type_map, self.gpa, self.source);

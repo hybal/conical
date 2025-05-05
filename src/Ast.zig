@@ -90,7 +90,10 @@ pub const PrimitiveType = enum {
         return prims.get(str);
     }
 
-
+    //NOTE: This must be kept up to date
+    pub fn get_last() @This() {
+        return .Unit;
+    }
     pub fn hash(self: *const @This()) u64 {
         return @intFromEnum(self.*);
     }
@@ -277,6 +280,16 @@ pub const Struct = struct {
     }
 };
 
+pub const GeneralTypeCons = struct {
+    id: *Ast,
+    value: *Ast
+};
+
+pub const StructCons = struct {
+    id: *Ast,
+    fields: std.StringHashMap(*Ast),
+};
+
 pub const TypeDecl = struct {
     ty: TypeId,
     ident: Ident,
@@ -341,7 +354,7 @@ pub const FnDecl = struct {
     decl_mod: ?GlobalDeclMod,
     fn_mod: ?FnModifier,
     ident: Ident,
-    params: []Ident, //TODO: move parameter list into a list of VarDecl
+    params: []Ident, 
     param_types: []TypeId,
     return_ty: TypeId,
     body: ?*Ast
@@ -388,6 +401,7 @@ pub const Ast = struct {
     }
 };
 
+//NOTE: these really should all be pointers (atm its like 96 bytes) but since its going to get rewritten I don't really care
 pub const AstNode = union(enum) { 
     binary_expr: BinaryExpr,
     unary_expr: UnaryExpr,

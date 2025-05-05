@@ -118,8 +118,7 @@ fn optional_block(self: *@This()) !*Ast {
 
 // parse a type with modifiers and primitives
 // type = typemods* (primitivetype | ident)
-fn parse_type(self: *@This()) !AstTypes.Type { //TODO:parse structs and enums
-    
+fn parse_type(self: *@This()) !AstTypes.Type { 
     var modifiers = std.ArrayList(AstTypes.TypeModifier).init(self.gpa);
     var span: types.Span = .{
         .start = self.lexer.index,
@@ -790,7 +789,7 @@ fn primary(self: *@This()) anyerror!*Ast {
         const out: Ast = Ast.create(.{ .terminal = lit }, lit.span);
         return try mem.createWith(self.gpa, out);
     }
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |tok| { //TODO: add support for unit ()
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |tok| { 
         if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |ctok| {
             span.merge(ctok.span);
             const out: Ast = Ast.create(.unit, span);
