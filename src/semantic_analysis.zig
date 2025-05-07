@@ -13,7 +13,7 @@ pub fn init_context(source: []const u8, session: *diag.Session, type_map: *types
         .scope = 0,
         .source = source,
         .gpa = gpa,
-        .in_func = false,
+        .in_func = null,
         .in_assignment = false,
         .in_loop = false,
         .at_global = true,
@@ -27,7 +27,7 @@ pub const Context = struct {
     scope: usize,
     source: []const u8,
     gpa: std.mem.Allocator,
-    in_func: bool,
+    in_func: ?ast.TypeId,
     in_loop: bool,
     in_assignment: bool,
     at_global: bool,
@@ -260,9 +260,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                         .ident = param.span,
                         .ast = tree
                     });
-                }
+           }
                 const prev_in_func = self.in_func;
-                self.in_func = true;
+                self.in_func = decl.return_ty;
                 const prev_in_global = self.at_global;
                 self.at_global = false;
                 const ret_ty = try analyze(self, body);
@@ -368,6 +368,15 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
         .unit => {
             return ast.Type.createPrimitive(.Unit, null).hash();
         },
+        .return_stmt => |ret| {
+            if (self.in_func) |ret_ty| {
+                const expr_ty = try analyze(self, ret);
+                try check_type_equality(self, tree.span, ret_ty, expr_ty);
+                return ast.Type.createPrimitive(.Never, null).hash();
+            }
+            try self.session.emit(.Error, tree.span, "return outside of function");
+            return error.ReturnOutsideFunction;
+        },
         .struct_cons => |cons| {
             const type_name = self.type_map.get(cons.ty).?.base_type.user.value;
             const struct_ty = self.type_map.get(self.get(type_name).?.ty.?).?.base_type.strct.fields;
@@ -383,6 +392,32 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             }
             return cons.ty;
         },
+        .access_operator => |exp| {
+            const left_tyid = try analyze(self, exp.left);
+            var left_ty = self.type_map.get(left_tyid).?;
+            if (left_ty.base_type == .user) {
+                left_ty = self.type_map.get(self.get(left_ty.base_type.user.value).?.ty.?).?;
+            }
+            switch (left_ty.base_type) {
+                .strct => |strct| {
+                    if (strct.fields.get(exp.right.value)) |field| {
+                        return field;
+                    }
+                    try self.session.emit(.Error, exp.right.span, "Struct has no such field");
+                    return error.UnknownStructField;
+                },
+                .@"enum" => |enm| {
+                    if (enm.variants.get(exp.right.value)) |_| {
+                        return left_tyid;
+                    }
+                    try self.session.emit(.Error, exp.right.span, "Enum has no variant");
+                    return error.UnknownEnumVariant;
+                },
+                else => {}
+            }
+            try self.session.emit(.Error, exp.left.span, "Type is not subscriptable");
+            return error.InvalidAccess;
+        },
         else => unreachable
     }
 }
@@ -392,6 +427,9 @@ fn coerce(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId)
     var lft = left;
     var rit = right;
     if (self.type_map.get(left)) |leftty| {
+        if (leftty.base_type == .primitive and leftty.base_type.primitive == .Never) {
+            return true;
+        }
         if (leftty.base_type == .user and self.contains(leftty.base_type.user.value)) {
             lft = self.get(leftty.base_type.user.value).?.ty.?;
         } else if (leftty.base_type == .user) {
@@ -400,6 +438,9 @@ fn coerce(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId)
         } 
     }
     if (self.type_map.get(right)) |rightty| {
+        if (rightty.base_type == .primitive and rightty.base_type.primitive == .Never) {
+            return true;
+        }
         if (rightty.base_type == .user and self.contains(rightty.base_type.user.value)) {
             rit = self.get(rightty.base_type.user.value).?.ty.?;
         } else if (rightty.base_type == .user) {
@@ -412,7 +453,7 @@ fn coerce(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId)
 
 
 fn check_type_equality(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId) !void {
-        if (!try coerce(self, span, left, right)) {
+    if (!try coerce(self, span, left, right)) {
         const leftty = try self.type_map.get(left).?.get_string(self.type_map, self.gpa, self.source);
 
         const rightty = try self.type_map.get(right).?.get_string(self.type_map, self.gpa, self.source);

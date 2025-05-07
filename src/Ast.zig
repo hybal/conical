@@ -46,6 +46,7 @@ pub const PrimitiveType = enum {
     Bool,
     Str,
     Rune, //may not be needed
+    Never,
     Unit,
     pub fn get_string(self: *const @This()) []const u8 {
         return switch (self.*) {
@@ -66,6 +67,7 @@ pub const PrimitiveType = enum {
             .Bool => "bool",
             .Str => "str",
             .Rune => "rune",
+            .Never => "!",
             .Unit => "()",
         };
     }
@@ -284,8 +286,9 @@ pub const Struct = struct {
 };
 
 pub const GeneralTypeCons = struct {
-    id: *Ast,
-    value: *Ast
+    ty: TypeId,
+    id: Ident,
+    value: ?*Ast
 };
 
 pub const StructCons = struct {
@@ -418,6 +421,7 @@ pub const AstNode = union(enum) {
     var_decl: VarDecl,
     fn_decl: FnDecl,
     fn_call: FnCall,
+    return_stmt: *Ast,
     type_decl: TypeDecl,
     terminated: *Ast,
     general_cons: GeneralTypeCons,

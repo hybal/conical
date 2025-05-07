@@ -158,6 +158,14 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             }
             std.debug.print(" }}", .{});
         },
+        .return_stmt => |stmt| {
+            std.debug.print("return ", .{});
+            print_tree(type_map,stmt);
+        },
+        .access_operator => |exp| {
+            print_tree(type_map, exp.left);
+            std.debug.print(".{s}", .{exp.right.value});
+        },
         else => |thing| std.debug.print("unkown: {any}\n", .{thing}),
     }
 }

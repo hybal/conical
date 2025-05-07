@@ -7,7 +7,7 @@
 - [ ] full type coercian
 - [ ] access operator (.)
 - [ ] fix diagnostic messages (i think spans are fine, just the messages)
-- [ ] add checks to make sure that user types are actually valid/defined
+- [x] add checks to make sure that user types are actually valid/defined
 - [ ] start work on IR forms
 - [ ] reorganize code / general cleanup
 - [ ] make universal function for creating "compilation units" instead of just calling piecemeal

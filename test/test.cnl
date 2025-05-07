@@ -10,7 +10,8 @@ type Option = enum {
 
 type Example = i32;
 fn main() -> i32 {
-    let opt = Option.Some(1);
+    let a = init_pos(1, 2);
+    let b = if (true) return 1 else return -1;
     0
 }
 

@@ -113,7 +113,7 @@ fn optional_block(self: *@This()) !*Ast {
     if (self.lexer.is_next_token(.open_bracket)) {
         return self.block();
     }
-    return self.stmt();
+    return self.expression();
 }
 
 // parse a type with modifiers and primitives
@@ -411,7 +411,7 @@ fn type_decl(self: *@This()) !*Ast {
         }}, span);
         return try mem.createWith(self.gpa, out);
     }
-    return self.ifstmt();
+    return self.expression();
 
 }
 
@@ -420,11 +420,23 @@ fn stmt(self: *@This()) anyerror!*Ast {
 }
 
 fn expression(self: *@This()) anyerror!*Ast {
+    return self.return_stmt();
+}
+fn return_stmt(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_return})) |tok| {
+        span.merge(tok.span);
+        const expr = try self.expression();
+        span.merge(expr.span);
+        const out = Ast.create(.{ .return_stmt = expr }, span);
+        return try mem.createWith(self.gpa, out);
+    }
     return self.ifstmt();
 }
-
 fn ifstmt(self: *@This()) !*Ast {
-
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
