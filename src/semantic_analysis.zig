@@ -369,11 +369,19 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             return ast.Type.createPrimitive(.Unit, null).hash();
         },
         .struct_cons => |cons| {
-            const struct_ty = self.type_map.get(cons.ty).?;
-            const iter = cons.fields.iterator();
+            const type_name = self.type_map.get(cons.ty).?.base_type.user.value;
+            const struct_ty = self.type_map.get(self.get(type_name).?.ty.?).?.base_type.strct.fields;
+            var iter = cons.fields.iterator();
             while (iter.next()) |entry| {
-
+                const expected_ty = struct_ty.get(entry.key_ptr.*);
+                if (expected_ty == null) {
+                    try self.session.emit(.Error, tree.span, "Unknown struct field");
+                    return error.UnknownStructField;
+                }
+                const actual_ty = try analyze(self, entry.value_ptr.*);
+                try check_type_equality(self, tree.span, expected_ty.?, actual_ty);
             }
+            return cons.ty;
         },
         else => unreachable
     }

@@ -147,6 +147,17 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             print_type(type_map, decl.ty);
             std.debug.print(";", .{});
         },
+        .struct_cons => |val| {
+            print_type(type_map, val.ty);
+            std.debug.print(" {{ ", .{});
+            var iter = val.fields.iterator();
+            while (iter.next()) |entry| {
+                std.debug.print("{s}: ", .{entry.key_ptr.*});
+                print_tree(type_map, entry.value_ptr.*);
+                std.debug.print(", ", .{});
+            }
+            std.debug.print(" }}", .{});
+        },
         else => |thing| std.debug.print("unkown: {any}\n", .{thing}),
     }
 }
@@ -157,7 +168,7 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
 pub fn main() !u8 {
     const page_allocator = std.heap.page_allocator;
     var arena_alloc = std.heap.ArenaAllocator.init(page_allocator);
-    const gpa = arena_alloc.allocator();
+const gpa = arena_alloc.allocator();
     const args = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, args);
 

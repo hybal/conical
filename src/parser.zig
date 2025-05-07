@@ -756,7 +756,7 @@ fn fn_call(self: *@This()) !*Ast {
         .end = self.lexer.index
     };
 
-    const left = try self.struct_cons();
+    const left = try self.access();
     span.merge(left.span);
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
         var args = std.ArrayList(*Ast).init(self.gpa);
@@ -778,19 +778,37 @@ fn fn_call(self: *@This()) !*Ast {
     return left;
 }
 
+fn access(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index
+    };
+    const left = try self.struct_cons();
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.dot})) |_| {
+        span.merge(left.span);
+        const ident = try self.expect_ret(.ident);
+        span.merge(.{ .start = span.start, .end = self.lexer.index});
+        const out: AstTypes.Ast = Ast.create(.{.access_operator = .{
+            .left = left,
+            .right = .{ .span = ident.span, .value = ident.span.get_string(self.lexer.buffer)}
+        }}, span);
+        return try mem.createWith(self.gpa, out);
+    }
+    return left;
+}
+
 fn struct_cons(self: *@This()) !*Ast {
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
     };
     const saved = self.lexer.index;
-    const ty = self.parse_type() catch  null ;
+    const ty = self.parse_type() catch null ;
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket})) |_| {
-        const tyid = ty.hash();
-        _ = try self.type_map.getOrPutValue(tyid, ty);
+        const tyid = ty.?.hash();
+        _ = try self.type_map.getOrPutValue(tyid, ty.?);
         var fields = std.StringHashMap(*Ast).init(self.gpa);
         while (!self.lexer.is_next_token(.close_bracket)) {
-        std.debug.print("DEBUG\n", .{});
             try self.expect(.dot);
             const field = try self.expect_ret(.ident);
             const field_name = field.span.get_string(self.lexer.buffer);
@@ -802,6 +820,7 @@ fn struct_cons(self: *@This()) !*Ast {
                 try self.session.emit(.Error, span, "Missing comma before struct initializer");
                 return error.MissingComma;
             }
+            _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
             if (fields.contains(field_name)) {
                 span.merge(.{.start = span.start, .end = self.lexer.index});
                 try self.session.emit(.Error, span, "Duplicate field initialization");

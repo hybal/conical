@@ -15,7 +15,10 @@ pub const UnaryExpr = struct {
     expr: *Ast //the operation its applied to
 };
 
-
+pub const AccessOperator = struct {
+    left: *Ast,
+    right: Ident,
+};
 
 /// Represents an assignment operaton including compound assignment operations like += or *=
 pub const Assignment = struct {
@@ -419,5 +422,6 @@ pub const AstNode = union(enum) {
     terminated: *Ast,
     general_cons: GeneralTypeCons,
     struct_cons: StructCons,
+    access_operator: AccessOperator,
     _,
 };
