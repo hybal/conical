@@ -756,7 +756,7 @@ fn fn_call(self: *@This()) !*Ast {
         .end = self.lexer.index
     };
 
-    const left = try self.primary();
+    const left = try self.struct_cons();
     span.merge(left.span);
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
         var args = std.ArrayList(*Ast).init(self.gpa);
@@ -776,6 +776,51 @@ fn fn_call(self: *@This()) !*Ast {
         return try mem.createWith(self.gpa, out);
     }
     return left;
+}
+
+fn struct_cons(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index
+    };
+    const saved = self.lexer.index;
+    const ty = self.parse_type() catch  null ;
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket})) |_| {
+        const tyid = ty.hash();
+        _ = try self.type_map.getOrPutValue(tyid, ty);
+        var fields = std.StringHashMap(*Ast).init(self.gpa);
+        while (!self.lexer.is_next_token(.close_bracket)) {
+        std.debug.print("DEBUG\n", .{});
+            try self.expect(.dot);
+            const field = try self.expect_ret(.ident);
+            const field_name = field.span.get_string(self.lexer.buffer);
+            try self.expect(.eq);
+            const value = try self.expression();
+            if (!self.lexer.is_next_token(.comma) 
+                and !self.lexer.is_next_token(.close_bracket)) {
+                span.merge(.{.start = span.start, .end = self.lexer.index});
+                try self.session.emit(.Error, span, "Missing comma before struct initializer");
+                return error.MissingComma;
+            }
+            if (fields.contains(field_name)) {
+                span.merge(.{.start = span.start, .end = self.lexer.index});
+                try self.session.emit(.Error, span, "Duplicate field initialization");
+                return error.DuplicateFieldInit;
+            }
+            try fields.put(field_name, value);
+        }
+        try self.expect(.close_bracket);
+        span.merge(.{.start = span.start, .end = self.lexer.index});
+        const out = Ast.create(.{
+            .struct_cons = .{
+                .ty = tyid,
+                .fields = fields
+            }
+        }, span);
+        return try mem.createWith(self.gpa, out);
+    }
+    self.lexer.index = saved;
+    return try self.primary();
 }
 
 fn primary(self: *@This()) anyerror!*Ast {

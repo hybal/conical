@@ -368,6 +368,13 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
         .unit => {
             return ast.Type.createPrimitive(.Unit, null).hash();
         },
+        .struct_cons => |cons| {
+            const struct_ty = self.type_map.get(cons.ty).?;
+            const iter = cons.fields.iterator();
+            while (iter.next()) |entry| {
+
+            }
+        },
         else => unreachable
     }
 }

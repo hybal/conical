@@ -286,7 +286,7 @@ pub const GeneralTypeCons = struct {
 };
 
 pub const StructCons = struct {
-    id: *Ast,
+    ty: TypeId,
     fields: std.StringHashMap(*Ast),
 };
 
@@ -417,5 +417,7 @@ pub const AstNode = union(enum) {
     fn_call: FnCall,
     type_decl: TypeDecl,
     terminated: *Ast,
+    general_cons: GeneralTypeCons,
+    struct_cons: StructCons,
     _,
 };
