@@ -193,7 +193,8 @@ pub const Type = struct {
         func: FuncType,
         strct: Struct,
         @"enum": Enum,
-        user: Ident
+        user: Ident,
+        @"type": TypeId,
     },
     modifiers: ?[]TypeModifier,
     chash: ?u64 = null,
@@ -218,6 +219,9 @@ pub const Type = struct {
             },
             .user => |ident| {
                 hasher.update(ident.value);
+            },
+            .@"type" => |ty| {
+                hasher.update(std.mem.asBytes(&ty));
             }
         }
         if (self.modifiers) |mods| {
@@ -242,7 +246,8 @@ pub const Type = struct {
             .func => |func| try out.appendSlice(try func.get_string(type_map, gpa, source)),
             .strct => |strct| try out.appendSlice(try strct.get_string(gpa, type_map, source)),
             .@"enum" => |enm| try out.appendSlice(try enm.get_string(gpa, type_map, source)),
-            .user => |val| try out.appendSlice(val.value)
+            .user => |val| try out.appendSlice(val.value),
+            .@"type" => |ty| try out.appendSlice(try type_map.get(ty).?.get_string(type_map, gpa, source))
         }
         return try out.toOwnedSlice();
     }
@@ -303,6 +308,11 @@ pub const TypeDecl = struct {
     //This will also actually be an expression since you can do weird comptime things
 };
 
+pub const EnumCons = struct {
+    ty: TypeId,
+    ident: Ident,
+    init: ?*Ast
+};
 pub const Enum = struct { //TODO:finalize syntax
     variants: std.StringHashMap(?TypeId),
 
@@ -412,6 +422,7 @@ pub const AstNode = union(enum) {
     binary_expr: BinaryExpr,
     unary_expr: UnaryExpr,
     terminal: types.Token,
+    type_literal: Type,
     unit,
     assignment: Assignment, 
     if_stmt: IfStmt,
@@ -426,6 +437,7 @@ pub const AstNode = union(enum) {
     terminated: *Ast,
     general_cons: GeneralTypeCons,
     struct_cons: StructCons,
+    enum_cons: EnumCons,
     access_operator: AccessOperator,
     _,
 };

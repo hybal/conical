@@ -25,19 +25,28 @@ pub const Session = struct {
     diags: std.ArrayList(Diag),
     gpa: std.mem.Allocator,
     source: []const u8,
+    frozen: bool,
     pub fn init(allocator: std.mem.Allocator, source: []const u8) @This() {
         return .{
             .diags = .init(allocator),
             .source = source,
-            .gpa = allocator
+            .gpa = allocator,
+            .frozen = false
         };
     }
+    pub fn freeze(self: *@This()) void {
+        self.frozen = true;
+    }
 
+    pub fn unfreeze(self: *@This()) void {
+        self.frozen = false;
+    }
     pub fn deinit(self: *@This()) void {
         self.diags.deinit();
     }
 
     pub fn emit(self: *@This(), severity: Severity, span: types.Span, message: []const u8) !void {
+        if (self.frozen) return;
         try self.diags.append(.{
             .severity = severity,
             .message = message,

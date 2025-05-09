@@ -48,6 +48,9 @@ pub fn print_type(type_map: *types.TypeTbl, tyid: ast.TypeId) void {
             std.debug.print(") -> ", .{});
             print_type(type_map, func.ret);
         },
+        .@"type" => |tyyid| {
+            print_type(type_map, tyyid);
+        },
     }
 }
 fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
@@ -157,6 +160,15 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
                 std.debug.print(", ", .{});
             }
             std.debug.print(" }}", .{});
+        },
+        .enum_cons => |val| {
+            print_type(type_map, val.ty);
+            std.debug.print(".{s}", .{val.ident.value});
+            if (val.init) |init| {
+                std.debug.print("(", .{});
+                print_tree(type_map, init);
+                std.debug.print(")", .{});
+            }
         },
         .return_stmt => |stmt| {
             std.debug.print("return ", .{});

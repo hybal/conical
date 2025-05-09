@@ -418,6 +418,35 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             try self.session.emit(.Error, exp.left.span, "Type is not subscriptable");
             return error.InvalidAccess;
         },
+        .enum_cons => |enmcons| {
+            var tyid = self.type_map.get(enmcons.ty).?;
+            if (tyid.base_type == .user) {
+                tyid = self.type_map.get(self.get(tyid.base_type.user.value).?.ty.?).?;
+            }
+            if (tyid.base_type.@"enum".variants.get(enmcons.ident.value)) |variant| {
+                if (variant) |varr| {
+                    if (enmcons.init == null) {
+                        try self.session.emit(.Error, tree.span, "Enum variant requires a value");
+                        return error.EnumVariantMissingValue;
+                    }
+                    const init_ty = try analyze(self, enmcons.init.?);
+                    try check_type_equality(self, enmcons.init.?.span, varr, init_ty);
+                }
+            }
+            return enmcons.ty;
+        },
+        .type_literal => |ty| {
+            const hash = ty.hash();
+            _ = try self.type_map.getOrPutValue(hash, ty);
+            const out: ast.Type = .{
+                .base_type = .{
+                    .@"type" = hash,
+                },
+                .modifiers = null,
+                .chash = hash
+            };
+            return out.hash();
+        },
         else => unreachable
     }
 }

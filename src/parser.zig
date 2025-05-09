@@ -768,7 +768,7 @@ fn fn_call(self: *@This()) !*Ast {
         .end = self.lexer.index
     };
 
-    const left = try self.access();
+    const left = try self.enum_cons();
     span.merge(left.span);
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
         var args = std.ArrayList(*Ast).init(self.gpa);
@@ -789,6 +789,38 @@ fn fn_call(self: *@This()) !*Ast {
     }
     return left;
 }
+fn enum_cons(self: *@This()) !*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index
+    };
+    const saved = self.lexer.index;
+    self.session.freeze();
+    const optty = self.parse_type() catch null;
+    if (optty) |ty| {
+        if (self.lexer.consume_if_eq(&[_]types.Tag{.dot})) |_| {
+            self.session.unfreeze();
+            const ident = try self.expect_ret(.ident);
+            var init_exp: ?*Ast = null;
+            if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
+                init_exp = try self.expression();
+                try self.expect(.close_paren);
+            }
+            span.merge(.{.start = span.start, .end = self.lexer.index});
+            const hash = ty.hash();
+            _ = try self.type_map.getOrPutValue(hash, ty);
+            const out = Ast.create(.{ .enum_cons = .{
+                .ty = hash,
+                .ident = .{ .span = ident.span, .value = ident.span.get_string(self.lexer.buffer)},
+                .init = init_exp
+            }}, span);
+            return try mem.createWith(self.gpa, out);
+        }
+    }
+    self.session.unfreeze();
+    self.lexer.index = saved;
+    return self.access();
+}
 
 fn access(self: *@This()) !*Ast {
     var span: types.Span = .{
@@ -808,15 +840,16 @@ fn access(self: *@This()) !*Ast {
     }
     return left;
 }
-
 fn struct_cons(self: *@This()) !*Ast {
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
     };
     const saved = self.lexer.index;
-    const ty = self.parse_type() catch null ;
+    self.session.freeze();
+    const ty = self.parse_type() catch null;
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket})) |_| {
+        self.session.unfreeze();
         const tyid = ty.?.hash();
         _ = try self.type_map.getOrPutValue(tyid, ty.?);
         var fields = std.StringHashMap(*Ast).init(self.gpa);
@@ -886,6 +919,15 @@ fn primary(self: *@This()) anyerror!*Ast {
     if (self.lexer.is_next_token(.eof)) {
         return error.EOF;
     }
+    self.session.freeze();
+    const saved = self.lexer.index;
+    if (self.parse_type() catch null) |ty| {
+        self.session.unfreeze();
+        span.merge(.{.start = span.start, .end = self.lexer.index});
+        return try mem.createWith(self.gpa, Ast.create(.{ .type_literal = ty}, span));
+    }
+    self.session.unfreeze();
+    self.lexer.index = saved;
     span.merge(self.lexer.next_token().span);
     try self.session.emit(.Error, span, "Unexpected Token");
     return error.Invalid;
