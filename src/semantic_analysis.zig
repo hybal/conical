@@ -348,10 +348,20 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             }
             return ast.Type.createPrimitive(.Unit, null).hash();
         },
-        .param_list => |expr| {
-            //const left_tyid = try analyze(self, expr.left);
-            _ = expr;
-            return ast.Type.createPrimitive(.Unit, null).hash();
+        .param_list => |*expr| {
+            const left_tyid = try analyze(self, expr.left);
+            std.debug.print("DEBUG: {any}\n", .{expr.left.node});
+            if (expr.left.node == .enum_cons) {
+                if (expr.params.len != 1) {
+                    try self.session.emit(.Error, tree.span, "Required an initialization value");
+                    return error.RequiredInitialization;
+                }
+                if (expr.left.node.enum_cons.init == null) {
+                    expr.left.node.enum_cons.init = expr.params[0];
+                }
+                tree.node = expr.left.node;
+            }
+            return left_tyid;
 
         },
         .type_decl => |decl| {
@@ -407,6 +417,14 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 },
                 .@"enum" => |enm| {
                     if (enm.variants.get(exp.right.value)) |_| {
+                    std.debug.print("DEBUG ENUM: {any}\n", .{exp.left.node});
+                        if (exp.left.node == .type_literal) {
+                            tree.node = .{ .enum_cons = .{
+                                .ty = left_ty.hash(),
+                                .ident = exp.right,
+                                .init = null
+                            }};
+                        }
                         return left_tyid;
                     }
                     try self.session.emit(.Error, exp.right.span, "Enum has no variant");

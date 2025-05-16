@@ -14,6 +14,7 @@ type Example = i32;
 pub fn main() -> i32 {
     //let a = init_pos(1, 2);
     let b = Pos { .x = 1, .y = 2 };
+    let c = Option.Some(1);
     1
 }
 

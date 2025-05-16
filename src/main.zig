@@ -172,6 +172,7 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             std.debug.print(" }}", .{});
         },
         .enum_cons => |val| {
+            std.debug.print("enum<", .{});
             print_type(type_map, val.ty);
             std.debug.print(".{s}", .{val.ident.value});
             if (val.init) |init| {
@@ -179,6 +180,7 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
                 print_tree(type_map, init);
                 std.debug.print(")", .{});
             }
+            std.debug.print(">", .{});
         },
         .return_stmt => |stmt| {
             std.debug.print("return ", .{});
