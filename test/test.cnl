@@ -1,3 +1,5 @@
+
+
 type Pos = struct {
    x: i32;
    y: i32;
@@ -9,12 +11,12 @@ type Option = enum {
 };
 
 type Example = i32;
-fn main() -> i32 {
-    let a = init_pos(1, 2);
-    let c = a.x;
-    let b = Option.Some(1);
-    0
+pub fn main() -> i32 {
+    //let a = init_pos(1, 2);
+    let b = Pos { .x = 1, .y = 2 };
+    1
 }
+
 
 fn init_pos(x, y): (i32, i32) -> Pos {
     Pos {

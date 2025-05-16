@@ -15,6 +15,7 @@ pub const UnaryExpr = struct {
     expr: *Ast //the operation its applied to
 };
 
+/// Represents a field or method access, has the form: expr . ident
 pub const AccessOperator = struct {
     left: *Ast,
     right: Ident,
@@ -29,24 +30,31 @@ pub const Assignment = struct {
 
 /// Represents a builtin primitive type
 pub const PrimitiveType = enum {
+    //signed integers from 8-128 bits
     I8,
     I16,
     I32,
     I64,
     I128,
-    ISize,
+    ISize, //platform dependent signed integer
+    //unsigned integers from 8-128 bits
     U8,
     U16,
     U32,
     U64,
     U128,
-    USize,
+    USize, //platform dependent unsigned integer
     F32,
     F64,
     Bool,
-    Str,
+    Str, //may be removed
     Rune, //may not be needed
-    Never,
+    //the type of an expression that is never evaluated/completed
+    //it is the type of the return statement and any other control flow statements
+    Never, 
+    //represents a 'nothing' value, it is both a type and its value
+    //anything that does not return a value returns unit
+    //it is NOT equivalent to null as it is generally optimized out
     Unit,
     pub fn get_string(self: *const @This()) []const u8 {
         return switch (self.*) {
@@ -95,7 +103,7 @@ pub const PrimitiveType = enum {
         return prims.get(str);
     }
 
-    //NOTE: This must be kept up to date
+    //NOTE: This must be kept up to date with the last variant
     pub fn get_last() @This() {
         return .Unit;
     }
@@ -104,6 +112,7 @@ pub const PrimitiveType = enum {
     }
 };
 
+//Various type modifiers such as references and slices
 pub const TypeModifier = union(enum) {
     Array: types.Token,
     Slice,
@@ -157,11 +166,15 @@ pub const TypeModifier = union(enum) {
     }
 };
 
+//represents an identifier,
+//it has both a span and a value because it is including in the ast
+//which may be shared among other compilation units which wont have access to the source that it came from
 pub const Ident = struct {
     span: types.Span,
     value: []const u8
 };
 
+//represents a function type
 pub const FuncType = struct {
     args: []TypeId,
     ret: TypeId, 
@@ -187,8 +200,9 @@ pub const FuncType = struct {
     }
 };
 
+//the overall type representation
 pub const Type = struct {
-    base_type: union(enum) {
+    base_type: union(enum) { //what the underlying type is
         primitive: PrimitiveType,
         func: FuncType,
         strct: Struct,
@@ -196,8 +210,8 @@ pub const Type = struct {
         user: Ident,
         @"type": TypeId,
     },
-    modifiers: ?[]TypeModifier,
-    chash: ?u64 = null,
+    modifiers: ?[]TypeModifier, //the modifiers for this type
+    chash: ?u64 = null, //not really used, but is intended to cache the hash of this type
 
     pub fn hash(self: *const @This()) u64 {
         if (self.chash) |hsh| {
@@ -267,6 +281,7 @@ pub const Type = struct {
 
 };
 
+//a struct ast node
 pub const Struct = struct {
     fields: std.StringHashMap(TypeId),
 
@@ -348,6 +363,7 @@ pub const Enum = struct { //TODO:finalize syntax
 
 };
 
+//a variable decleration ast node
 pub const VarDecl = struct {
     ident: Ident,
     ty: ?TypeId,
@@ -376,9 +392,10 @@ pub const FnDecl = struct {
     body: ?*Ast
 };
 
-pub const FnCall = struct {
-    func: *Ast,
-    args: []*Ast
+pub const ParamList = struct {
+    left: *Ast,
+    params: []*Ast,
+    //add generics here
 };
 
 
@@ -417,7 +434,7 @@ pub const Ast = struct {
     }
 };
 
-//NOTE: these really should all be pointers (atm its like 96 bytes) but since its going to get rewritten I don't really care
+//NOTE: these really should all be pointers (atm its about 100 bytes) but since its going to get rewritten I don't really care
 pub const AstNode = union(enum) { 
     binary_expr: BinaryExpr,
     unary_expr: UnaryExpr,
@@ -431,7 +448,8 @@ pub const AstNode = union(enum) {
     block: Block,
     var_decl: VarDecl,
     fn_decl: FnDecl,
-    fn_call: FnCall,
+    fn_call: ParamList,
+    param_list: ParamList,
     return_stmt: *Ast,
     type_decl: TypeDecl,
     terminated: *Ast,

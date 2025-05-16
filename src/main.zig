@@ -18,7 +18,7 @@ pub fn print_type(type_map: *types.TypeTbl, tyid: ast.TypeId) void {
     }
     switch (ty.base_type) {
         .primitive => |val| {
-            std.debug.print("prim<{s}> ", .{val.get_string()});
+            std.debug.print("{s} ", .{val.get_string()});
         },
         .user => |val| {
             std.debug.print("{s} ", .{val.span.get_string(source)});
@@ -59,6 +59,16 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
         .terminal => |term| {
             std.debug.print("{s} ", .{term.span.get_string(source)});
         },
+        .param_list => |ls| {
+            print_tree(type_map, ls.left);
+            std.debug.print("(", .{});
+            for (ls.params) |param| {
+                print_tree(type_map, param);
+                std.debug.print(",", .{});
+            }
+            std.debug.print(")", .{});
+        },
+
         .binary_expr => |expr| {
             print_tree(type_map, expr.left);
             std.debug.print("{s} ", .{expr.op.span.get_string(source)});
@@ -137,9 +147,9 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             std.debug.print("; ", .{});
         },
         .fn_call => |expr| {
-            print_tree(type_map, expr.func);
+            print_tree(type_map, expr.left);
             std.debug.print("(", .{});
-            for (expr.args) |arg| {
+            for (expr.params) |arg| {
                 print_tree(type_map, arg);
                 std.debug.print(", ", .{});
             }

@@ -52,7 +52,7 @@ pub fn parse(self: *@This()) ![]*Ast {
 }
 
 
-// expect a token type does not return anything
+// expect a token type,  does not return anything
 fn expect(self: *@This(), token: types.Tag) !void {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |_| {
         return;
@@ -108,7 +108,15 @@ fn block(self: *@This()) !*Ast {
 }
 
 // an optional block
-// opt_block = block | stmt
+// e.g. 
+// let x = { 
+//      let b = 45;
+//      let c = 32;
+//      b + c
+// }; 
+// or,
+// let x = 45 + 32;
+// opt_block = block | expression
 fn optional_block(self: *@This()) !*Ast {
     if (self.lexer.is_next_token(.open_bracket)) {
         return self.block();
@@ -128,13 +136,13 @@ fn parse_type(self: *@This()) !AstTypes.Type {
                 
         var mod: AstTypes.TypeModifier = .Ref;
         switch (mmod.tag) {
-            .amp => mod = .Ref,
-            .amp2 => {
+            .amp => mod = .Ref, //&
+            .amp2 => { //double ref since its a seperate token
                 mod = .Ref;
                 try modifiers.append(mod);
             },
-            .star => mod = .Ptr,
-            .keyword_mut => {
+            .star => mod = .Ptr, //*
+            .keyword_mut => { //&mut or *mut
                 if (modifiers.getLast() == .Ref) {
                     modifiers.items[modifiers.items.len - 1] = .RefMut;
                 } else if (modifiers.getLast() == .Ptr) {
@@ -145,7 +153,7 @@ fn parse_type(self: *@This()) !AstTypes.Type {
                 }
                 break;
             },
-            .keyword_const => {
+            .keyword_const => { //this may get removed
                 if (modifiers.getLast() == .Ref) {
                     modifiers.items[modifiers.items.len - 1] = .RefConst;
                 } else if (modifiers.getLast() == .Ptr) {
@@ -156,7 +164,7 @@ fn parse_type(self: *@This()) !AstTypes.Type {
                 }
                 break;
             },
-            .open_square => {
+            .open_square => { //slice ([]) or static array ([x])
                 if (self.lexer.consume_if_eq(&[_]types.Tag{.int_literal})) |lit| {
                     mod = .{ .Array = lit };
                 } else {
@@ -174,13 +182,14 @@ fn parse_type(self: *@This()) !AstTypes.Type {
     var base_ty: AstTypes.Type = .createPrimitive(.Unit, if (modifiers.items.len > 0) try modifiers.toOwnedSlice() else null );
     if (self.lexer.consume_if_eq(&[_]types.Tag{.ident, .open_paren})) |ty| {
         if (ty.tag == .open_paren) {
-            if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |_| {
+            if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |_| { //()
                 if (base_ty.modifiers != null) {
                     span.end = self.lexer.index;
                     try self.session.emit(.Error, span, "Unit type cannot have modifiers");
                     return error.UnitCannotHaveMods;
                 }
             } else {
+                //this is eventually where generics will be parsed (e.g. Type($T:i32))
                 try self.session.emit(.Error, span, "Types cannot currently have paranthesis other than unit");
                 return error.ParenInTypeExprNotUnit;
             }
@@ -768,7 +777,7 @@ fn fn_call(self: *@This()) !*Ast {
         .end = self.lexer.index
     };
 
-    const left = try self.enum_cons();
+    const left = try self.access();
     span.merge(left.span);
     if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
         var args = std.ArrayList(*Ast).init(self.gpa);
@@ -781,45 +790,13 @@ fn fn_call(self: *@This()) !*Ast {
             }
         }
         try self.expect(.close_paren);
-        const out: Ast = Ast.create(.{ .fn_call = .{
-            .func = left,
-            .args = try args.toOwnedSlice()
+        const out: Ast = Ast.create(.{ .param_list = .{
+            .left = left,
+            .params = try args.toOwnedSlice()
         }}, span);
         return try mem.createWith(self.gpa, out);
     }
     return left;
-}
-fn enum_cons(self: *@This()) !*Ast {
-    var span: types.Span = .{
-        .start = self.lexer.index,
-        .end = self.lexer.index
-    };
-    const saved = self.lexer.index;
-    self.session.freeze();
-    const optty = self.parse_type() catch null;
-    if (optty) |ty| {
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.dot})) |_| {
-            self.session.unfreeze();
-            const ident = try self.expect_ret(.ident);
-            var init_exp: ?*Ast = null;
-            if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
-                init_exp = try self.expression();
-                try self.expect(.close_paren);
-            }
-            span.merge(.{.start = span.start, .end = self.lexer.index});
-            const hash = ty.hash();
-            _ = try self.type_map.getOrPutValue(hash, ty);
-            const out = Ast.create(.{ .enum_cons = .{
-                .ty = hash,
-                .ident = .{ .span = ident.span, .value = ident.span.get_string(self.lexer.buffer)},
-                .init = init_exp
-            }}, span);
-            return try mem.createWith(self.gpa, out);
-        }
-    }
-    self.session.unfreeze();
-    self.lexer.index = saved;
-    return self.access();
 }
 
 fn access(self: *@This()) !*Ast {
@@ -840,6 +817,7 @@ fn access(self: *@This()) !*Ast {
     }
     return left;
 }
+
 fn struct_cons(self: *@This()) !*Ast {
     var span: types.Span = .{
         .start = self.lexer.index,
@@ -873,7 +851,9 @@ fn struct_cons(self: *@This()) !*Ast {
             }
             try fields.put(field_name, value);
         }
+        self.session.unfreeze();
         try self.expect(.close_bracket);
+        
         span.merge(.{.start = span.start, .end = self.lexer.index});
         const out = Ast.create(.{
             .struct_cons = .{
@@ -919,18 +899,9 @@ fn primary(self: *@This()) anyerror!*Ast {
     if (self.lexer.is_next_token(.eof)) {
         return error.EOF;
     }
-    self.session.freeze();
-    const saved = self.lexer.index;
-    if (self.parse_type() catch null) |ty| {
-        self.session.unfreeze();
-        span.merge(.{.start = span.start, .end = self.lexer.index});
-        return try mem.createWith(self.gpa, Ast.create(.{ .type_literal = ty}, span));
-    }
-    self.session.unfreeze();
-    self.lexer.index = saved;
-    span.merge(self.lexer.next_token().span);
-    try self.session.emit(.Error, span, "Unexpected Token");
-    return error.Invalid;
+    const ty = try self.parse_type();
+    span.merge(.{.start = span.start, .end = self.lexer.index});
+    return try mem.createWith(self.gpa, Ast.create(.{ .type_literal = ty}, span));
 }
 
 

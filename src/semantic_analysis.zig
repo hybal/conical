@@ -60,6 +60,8 @@ pub const Context = struct {
 
 
 pub fn resolve(self: *Context, trees: []*Ast) !void {
+    self.session.unfreeze();
+
     try resolve_global(self, trees);
     for (trees) |tree| {
         _ = try analyze(self, tree);
@@ -346,13 +348,10 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             }
             return ast.Type.createPrimitive(.Unit, null).hash();
         },
-        .fn_call => |expr| {
-            const left = try analyze(self, expr.func);
-            if (self.type_map.get(left).?.base_type != .func) {
-                try self.session.emit(.Error, expr.func.span, "Attempt to call a non-function type");
-                return error.NonFunctionCall;
-            }
-            return self.type_map.get(left).?.base_type.func.ret;
+        .param_list => |expr| {
+            //const left_tyid = try analyze(self, expr.left);
+            _ = expr;
+            return ast.Type.createPrimitive(.Unit, null).hash();
 
         },
         .type_decl => |decl| {
@@ -418,23 +417,6 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             try self.session.emit(.Error, exp.left.span, "Type is not subscriptable");
             return error.InvalidAccess;
         },
-        .enum_cons => |enmcons| {
-            var tyid = self.type_map.get(enmcons.ty).?;
-            if (tyid.base_type == .user) {
-                tyid = self.type_map.get(self.get(tyid.base_type.user.value).?.ty.?).?;
-            }
-            if (tyid.base_type.@"enum".variants.get(enmcons.ident.value)) |variant| {
-                if (variant) |varr| {
-                    if (enmcons.init == null) {
-                        try self.session.emit(.Error, tree.span, "Enum variant requires a value");
-                        return error.EnumVariantMissingValue;
-                    }
-                    const init_ty = try analyze(self, enmcons.init.?);
-                    try check_type_equality(self, enmcons.init.?.span, varr, init_ty);
-                }
-            }
-            return enmcons.ty;
-        },
         .type_literal => |ty| {
             const hash = ty.hash();
             _ = try self.type_map.getOrPutValue(hash, ty);
@@ -447,7 +429,10 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             };
             return out.hash();
         },
-        else => unreachable
+        else => |v| {
+            std.debug.print("Unhandled semantics: {any}\n", .{v});
+            unreachable;
+        }
     }
 }
 
