@@ -32,6 +32,7 @@ pub const Context = struct {
     in_assignment: bool,
     at_global: bool,
     session: *diag.Session,
+    current_scope: types.SymbolScope = .this,
     fn contains(self: *@This(), key: []const u8) bool {
         for (0..self.symtab.items.len) |i| {
             if (self.symtab.items[self.symtab.items.len - 1 - i].contains(key)) {
@@ -76,7 +77,8 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
                     try self.push(decl.ident.span.get_string(self.source), .{
                         .ty = if (decl.ty) |ty| ty else null,
                         .ident = decl.ident.span,
-                        .ast = tree
+                        .ast = tree,
+                        .scope = .static
                     });
                 } else {
                     return error.VariableShadowsPreviousDecleration;
@@ -148,16 +150,26 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 .char_literal => out_type.base_type = .{ .primitive = .U8 },
                 .keyword_true, .keyword_false => out_type.base_type = .{ .primitive = .Bool },
                 .ident => {
-                    var val = self.get(term.span.get_string(self.source));
+                    const val = self.get(term.span.get_string(self.source));
                     if (val == null) {
-                        val = self.get(term.span.get_string(self.source));
                         try self.session.emit(.Error, term.span, "Unknown Identifier (Type Check)");
                         return error.UnknownIdentifier;
                     }
-
                     const nval = val.?;
                     if (nval.ty == null) {
                         _ = try analyze(self, nval.ast);
+                    }
+                    if (self.current_scope != nval.scope) {
+                        std.debug.print("DEBUG: current_scope: {}\n", .{self.current_scope});
+                        std.debug.print("DEBUG: nval_scope: {}, ident: {s}\n", .{nval.scope, term.span.get_string(self.source)});
+                        const current_scope = @intFromEnum(self.current_scope);
+                        const val_scope = @intFromEnum(nval.scope);
+                        if (current_scope > val_scope) {
+                            nval.scope = @enumFromInt(current_scope);
+                        } else {
+                            try self.session.emit(.Error, term.span, "Value lives longer");
+                            return error.LongerLifetime;
+                        }
                     }
                     out_type = self.type_map.get(nval.ty.?).?;
                 },
@@ -260,7 +272,8 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     try self.push(param.span.get_string(self.source), .{
                         .ty = decl.param_types[i],
                         .ident = param.span,
-                        .ast = tree
+                        .ast = tree,
+                        .scope = .parent
                     });
            }
                 const prev_in_func = self.in_func;
@@ -285,7 +298,10 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             for(expr.exprs[0..expr.exprs.len - 1]) |exp| {
                 try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Unit, null).hash(), try analyze(self, exp) );
             }
+            const saved_scope = self.current_scope;
+            self.current_scope = .parent;
             const out = try analyze(self, expr.exprs[expr.exprs.len - 1]);
+            self.current_scope = saved_scope;
             _ = self.symtab.pop();
             return out;
         },
@@ -350,7 +366,6 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
         },
         .param_list => |*expr| {
             const left_tyid = try analyze(self, expr.left);
-            std.debug.print("DEBUG: {any}\n", .{expr.left.node});
             if (expr.left.node == .enum_cons) {
                 if (expr.params.len != 1) {
                     try self.session.emit(.Error, tree.span, "Required an initialization value");
@@ -379,7 +394,10 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
         },
         .return_stmt => |ret| {
             if (self.in_func) |ret_ty| {
+                const saved_scope = self.current_scope;
+                self.current_scope = .parent;
                 const expr_ty = try analyze(self, ret);
+                self.current_scope = saved_scope;
                 try check_type_equality(self, tree.span, ret_ty, expr_ty);
                 return ast.Type.createPrimitive(.Never, null).hash();
             }
@@ -417,7 +435,6 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 },
                 .@"enum" => |enm| {
                     if (enm.variants.get(exp.right.value)) |_| {
-                    std.debug.print("DEBUG ENUM: {any}\n", .{exp.left.node});
                         if (exp.left.node == .type_literal) {
                             tree.node = .{ .enum_cons = .{
                                 .ty = left_ty.hash(),

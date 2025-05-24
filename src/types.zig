@@ -142,13 +142,19 @@ pub const Token = struct {
     tag: Tag,
 };
 
+pub const SymbolScope = enum {
+    this,
+    parent,
+    static
+};
 //A symbol in the symbol table
 //the type is optional to allow for type inference
 //the ast field may also be removed
 pub const Symbol = struct {
     ty: ?Ast.TypeId,
     ident: Span,
-    ast: *Ast.Ast
+    ast: *Ast.Ast,
+    scope: SymbolScope = .this,
 };
 
 
