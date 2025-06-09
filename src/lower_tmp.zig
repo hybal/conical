@@ -18,11 +18,12 @@ llvm_context: LLVMContext,
 name_index: usize,
 allocator: std.mem.Allocator,
 comp_unit: types.CompUnit,
+symbol_map: std.StringHashMap(struct {value: llvm.Core.LLVMValueRef, ty: llvm.Core.LLVMTypeRef, is_alloca: bool}),
 
-pub fn gen_name(self: *@This(), prefix: []const u8) ![*c]const u8 {
-    const name = try std.fmt.allocPrint(self.allocator, "{s}{d}", .{prefix, self.name_index});
+pub fn gen_name(self: *@This(), prefix: []const u8) ![]const u8 {
+    const name = try std.fmt.allocPrint(self.allocator, "{s}{d}{c}", .{prefix, self.name_index, 0});
     self.name_index += 1;
-    return @ptrCast(name);
+    return name;
 }
 
 pub fn init(comp_unit: types.CompUnit, triple: [*]const u8, allocator: std.mem.Allocator) !@This() {
@@ -67,6 +68,7 @@ pub fn init(comp_unit: types.CompUnit, triple: [*]const u8, allocator: std.mem.A
         .name_index = 0,
         .allocator = allocator,
         .comp_unit = comp_unit,
+        .symbol_map = .init(allocator),
     };
 }
 pub fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
@@ -217,32 +219,54 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                 .char_literal => {
                     return llvm.Core.LLVMConstInt(type_ref, try self.parse_char_literal(term.span), 0);
                 },
-                else => unreachable,
+                .ident => {
+                    const symref = self.symbol_map.get(term.span.get_string(self.comp_unit.source)).?;
+                    if (symref.is_alloca) {
+                        const id = try self.allocator.dupeZ(u8,term.span.get_string(self.comp_unit.source));
+                        const loaded = llvm.Core.LLVMBuildLoad2(self.llvm_context.builder, symref.ty, symref.value, @ptrCast(id));
+                        return loaded;
+                    }
+                    return symref.value;
+                },
+                else => |val| {
+                    std.debug.print("Reached unhandled switch case: {s}\n", .{@tagName(val)});
+                    unreachable;
+                },
             }
         },
         .binary_expr => |expr| {
             const lhs = try self.lower(expr.left);
             const rhs = try self.lower(expr.right);
             switch (expr.op.tag) {
-                .plus => return llvm.Core.LLVMBuildAdd(self.llvm_context.builder, lhs, rhs, try self.gen_name("tmp")),
-                .minus => return llvm.Core.LLVMBuildSub(self.llvm_context.builder, lhs, rhs, try self.gen_name("tmp")),
-                .star => return llvm.Core.LLVMBuildMul(self.llvm_context.builder, lhs, rhs, try self.gen_name("tmp")),
+                .plus => return llvm.Core.LLVMBuildAdd(self.llvm_context.builder, lhs, rhs, @ptrCast(try self.gen_name("tmp"))),
+                .minus => return llvm.Core.LLVMBuildSub(self.llvm_context.builder, lhs, rhs, @ptrCast(try self.gen_name("tmp"))),
+                .star => return llvm.Core.LLVMBuildMul(self.llvm_context.builder, lhs, rhs, @ptrCast(try self.gen_name("tmp"))),
                 .slash => {
                     if (node_type.is_signed_int()) {
-                        return llvm.Core.LLVMBuildSDiv(self.llvm_context.builder, lhs, rhs, try self.gen_name("tmp"));
+                        return llvm.Core.LLVMBuildSDiv(self.llvm_context.builder, lhs, rhs, @ptrCast(try self.gen_name("tmp")));
                     } else if (node_type.is_unsigned_int()) {
-                        return llvm.Core.LLVMBuildUDiv(self.llvm_context.builder, lhs, rhs, try self.gen_name("tmp"));
+                        return llvm.Core.LLVMBuildUDiv(self.llvm_context.builder, lhs, rhs, @ptrCast(try self.gen_name("tmp")));
                     }
                 },
                 .percent => {
                     if (node_type.is_signed_int()) {
-                        return llvm.Core.LLVMBuildSRem(self.llvm_context.builder, lhs, rhs, try self.gen_name("tmp"));
+                        return llvm.Core.LLVMBuildSRem(self.llvm_context.builder, lhs, rhs, @ptrCast(try self.gen_name("tmp")));
                     } else if (node_type.is_unsigned_int()) {
-                        return llvm.Core.LLVMBuildURem(self.llvm_context.builder, lhs, rhs, try self.gen_name("tmp"));
+                        return llvm.Core.LLVMBuildURem(self.llvm_context.builder, lhs, rhs, @ptrCast(try self.gen_name("tmp")));
                     }
                 },
                 else => unreachable
-                
+            }
+        },
+        .unary_expr => |expr| {
+            const ex = try self.lower(expr.expr);
+            const ty = try self.createTypeRef(self.comp_unit.type_table.get(ast.tyid.?).?);
+            const zero = llvm.Core.LLVMConstInt(ty, 0, 0);
+            switch (expr.op.tag) {
+                .minus => llvm.Core.LLVMBuildNeg(self.llvm_context.builder, ex, @ptrCast(try self.gen_name("tmp"))),
+                .tilde => llvm.Core.LLVMBuildNot(self.llvm_context.builder, ex, @ptrCast(try self.gen_name("tmp"))),
+                .bang => llvm.Core.LLVMBuildICmp(self.llvm_context.builder, llvm.Core.LLVMIntEq, ex, zero, @ptrCast(self.gen_name("tmp"))),
+                else => unreachable
             }
         },
         .fn_decl => |decl| {
@@ -257,20 +281,41 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
             };
 
             const llvm_fnc_ty = try self.createTypeRef(fnc_ty);
-            const func_ref = llvm.Core.LLVMAddFunction(self.llvm_context.module, @ptrCast(decl.ident.value), llvm_fnc_ty);
+            const id = try self.allocator.dupeZ(u8, decl.ident.value);
+            const func_ref = llvm.Core.LLVMAddFunction(self.llvm_context.module, @ptrCast(id), llvm_fnc_ty);
             const entry = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, func_ref, "entry");
             llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, entry);
-            return llvm.Core.LLVMBuildRetVoid(self.llvm_context.builder);
+            return try self.lower(decl.body.?);
+        },
+        .block => |block| {
+            for (block.exprs) |expr| {
+                _ = try self.lower(expr);
+            }
+            return null;
+        },
+        .return_stmt => |ret| {
+            return llvm.Core.LLVMBuildRet(self.llvm_context.builder, try self.lower(ret));
         },
         .var_decl => |decl| {
             const var_ty = try self.createTypeRef(self.comp_unit.type_table.get(decl.ty.?).?);
             const val = try self.lower(decl.initialize.?);
-            const value_ref = llvm.Core.LLVMBuildAlloca(self.llvm_context.builder, var_ty, @ptrCast(decl.ident.value));
-            const store = llvm.Core.LLVMBuildStore(self.llvm_context.builder, val, value_ref);
-            return store;
+            if (decl.is_mut) {
+                const name = try self.gen_name("tmp");
+                const value_ref = llvm.Core.LLVMBuildAlloca(self.llvm_context.builder, var_ty, @ptrCast(name));
+
+                _ = try self.symbol_map.getOrPutValue(decl.ident.value, .{.value = val, .ty = var_ty, .is_alloca = true});
+                const store = llvm.Core.LLVMBuildStore(self.llvm_context.builder, val, value_ref);
+                return store;
+            }
+            _ = try self.symbol_map.getOrPutValue(decl.ident.value, .{.value = val, .ty = var_ty, .is_alloca = false});
+            return val;
         },
-        else => unreachable,
+        else => |val| {
+            std.debug.print("Unhandled switch case: {s}\n", .{@tagName(val)});
+            unreachable;
+        },
     }
+    std.debug.print("Should not reach end of function\n", .{});
     unreachable;
 }
 

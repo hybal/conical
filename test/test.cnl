@@ -1,9 +1,10 @@
 
 
 
-fn main() -> i32 {
-    let a = 14;
-    let b = 12;
-    b += 1;
+fn main() -> f32 {
+    let a = 14.0;
+    let c = "Hello, World!";
+    let d = &c;
+    let b = 12.0;
     a + b
 }

@@ -320,7 +320,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             }
             return error.Unknown;
         },
-        .block => |expr| {
+        .block => |*expr| {
             if (expr.exprs.len == 0) {
                 try self.session.emit(.Warning, tree.span, "Empty block");
                 const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
@@ -337,6 +337,8 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             const out = try analyze(self, expr.exprs[expr.exprs.len - 1]);
             self.current_scope = saved_scope;
             _ = self.symtab.pop();
+            expr.exprs[expr.exprs.len - 1] = try mem.createWith(self.gpa, Ast.create(.{.return_stmt = expr.exprs[expr.exprs.len - 1]}, expr.exprs[expr.exprs.len - 1].span));
+            expr.exprs[expr.exprs.len - 1].tyid = out;
             tree.tyid = out;
             return out;
         },

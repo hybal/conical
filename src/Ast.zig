@@ -493,11 +493,12 @@ pub const TypeId = u64;
 pub const Ast = struct {
     node: AstNode,
     span: types.Span,
-    tyid: ?TypeId = null,
+    tyid: ?TypeId,
     pub fn create(node: AstNode, span: types.Span) @This() {
         return .{
             .node = node,
-            .span = span
+            .span = span,
+            .tyid = null,
         };
     }
 };

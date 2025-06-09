@@ -40,7 +40,12 @@ const BinaryExpr = struct {
 };
 
 const Terminal = union(enum) {
-
+    string_literal: []const u8, 
+    integer_literal: u128,
+    float_literal: f64, 
+    identifier: []const u8, 
+    type_literal: *Ast.Type,
+    unit,
 };
 
 const UnaryExpr = struct {
@@ -48,8 +53,17 @@ const UnaryExpr = struct {
     expr: HirNode,
 };
 
+const Assignment = struct {
+    lvalue: HirNode,
+    expr: HirNode,
+};
+
+//This should always be pointer sized
 const HirNode = union(enum) {
     binary_expr: *BinaryExpr,
     unary_expr: *UnaryExpr,
-    terminal: 
+    terminal: *Terminal,
+    assignment: *Assignment,
+    
+
 };
