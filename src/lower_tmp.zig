@@ -228,6 +228,12 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                     }
                     return symref.value;
                 },
+                .keyword_true => {
+                    return llvm.Core.LLVMConstInt(type_ref, 1, 0);
+                },
+                .keyword_false => {
+                    return llvm.Core.LLVMConstInt(type_ref, 0, 0);
+                },
                 else => |val| {
                     std.debug.print("Reached unhandled switch case: {s}\n", .{@tagName(val)});
                     unreachable;
@@ -262,12 +268,12 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
             const ex = try self.lower(expr.expr);
             const ty = try self.createTypeRef(self.comp_unit.type_table.get(ast.tyid.?).?);
             const zero = llvm.Core.LLVMConstInt(ty, 0, 0);
-            switch (expr.op.tag) {
+            return switch (expr.op.tag) {
                 .minus => llvm.Core.LLVMBuildNeg(self.llvm_context.builder, ex, @ptrCast(try self.gen_name("tmp"))),
                 .tilde => llvm.Core.LLVMBuildNot(self.llvm_context.builder, ex, @ptrCast(try self.gen_name("tmp"))),
-                .bang => llvm.Core.LLVMBuildICmp(self.llvm_context.builder, llvm.Core.LLVMIntEq, ex, zero, @ptrCast(self.gen_name("tmp"))),
+                .bang => llvm.Core.LLVMBuildICmp(self.llvm_context.builder, llvm.Core.LLVMIntEQ, ex, zero, @ptrCast(try self.gen_name("tmp"))),
                 else => unreachable
-            }
+            };
         },
         .fn_decl => |decl| {
             const fnc_ty: Ast.Type = .{
