@@ -139,15 +139,15 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
         .terminal => |term| {
             var out_type: ast.Type = ast.Type.createPrimitive(.Unit, null);
             switch (term.tag) {
-                .int_literal => out_type.base_type = .{ .primitive = .I32 }, //TODO: automatically widen the type to acomodate a larger literal / automatically determine sign
+                .int_literal => out_type.base_type = .{ .primitive = .I32 }, 
                 .float_literal => out_type.base_type = .{ .primitive = .F32 },
                 .string_literal, .raw_string_literal => {
-                    out_type.base_type = .{ .primitive = .U8 };
+                    out_type.base_type = .{ .primitive = .Rune };
                     var modifiers = std.ArrayList(ast.TypeModifier).init(self.gpa);
                     try modifiers.append(.Slice);
                     out_type.modifiers = try modifiers.toOwnedSlice();
                 },
-                .char_literal => out_type.base_type = .{ .primitive = .U8 },
+                .char_literal => out_type.base_type = .{ .primitive = .Rune },
                 .keyword_true, .keyword_false => out_type.base_type = .{ .primitive = .Bool },
                 .ident => {
                     const val = self.get(term.span.get_string(self.source));
@@ -160,27 +160,31 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                         _ = try analyze(self, nval.ast);
                     }
                     if (self.current_scope != nval.scope) {
-                        std.debug.print("DEBUG: current_scope: {}\n", .{self.current_scope});
-                        std.debug.print("DEBUG: nval_scope: {}, ident: {s}\n", .{nval.scope, term.span.get_string(self.source)});
                         const current_scope = @intFromEnum(self.current_scope);
                         const val_scope = @intFromEnum(nval.scope);
                         if (current_scope > val_scope) {
                             nval.scope = @enumFromInt(current_scope);
-                        } else {
-                            try self.session.emit(.Error, term.span, "Value lives longer");
-                            return error.LongerLifetime;
-                        }
+                        } 
                     }
                     out_type = self.type_map.get(nval.ty.?).?;
                 },
                 else => {}
             }
             _ = try self.type_map.getOrPutValue(out_type.hash(), out_type);
-            return out_type.hash();
+            const out_hash = out_type.hash();
+            tree.tyid = out_hash;
+            return out_hash;
         },
         .terminated => |expr| {
-            _ = try analyze(self, expr);
-            return ast.Type.createPrimitive(.Unit, null).hash();
+            const tyid = try analyze(self, expr);
+            const ty = self.type_map.get(tyid).?;
+            if (ty.base_type == .primitive and ty.base_type.primitive == .Never) {
+                tree.tyid = tyid;
+                return tyid;
+            }
+            const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
+            tree.tyid = out_hash;
+            return out_hash;
         },
         .binary_expr => |expr| {
             const left = try analyze(self, expr.left);
@@ -189,15 +193,20 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 .plus, .minus, .slash, .star, .caret, .percent,
                 .pipe, .amp, .shl, .shr => {
                     try check_type_equality(self, tree.span, left, right);
+                    tree.tyid = left;
                     return left;
                 },
                 .eq2, .noteq, .lt, .lteq, .gt, .gteq => {
                     try check_type_equality(self, tree.span, left, right);
-                    return ast.Type.createPrimitive(.Bool, null).hash();
+                    const out_hash = ast.Type.createPrimitive(.Bool, null).hash();
+                    tree.tyid = out_hash;
+                    return out_hash;
                 },
                 .pipe2, .amp2 => {
                     try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Bool, null).hash(), left);
-                    return ast.Type.createPrimitive(.Bool, null).hash();
+                    const out_hash = ast.Type.createPrimitive(.Bool, null).hash();
+                    tree.tyid = out_hash;
+                    return out_hash;
                 },
                 else => unreachable
             }
@@ -205,8 +214,22 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
         .unary_expr => |expr| {
             var ty = self.type_map.get(try analyze(self, expr.expr)).?;
             switch (expr.op.tag) {
-                .minus,
-                .tilde => return ty.hash(),
+                .minus => {
+                    if (ty.base_type == .primitive and !ty.base_type.primitive.is_signed_int()) {
+                        ty.base_type.primitive = ty.base_type.primitive.switch_sign();
+                        const out_hash = ty.hash();
+                        tree.tyid = out_hash;
+                        return out_hash;
+                    }
+                    const out_hash = ty.hash();
+                    tree.tyid = out_hash;
+                    return out_hash;
+                },
+                .tilde => {
+                    const out_hash = ty.hash();
+                    tree.tyid = out_hash;
+                    return out_hash;
+                },
                 .amp => {
                     var mods: std.ArrayList(ast.TypeModifier) = undefined;
                     if (ty.modifiers) |modd| {
@@ -217,7 +240,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     try mods.insert(0,.Ref);
                     ty.modifiers = try mods.toOwnedSlice();
                     _ = try self.type_map.getOrPutValue(ty.hash() ,ty);
-                    return ty.hash();
+                    const out_hash = ty.hash();
+                    tree.tyid = out_hash;
+                    return out_hash;
                 },
                 .star => {
                     if (ty.modifiers == null 
@@ -233,10 +258,14 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     } 
                     _ = mods.orderedRemove(0);
                     ty.modifiers = try mods.toOwnedSlice();
-                    return ty.hash();
+                    const out_hash = ty.hash();
+                    tree.tyid = out_hash;
+                    return out_hash;
                 },
                 .bang => {
-                    return ast.Type.createPrimitive(.Bool, null).hash();
+                    const out_hash = ast.Type.createPrimitive(.Bool, null).hash();
+                    tree.tyid = out_hash;
+                    return out_hash;
                 },
                 else => unreachable
             }
@@ -285,14 +314,19 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 self.in_func = prev_in_func;
                 self.at_global = prev_in_global;
                 _ = self.symtab.pop();
-                return ast.Type.createPrimitive(.Unit, null).hash();
+                const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
+                tree.tyid = out_hash;
+                return out_hash;
             }
             return error.Unknown;
         },
         .block => |expr| {
             if (expr.exprs.len == 0) {
                 try self.session.emit(.Warning, tree.span, "Empty block");
-                return ast.Type.createPrimitive(.Unit, null).hash();
+                const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
+                tree.tyid = out_hash;
+                return out_hash;
+
             }
             try self.symtab.append(types.SymTab.init(self.gpa));
             for(expr.exprs[0..expr.exprs.len - 1]) |exp| {
@@ -303,22 +337,29 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             const out = try analyze(self, expr.exprs[expr.exprs.len - 1]);
             self.current_scope = saved_scope;
             _ = self.symtab.pop();
+            tree.tyid = out;
             return out;
         },
         .assignment => |stmt| {
             const lvalue = try analyze(self, stmt.lvalue);
             const assigned = try analyze(self, stmt.expr);
             try check_type_equality(self, tree.span, lvalue, assigned);
-            return ast.Type.createPrimitive(.Unit, null).hash();
+            const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
+            tree.tyid = out_hash;
+            return out_hash;
         },
         .if_stmt => |stmt| {
             const cond = try analyze(self, stmt.condition);
             const bol = ast.Type.createPrimitive(.Bool, null).hash();
             try check_type_equality(self, tree.span, cond, bol);
             const blk = try analyze(self, stmt.block);
-            if (stmt.else_block == null) return ast.Type.createPrimitive(.Unit, null).hash();
+            if (stmt.else_block == null) {
+                const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
+                tree.tyid = out_hash;
+            }
             const else_block = stmt.else_block.?;
             try check_type_equality(self, tree.span, blk, try analyze(self, else_block));
+            tree.tyid = blk;
             return blk;
         },
         .while_loop => |stmt| {
@@ -327,7 +368,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             try check_type_equality(self, tree.span, cond, bol);
             const blk = try analyze(self, stmt.block);
             try check_type_equality(self, tree.span, blk, ast.Type.createPrimitive(.Unit, null).hash());
-            return ast.Type.createPrimitive(.Unit, null).hash();
+            const out_hash =  ast.Type.createPrimitive(.Unit, null).hash();
+            tree.tyid = out_hash;
+            return out_hash;
         },
         .ternary => |expr| {
             const bol = ast.Type.createPrimitive(.Bool, null).hash();
@@ -337,6 +380,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 out,
                 try analyze(self, expr.false_path)
             );
+            tree.tyid = out;
             return out;
         },
         .var_decl => |*stmt| {
@@ -362,7 +406,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 var val = self.get(stmt.ident.span.get_string(self.source)).?;
                 val.ty = ty;
             }
-            return ast.Type.createPrimitive(.Unit, null).hash();
+            const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
+            tree.tyid = out_hash;
+            return out_hash;
         },
         .param_list => |*expr| {
             const left_tyid = try analyze(self, expr.left);
@@ -376,6 +422,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 }
                 tree.node = expr.left.node;
             }
+            tree.tyid = left_tyid;
             return left_tyid;
 
         },
@@ -387,10 +434,14 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     .ast = tree,
                 });
             }
-            return ast.Type.createPrimitive(.Unit, null).hash();
+            const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
+            tree.tyid = out_hash;
+            return out_hash;
         },
         .unit => {
-            return ast.Type.createPrimitive(.Unit, null).hash();
+            const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
+            tree.tyid = out_hash;
+            return out_hash;
         },
         .return_stmt => |ret| {
             if (self.in_func) |ret_ty| {
@@ -399,7 +450,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 const expr_ty = try analyze(self, ret);
                 self.current_scope = saved_scope;
                 try check_type_equality(self, tree.span, ret_ty, expr_ty);
-                return ast.Type.createPrimitive(.Never, null).hash();
+                const out_hash = ast.Type.createPrimitive(.Never, null).hash();
+                tree.tyid = out_hash;
+                return out_hash;
             }
             try self.session.emit(.Error, tree.span, "return outside of function");
             return error.ReturnOutsideFunction;
@@ -417,17 +470,20 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 const actual_ty = try analyze(self, entry.value_ptr.*);
                 try check_type_equality(self, tree.span, expected_ty.?, actual_ty);
             }
+            tree.tyid = cons.ty;
             return cons.ty;
         },
         .access_operator => |exp| {
             const left_tyid = try analyze(self, exp.left);
-            var left_ty = self.type_map.get(left_tyid).?;
+            const left_ty_prev = self.type_map.get(left_tyid).?;
+            var left_ty = left_ty_prev;
             if (left_ty.base_type == .user) {
                 left_ty = self.type_map.get(self.get(left_ty.base_type.user.value).?.ty.?).?;
             }
             switch (left_ty.base_type) {
                 .strct => |strct| {
                     if (strct.fields.get(exp.right.value)) |field| {
+                        tree.tyid = field;
                         return field;
                     }
                     try self.session.emit(.Error, exp.right.span, "Struct has no such field");
@@ -435,14 +491,16 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 },
                 .@"enum" => |enm| {
                     if (enm.variants.get(exp.right.value)) |_| {
-                        if (exp.left.node == .type_literal) {
+                        if (exp.left.node == .type_literal or exp.left.node == .terminal) {
                             tree.node = .{ .enum_cons = .{
-                                .ty = left_ty.hash(),
+                                .ty = left_ty_prev.hash(),
                                 .ident = exp.right,
                                 .init = null
                             }};
                         }
-                        return left_tyid;
+                        const out_hash = left_ty_prev.hash();
+                        tree.tyid = out_hash;
+                        return out_hash;
                     }
                     try self.session.emit(.Error, exp.right.span, "Enum has no variant");
                     return error.UnknownEnumVariant;
@@ -462,7 +520,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 .modifiers = null,
                 .chash = hash
             };
-            return out.hash();
+            const out_hash = out.hash();
+            tree.tyid = out_hash;
+            return out_hash;
         },
         else => |v| {
             std.debug.print("Unhandled semantics: {any}\n", .{v});

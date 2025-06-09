@@ -511,6 +511,33 @@ fn assignment(self: *@This()) anyerror!*Ast {
             .lvalue = lval,
             .expr = expr,
         }}, span);
+        
+        if (token.tag != .eq) {
+            const operator: types.Tag = switch (token.tag) {
+                    .pluseq => .plus,
+                    .minuseq => .minus,
+                    .stareq => .star,
+                    .slasheq => .slash,
+                    .percenteq => .percent,
+                    .shleq => .shl,
+                    .shreq => .shr,
+                    .ampeq => .amp,
+                    .careteq => .caret,
+                    .pipeeq => .pipe,
+                    else => unreachable,
+            };
+            const binary_expr: Ast = Ast.create(.{ .binary_expr = .{
+                .left = lval,
+                .right = expr,
+                .op = .{ .tag = operator, .span = .{.start = token.span.start, .end = token.span.end - 1 }},
+            }}, span);
+            parent = Ast.create(.{ .assignment = .{
+                .op = .{ .tag = .eq, .span = token.span },
+                .lvalue = lval,
+                .expr = try mem.createWith(self.gpa, binary_expr),
+            }}, span);
+        }
+        
         if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |tok| {
             span.merge(tok.span);
             parent = Ast.create(.{ .terminated = try mem.createWith(self.gpa, parent) }, span);
@@ -853,7 +880,7 @@ fn struct_cons(self: *@This()) !*Ast {
         }
         self.session.unfreeze();
         try self.expect(.close_bracket);
-        
+
         span.merge(.{.start = span.start, .end = self.lexer.index});
         const out = Ast.create(.{
             .struct_cons = .{

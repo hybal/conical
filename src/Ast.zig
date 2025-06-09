@@ -47,7 +47,6 @@ pub const PrimitiveType = enum {
     F32,
     F64,
     Bool,
-    Str, //may be removed
     Rune, //may not be needed
     //the type of an expression that is never evaluated/completed
     //it is the type of the return statement and any other control flow statements
@@ -73,7 +72,6 @@ pub const PrimitiveType = enum {
             .F32 => "f32",
             .F64 => "f64",
             .Bool => "bool",
-            .Str => "str",
             .Rune => "rune",
             .Never => "!",
             .Unit => "()",
@@ -95,7 +93,6 @@ pub const PrimitiveType = enum {
         .{ "f32", .F32 },
         .{ "f64", .F64 },
         .{ "bool", .Bool },
-        .{ "str", .Str },
         .{ "rune", .Rune },
         .{ "()", .Unit },
     });
@@ -110,6 +107,69 @@ pub const PrimitiveType = enum {
     pub fn hash(self: *const @This()) u64 {
         return @intFromEnum(self.*);
     }
+    fn pow(a: comptime_int, b: comptime_int) comptime_int {
+        var out: comptime_int = 0;
+        for (0..b) |_| {
+            out += a;
+        }
+        return out;
+    }
+    pub fn from_int(val: u128, signed: bool) @This() {
+        return switch (val) {
+            0...pow(2, 8) - 1 => if (signed) .I8 else .U8,
+            pow(2, 8)...pow(2, 16) - 1 => if (signed) .I16 else .U16,
+            pow(2, 16)...pow(2, 32) - 1 => if (signed) .I32 else .U32,
+            pow(2, 32)...pow(2, 64) - 1 => if (signed) .I64 else .U64,
+            else => if (signed) .I128 else .U128,
+        };
+    }
+
+    pub fn is_signed_int(self: @This()) bool {
+        return switch (self) {
+            .I8,
+            .I16,
+            .I32,
+            .I64,
+            .I128,
+            .ISize => true,
+            else => false
+        };
+    }
+
+    pub fn is_unsigned_int(self: @This()) bool {
+        return switch (self) {
+            .U8,
+            .U16,
+            .U32,
+            .U64,
+            .U128,
+            .USize => true,
+            else => false
+        };
+    }
+    pub fn is_int(self: @This()) bool {
+        return self.is_signed_int() or self.is_unsigned_int();
+    }
+
+    pub fn switch_sign(self: @This()) @This() {
+        if (!self.is_int()) return self;
+        return switch (self) {
+            .I8 => .U8,
+            .I16 => .U16,
+            .I32 => .U32,
+            .I64 => .U64,
+            .I128 => .U128,
+            .ISize => .USize,
+            .U8 => .I8,
+            .U16 => .I16,
+            .U32 => .I32,
+            .U64 => .I64,
+            .U128 => .I128,
+            .USize => .ISize,
+            else => unreachable
+        };
+    }
+
 };
 
 //Various type modifiers such as references and slices
@@ -279,6 +339,13 @@ pub const Type = struct {
         };
     }
 
+    pub fn is_signed_int(self: *const @This()) bool {
+        return self.base_type == .primitive and self.base_type.primitive.is_signed_int();
+    }
+    pub fn is_unsigned_int(self: *const @This()) bool {
+        return self.base_type == .primitive and self.base_type.primitive.is_unsigned_int();
+    }
+
 };
 
 //a struct ast node
@@ -426,6 +493,7 @@ pub const TypeId = u64;
 pub const Ast = struct {
     node: AstNode,
     span: types.Span,
+    tyid: ?TypeId = null,
     pub fn create(node: AstNode, span: types.Span) @This() {
         return .{
             .node = node,

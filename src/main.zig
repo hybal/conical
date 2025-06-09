@@ -1,4 +1,6 @@
 const std = @import("std");
+const codegen = @import("lower_tmp.zig");
+const llvm = @import("llvm");
 const lex = @import("lexer.zig");
 const ast = @import("Ast.zig");
 const parse = @import("parser.zig");
@@ -200,7 +202,7 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
 pub fn main() !u8 {
     const page_allocator = std.heap.page_allocator;
     var arena_alloc = std.heap.ArenaAllocator.init(page_allocator);
-const gpa = arena_alloc.allocator();
+    const gpa = arena_alloc.allocator();
     const args = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, args);
 
@@ -230,7 +232,22 @@ const gpa = arena_alloc.allocator();
         print_tree(&type_map, tree);
         std.debug.print("\n", .{});
     }
+    const comp_unit: types.CompUnit = .{
+        .file = args[1],
+        .source = source,
+        .ast = trees,
+        .symbol_table = context.symtab.items[0],
+        .type_table = context.type_map
+    };
+    const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
+    var cg = try codegen.init(comp_unit, triple, gpa);
+    const llvm_ref = try cg.lower(comp_unit.ast[0]);
+    _ = llvm_ref;
+    var err: [*c]u8 = null;
+    if (llvm.Analysis.LLVMVerifyModule(@ptrCast(cg.llvm_context.module.?), llvm.Analysis.LLVMAbortProcessAction, &err) != 0) {
+        std.debug.print("Module verification failed: {s}\n", .{err});
 
-
+    }
+    cg.emit();
     return 0;
 }

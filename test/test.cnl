@@ -1,27 +1,9 @@
 
 
-type Pos = struct {
-   x: i32;
-   y: i32;
-};
 
-type Option = enum {
-    Some: i32,
-    None
-};
-type Example = i32;
-pub fn main() -> i32 {
-    //let a = init_pos(1, 2);
-    let b = Pos { .x = 1, .y = 2 };
-    1
+fn main() -> i32 {
+    let a = 14;
+    let b = 12;
+    b += 1;
+    a + b
 }
-
-
-fn init_pos(x, y): (i32, i32) -> Pos {
-    let z = 4;
-    Pos {
-        .x = x + 1,
-        .y = y + z
-    }
-}
-
