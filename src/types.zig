@@ -174,6 +174,7 @@ pub fn init_type_map(gpa: std.mem.Allocator) !TypeTbl {
 //represents a compilation unit/module, including all of the relevant information from every stage
 pub const CompUnit = struct {
     file: []const u8, //the relative path of the file 
+    out_file: []const u8, //the filename of the output file
     source: []const u8, //the file source
     ast: []*Ast.Ast, //the ast
     symbol_table: SymTab, //the symbol table (currently would only contain the global definitions)

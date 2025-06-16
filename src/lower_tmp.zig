@@ -13,12 +13,15 @@ pub const LLVMContext = struct {
     target_data: llvm.Target.LLVMTargetDataRef, 
     data_layout: llvm.TargetMachine.LLVMTargetDataRef,
     module: llvm.Core.LLVMModuleRef,
+    pm: llvm.Core.LLVMPassManagerRef,
 };
 llvm_context: LLVMContext,
 name_index: usize,
 allocator: std.mem.Allocator,
 comp_unit: types.CompUnit,
 symbol_map: std.StringHashMap(struct {value: llvm.Core.LLVMValueRef, ty: llvm.Core.LLVMTypeRef, is_alloca: bool}),
+in_assignment: bool,
+target_size: u8,
 
 pub fn gen_name(self: *@This(), prefix: []const u8) ![]const u8 {
     const name = try std.fmt.allocPrint(self.allocator, "{s}{d}{c}", .{prefix, self.name_index, 0});
@@ -56,6 +59,8 @@ pub fn init(comp_unit: types.CompUnit, triple: [*]const u8, allocator: std.mem.A
     defer llvm.Core.LLVMDisposeMessage(layout_str);
     const module = llvm.Core.LLVMModuleCreateWithNameInContext("main", context);
     const target_data = llvm.Target.LLVMCreateTargetData(layout_str);
+    const pm = llvm.Core.LLVMCreateFunctionPassManagerForModule(module);
+    llvm.Core.LLVMSetTarget(module, triple);
     return .{
         .llvm_context = .{
             .builder = builder,
@@ -64,11 +69,14 @@ pub fn init(comp_unit: types.CompUnit, triple: [*]const u8, allocator: std.mem.A
             .target_data = target_data,
             .data_layout = data_layout,
             .module = module,
+            .pm = pm
         },
         .name_index = 0,
         .allocator = allocator,
         .comp_unit = comp_unit,
         .symbol_map = .init(allocator),
+        .in_assignment = false,
+        .target_size = @intCast(llvm.Target.LLVMPointerSize(target_data) * 8)
     };
 }
 pub fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
@@ -190,8 +198,10 @@ fn parse_char_literal(self: *@This(), span: types.Span) !u32 {
     
 }
 
-pub fn emit(self: *@This()) void {
+pub fn emit(self: *@This()) !void {
     llvm.Core.LLVMDumpModule(self.llvm_context.module);
+    var err: [*c]u8 = null;
+    _ = llvm.TargetMachine.LLVMTargetMachineEmitToFile(self.llvm_context.target_machine, @ptrCast(self.llvm_context.module), @ptrCast(try self.allocator.dupeZ(u8, self.comp_unit.out_file)), llvm.TargetMachine.LLVMObjectFile, &err);
 }
 pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
     const node_type = self.comp_unit.type_table.get(ast.tyid.?).?;
@@ -221,9 +231,10 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                 },
                 .ident => {
                     const symref = self.symbol_map.get(term.span.get_string(self.comp_unit.source)).?;
-                    if (symref.is_alloca) {
-                        const id = try self.allocator.dupeZ(u8,term.span.get_string(self.comp_unit.source));
-                        const loaded = llvm.Core.LLVMBuildLoad2(self.llvm_context.builder, symref.ty, symref.value, @ptrCast(id));
+                    if (symref.is_alloca and !self.in_assignment) {
+                        const id = try self.allocator.dupeZ(u8, term.span.get_string(self.comp_unit.source));
+                        const ptr_ty = llvm.Core.LLVMPointerType(symref.ty, 0);
+                        const loaded = llvm.Core.LLVMBuildLoad2(self.llvm_context.builder, ptr_ty, symref.value, @ptrCast(id));
                         return loaded;
                     }
                     return symref.value;
@@ -309,12 +320,92 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                 const name = try self.gen_name("tmp");
                 const value_ref = llvm.Core.LLVMBuildAlloca(self.llvm_context.builder, var_ty, @ptrCast(name));
 
-                _ = try self.symbol_map.getOrPutValue(decl.ident.value, .{.value = val, .ty = var_ty, .is_alloca = true});
+                _ = try self.symbol_map.getOrPutValue(decl.ident.value, .{.value = value_ref, .ty = var_ty, .is_alloca = true});
                 const store = llvm.Core.LLVMBuildStore(self.llvm_context.builder, val, value_ref);
                 return store;
             }
             _ = try self.symbol_map.getOrPutValue(decl.ident.value, .{.value = val, .ty = var_ty, .is_alloca = false});
             return val;
+        },
+        .assignment => |expr| {
+            const saved_in_assignment = self.in_assignment;
+            self.in_assignment = true;
+            const lhs = try self.lower(expr.lvalue);
+            self.in_assignment = saved_in_assignment;
+            const rhs = try self.lower(expr.expr);
+            return llvm.Core.LLVMBuildStore(self.llvm_context.builder, rhs, lhs);
+        },
+        .terminated => |expr| {
+            return try self.lower(expr);
+        },
+        .cast => |expr| {
+            if (expr.expr.tyid.? == expr.ty) return self.lower(expr.expr);
+            const from_ty = self.comp_unit.type_table.get(expr.expr.tyid.?).?.base_type.primitive;
+            const to_ty_full = self.comp_unit.type_table.get(expr.ty).?;
+            const to_ty = to_ty_full.base_type.primitive;
+            const to_ty_llvm = try self.createTypeRef(to_ty_full);
+            const lowered_expr = try self.lower(expr.expr);
+            if (from_ty.is_int() and to_ty.is_int()) {
+                const name = try self.gen_name("tmp");
+                return llvm.Core.LLVMBuildIntCast2(
+                    self.llvm_context.builder,
+                    lowered_expr,
+                    to_ty_llvm,
+                    if (to_ty.is_signed_int()) 1 else 0,
+                    @ptrCast(name),
+                );
+            }
+            if (from_ty.is_int() and to_ty.is_float()) {
+                if (from_ty.is_signed_int()) {
+                    return llvm.Core.LLVMBuildSIToFP(
+                        self.llvm_context.builder,
+                        lowered_expr,
+                        to_ty_llvm,
+                        @ptrCast(try self.gen_name("tmp"))
+                    );
+                } else {
+                    return llvm.Core.LLVMBuildUIToFP(
+                        self.llvm_context.builder,
+                        lowered_expr,
+                        to_ty_llvm,
+                        @ptrCast(try self.gen_name("tmp")),
+                    );
+                }
+            }
+            if (from_ty.is_float() and to_ty.is_int()) {
+                if (to_ty.is_signed_int()) {
+                    return llvm.Core.LLVMBuildFPToSI(
+                        self.llvm_context.builder,
+                        lowered_expr,
+                        to_ty_llvm,
+                        @ptrCast(try self.gen_name("tmp")),
+                    );
+                } else {
+                    return llvm.Core.LLVMBuildFPToUI(
+                        self.llvm_context.builder,
+                        lowered_expr,
+                        to_ty_llvm,
+                        @ptrCast(try self.gen_name("tmp")),
+                    );
+                }
+            }
+            if (from_ty.is_float() and to_ty.is_float()) {
+                if (from_ty.get_bits(self.target_size) < to_ty.get_bits(self.target_size)) {
+                    return llvm.Core.LLVMBuildFPTrunc(
+                        self.llvm_context.builder,
+                        lowered_expr,
+                        to_ty_llvm,
+                        @ptrCast(try self.gen_name("tmp")),
+                    );
+                } else {
+                    return llvm.Core.LLVMBuildFPExt(
+                        self.llvm_context.builder,
+                        lowered_expr,
+                        to_ty_llvm,
+                        @ptrCast(try self.gen_name("tmp")),
+                    );
+                }
+            }
         },
         else => |val| {
             std.debug.print("Unhandled switch case: {s}\n", .{@tagName(val)});
@@ -324,4 +415,5 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
     std.debug.print("Should not reach end of function\n", .{});
     unreachable;
 }
+
 

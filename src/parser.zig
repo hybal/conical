@@ -765,7 +765,7 @@ fn multiplicative(self: *@This()) anyerror!*Ast {
         .end = self.lexer.index,
     };
 
-    var left = try self.unary();
+    var left = try self.cast();
     span.merge(left.span);
     if (self.lexer.consume_if_eq(&[_]types.Tag{.star, .slash, .percent})) |op| {
         const right = try self.multiplicative();
@@ -779,6 +779,26 @@ fn multiplicative(self: *@This()) anyerror!*Ast {
     }
     return left;
 }
+fn cast(self: *@This()) anyerror!*Ast {
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index
+    };
+    const expr = try self.unary();
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_as})) |_| {
+        const ty = try self.parse_type();
+        span.merge(.{.start = span.start, .end = self.lexer.index});
+        const ty_hash = ty.hash();
+        _ = try self.type_map.getOrPutValue(ty_hash, ty);
+        const out: Ast = Ast.create(.{ .cast = .{
+            .expr = expr,
+            .ty = ty_hash,
+        }}, span);
+        return try mem.createWith(self.gpa, out);
+    }
+    return expr;
+}
+
 fn unary(self: *@This()) anyerror!*Ast {
     var span: types.Span = .{
         .start = self.lexer.index,
@@ -796,6 +816,7 @@ fn unary(self: *@This()) anyerror!*Ast {
     }
     return try self.fn_call();
 }
+
 
 
 fn fn_call(self: *@This()) !*Ast {
@@ -893,6 +914,7 @@ fn struct_cons(self: *@This()) !*Ast {
     self.lexer.index = saved;
     return try self.primary();
 }
+
 
 fn primary(self: *@This()) anyerror!*Ast {
     var span: types.Span = .{

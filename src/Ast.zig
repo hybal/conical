@@ -170,6 +170,25 @@ pub const PrimitiveType = enum {
         };
     }
 
+    pub fn is_float(self: @This()) bool {
+        return self == .F32 or self == .F64;
+    }
+
+    pub fn get_bits(self: @This(), platform_size: u8) u8 {
+        return switch(self) {
+            .I8, .U8 => 8,
+            .I16, .U16 => 16,
+            .I32, .U32, .F32 => 32,
+            .I64, .U64, .F64 => 64,
+            .I128, .U128 => 128,
+            .ISize, .USize => platform_size,
+            .Rune => 32,
+            .Bool => 1,
+            .Never => 0,
+            .Unit => 0
+        };
+    }
+
 };
 
 //Various type modifiers such as references and slices
@@ -477,7 +496,10 @@ pub const WhileLoop = struct {
     condition: *Ast,
     block: *Ast
 };
-
+pub const Cast = struct {
+    expr: *Ast,
+    ty: TypeId
+};
 pub const Ternary = struct {
     condition: *Ast,
     true_path: *Ast,
@@ -526,5 +548,6 @@ pub const AstNode = union(enum) {
     struct_cons: StructCons,
     enum_cons: EnumCons,
     access_operator: AccessOperator,
+    cast: Cast,
     _,
 };

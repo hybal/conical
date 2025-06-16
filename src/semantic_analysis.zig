@@ -13,7 +13,7 @@ pub fn init_context(source: []const u8, session: *diag.Session, type_map: *types
         .scope = 0,
         .source = source,
         .gpa = gpa,
-        .in_func = null,
+        .in_func = false,
         .in_assignment = false,
         .in_loop = false,
         .at_global = true,
@@ -27,7 +27,8 @@ pub const Context = struct {
     scope: usize,
     source: []const u8,
     gpa: std.mem.Allocator,
-    in_func: ?ast.TypeId,
+    in_func: bool,
+    expected_type: ?ast.TypeId = null,
     in_loop: bool,
     in_assignment: bool,
     at_global: bool,
@@ -132,7 +133,13 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
 
 
 
-
+fn analyze_expect(self: *Context, tree: *Ast, expected_type: ast.TypeId) !ast.TypeId {
+    const saved_expected = self.expected_type;
+    self.expected_type = expected_type;
+    const out =try analyze(self, tree);
+    self.expected_type = saved_expected;
+    return out;
+}
 //TODO: Do type coercian
 fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
     switch (tree.node) {
@@ -157,8 +164,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     }
                     const nval = val.?;
                     if (nval.ty == null) {
-                        _ = try analyze(self, nval.ast);
+                        nval.ty = try analyze(self, nval.ast);
                     }
+
                     if (self.current_scope != nval.scope) {
                         const current_scope = @intFromEnum(self.current_scope);
                         const val_scope = @intFromEnum(nval.scope);
@@ -167,8 +175,12 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                         } 
                     }
                     out_type = self.type_map.get(nval.ty.?).?;
+                    if (self.in_assignment and (out_type.modifiers == null or out_type.modifiers.?[0] != .Mut)) {
+                        try self.session.emit(.Error, term.span, "Assignment to immutable variable.");
+                        return error.ImmutableAssignment;
+                    }
                 },
-                else => {}
+                else => unreachable,
             }
             _ = try self.type_map.getOrPutValue(out_type.hash(), out_type);
             const out_hash = out_type.hash();
@@ -188,23 +200,23 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
         },
         .binary_expr => |expr| {
             const left = try analyze(self, expr.left);
-            const right = try analyze(self, expr.right);
             switch (expr.op.tag) {
                 .plus, .minus, .slash, .star, .caret, .percent,
                 .pipe, .amp, .shl, .shr => {
-                    try check_type_equality(self, tree.span, left, right);
+                    _ = try analyze_expect(self, expr.right, left);
                     tree.tyid = left;
                     return left;
                 },
                 .eq2, .noteq, .lt, .lteq, .gt, .gteq => {
-                    try check_type_equality(self, tree.span, left, right);
+                    _ = try analyze_expect(self, expr.right, left);
                     const out_hash = ast.Type.createPrimitive(.Bool, null).hash();
                     tree.tyid = out_hash;
                     return out_hash;
                 },
                 .pipe2, .amp2 => {
-                    try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Bool, null).hash(), left);
                     const out_hash = ast.Type.createPrimitive(.Bool, null).hash();
+                    try check_type_equality(self, tree, tree.span, out_hash, left);
+                    _ = try analyze_expect(self, expr.right, out_hash);
                     tree.tyid = out_hash;
                     return out_hash;
                 },
@@ -264,6 +276,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 },
                 .bang => {
                     const out_hash = ast.Type.createPrimitive(.Bool, null).hash();
+                    _ = try analyze_expect(self, expr.expr, out_hash);
                     tree.tyid = out_hash;
                     return out_hash;
                 },
@@ -306,11 +319,10 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     });
            }
                 const prev_in_func = self.in_func;
-                self.in_func = decl.return_ty;
+                self.in_func = true;
                 const prev_in_global = self.at_global;
                 self.at_global = false;
-                const ret_ty = try analyze(self, body);
-                try check_type_equality(self, tree.span, decl.return_ty, ret_ty);
+                _ = try analyze_expect(self, body, decl.return_ty);
                 self.in_func = prev_in_func;
                 self.at_global = prev_in_global;
                 _ = self.symtab.pop();
@@ -329,23 +341,33 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
 
             }
             try self.symtab.append(types.SymTab.init(self.gpa));
-            for(expr.exprs[0..expr.exprs.len - 1]) |exp| {
-                try check_type_equality(self, tree.span, ast.Type.createPrimitive(.Unit, null).hash(), try analyze(self, exp) );
+            if (expr.exprs.len > 1) {
+                for(expr.exprs[0..expr.exprs.len - 1]) |exp| {
+                    try check_type_equality(self, tree, tree.span, ast.Type.createPrimitive(.Unit, null).hash(), try analyze(self, exp) );
+                }
             }
             const saved_scope = self.current_scope;
             self.current_scope = .parent;
             const out = try analyze(self, expr.exprs[expr.exprs.len - 1]);
+            if (self.in_func and self.expected_type != null) {
+                try check_type_equality(self, tree, tree.span, self.expected_type.?, out); 
+            }
             self.current_scope = saved_scope;
             _ = self.symtab.pop();
-            expr.exprs[expr.exprs.len - 1] = try mem.createWith(self.gpa, Ast.create(.{.return_stmt = expr.exprs[expr.exprs.len - 1]}, expr.exprs[expr.exprs.len - 1].span));
-            expr.exprs[expr.exprs.len - 1].tyid = out;
+            const last_expr_copy = Ast.create(tree.node.block.exprs[expr.exprs.len - 1].node, expr.exprs[expr.exprs.len - 1].span);
+            const return_stmt = Ast.create(.{.return_stmt = try mem.createWith(self.gpa, last_expr_copy)}, last_expr_copy.span);
+            const return_node = try mem.createWith(self.gpa, return_stmt);
+            return_node.tyid = ast.Type.createPrimitive(.Never, null).hash();
+            expr.exprs[expr.exprs.len - 1] = return_node;
             tree.tyid = out;
             return out;
         },
         .assignment => |stmt| {
+            const saved_assignment = self.in_assignment;
+            self.in_assignment = true;
             const lvalue = try analyze(self, stmt.lvalue);
-            const assigned = try analyze(self, stmt.expr);
-            try check_type_equality(self, tree.span, lvalue, assigned);
+            self.in_assignment = saved_assignment;
+            _ = try analyze_expect(self, stmt.expr, lvalue);
             const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
             tree.tyid = out_hash;
             return out_hash;
@@ -353,32 +375,32 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
         .if_stmt => |stmt| {
             const cond = try analyze(self, stmt.condition);
             const bol = ast.Type.createPrimitive(.Bool, null).hash();
-            try check_type_equality(self, tree.span, cond, bol);
+            try check_type_equality(self, tree, tree.span, cond, bol);
             const blk = try analyze(self, stmt.block);
             if (stmt.else_block == null) {
                 const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
                 tree.tyid = out_hash;
             }
             const else_block = stmt.else_block.?;
-            try check_type_equality(self, tree.span, blk, try analyze(self, else_block));
+            try check_type_equality(self, tree, tree.span, blk, try analyze(self, else_block));
             tree.tyid = blk;
             return blk;
         },
         .while_loop => |stmt| {
             const cond = try analyze(self, stmt.condition);
             const bol = ast.Type.createPrimitive(.Bool, null).hash();
-            try check_type_equality(self, tree.span, cond, bol);
+            try check_type_equality(self, tree, tree.span, cond, bol);
             const blk = try analyze(self, stmt.block);
-            try check_type_equality(self, tree.span, blk, ast.Type.createPrimitive(.Unit, null).hash());
+            try check_type_equality(self, tree, tree.span, blk, ast.Type.createPrimitive(.Unit, null).hash());
             const out_hash =  ast.Type.createPrimitive(.Unit, null).hash();
             tree.tyid = out_hash;
             return out_hash;
         },
         .ternary => |expr| {
             const bol = ast.Type.createPrimitive(.Bool, null).hash();
-            try check_type_equality(self, tree.span, try analyze(self, expr.condition), bol);
+            try check_type_equality(self, tree, tree.span, try analyze(self, expr.condition), bol);
             const out = try analyze(self, expr.true_path);
-            try check_type_equality(self, tree.span,
+            try check_type_equality(self, tree, tree.span,
                 out,
                 try analyze(self, expr.false_path)
             );
@@ -394,9 +416,23 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             if (ty == null) {
                 ty = try analyze(self, stmt.initialize.?);
                 stmt.ty = ty;
-            } else {
-                const initty = try analyze(self, stmt.initialize.?);
-                try check_type_equality(self, tree.span, ty.?, initty);
+            } else if (stmt.initialize != null) {
+                _ = try analyze_expect(self, stmt.initialize.?, ty.?);
+            }
+            if (stmt.is_mut) {
+                var typ = self.type_map.get(ty.?).?;
+                var mods: ?std.ArrayList(ast.TypeModifier) = null;
+                if (typ.modifiers) |typmods| {
+                    mods = .fromOwnedSlice(self.gpa, typmods);
+                } else {
+                    mods = .init(self.gpa);
+                }
+                try mods.?.insert(0,.Mut);
+                typ.modifiers = try mods.?.toOwnedSlice();
+                const hash = typ.hash();
+                _ = try self.type_map.getOrPutValue(hash, typ);
+                ty = hash;
+                stmt.ty = ty;
             }
             if (!self.contains(stmt.ident.span.get_string(self.source))) {
                 try self.push(stmt.ident.span.get_string(self.source), .{
@@ -414,6 +450,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
         },
         .param_list => |*expr| {
             const left_tyid = try analyze(self, expr.left);
+            const left_ty = self.type_map.get(left_tyid).?;
             if (expr.left.node == .enum_cons) {
                 if (expr.params.len != 1) {
                     try self.session.emit(.Error, tree.span, "Required an initialization value");
@@ -423,6 +460,9 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     expr.left.node.enum_cons.init = expr.params[0];
                 }
                 tree.node = expr.left.node;
+            } else if (left_ty.base_type == .func) {
+                tree.node = .{ .fn_call = expr.* };
+                return try analyze(self, tree);
             }
             tree.tyid = left_tyid;
             return left_tyid;
@@ -445,13 +485,22 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             tree.tyid = out_hash;
             return out_hash;
         },
+        .cast => |expr| {
+            const ty = self.type_map.get(expr.ty).?;
+            const expr_ty = self.type_map.get(try analyze(self, expr.expr)).?;
+            if (ty.base_type != .primitive or expr_ty.base_type != .primitive) {
+                try self.session.emit(.Error, tree.span, "Only primitive types can be cast");
+                return error.NonPrimitiveCast;
+            }
+            tree.tyid = expr.ty;
+            return expr.ty;
+        },
         .return_stmt => |ret| {
-            if (self.in_func) |ret_ty| {
+            if (self.in_func) {
                 const saved_scope = self.current_scope;
                 self.current_scope = .parent;
-                const expr_ty = try analyze(self, ret);
+                _ =  try analyze_expect(self, ret, self.expected_type.?);
                 self.current_scope = saved_scope;
-                try check_type_equality(self, tree.span, ret_ty, expr_ty);
                 const out_hash = ast.Type.createPrimitive(.Never, null).hash();
                 tree.tyid = out_hash;
                 return out_hash;
@@ -470,7 +519,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     return error.UnknownStructField;
                 }
                 const actual_ty = try analyze(self, entry.value_ptr.*);
-                try check_type_equality(self, tree.span, expected_ty.?, actual_ty);
+                try check_type_equality(self, tree, tree.span, expected_ty.?, actual_ty);
             }
             tree.tyid = cons.ty;
             return cons.ty;
@@ -512,6 +561,24 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             try self.session.emit(.Error, exp.left.span, "Type is not subscriptable");
             return error.InvalidAccess;
         },
+        .fn_call => |call| {
+            const fn_tyid = try analyze(self, call.left);
+            const fn_ty = self.type_map.get(fn_tyid).?;
+            if (fn_ty.base_type != .func) {
+                try self.session.emit(.Error, tree.span, "Only functions can be called");
+                return error.NonFunctionCall;
+            }
+            const func = fn_ty.base_type.func;
+            if (func.args.len != call.params.len) {
+                try self.session.emit(.Error, tree.span, "Function call with incorrect number of arguments");
+                return error.IncorrectArguments;
+            }
+            for (call.params, 0..) |param, i| {
+                _ = try analyze_expect(self, param, func.args[i]);
+            }
+            tree.tyid = func.ret;
+            return func.ret;
+        },
         .type_literal => |ty| {
             const hash = ty.hash();
             _ = try self.type_map.getOrPutValue(hash, ty);
@@ -533,38 +600,106 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
     }
 }
 
+
+const coercion_matrix: [16][16]bool = .{
+    // To:      I8   I16  I32  I64  I128 Isize U8   U16  U32  U64  U128 Usize F32  F64  Bool Rune
+    // I8    
+ .{ true, true, true, true, true, true, false,false,false,false,false,false,true, true, false,true },
+    // I16   
+ .{ false,true, true, true, true, true, false,false,false,false,false,false,true, true, false,true },
+    // I32   
+ .{ false,false,true, true, true, true, false,false,false,false,false,false,true, true, false,true },
+    // I64   
+ .{ false,false,false,true, true, true, false,false,false,false,false,false,false,true, false,false },
+    // I128  
+ .{ false,false,false,false,true, false,false,false,false,false,false,false,false,false,false,false },
+    // Isize 
+ .{ false,false,false,false,false,true, false,false,false,false,false,false,false,false,false,false },
+    // U8    
+ .{ true, true, true, true, true, true, true, true, true, true, true, true, true, true, false,false },
+    // U16   
+ .{ false,true, true, true, true, true, true, true, true, true, true, true, true, true, false,false },
+    // U32   
+ .{ false,false,true, true, true, true, true, true, true, true, true, true, true, true, false,false },
+    // U64   
+ .{ false,false,false,true, true, true, true, true, true, true, true, true, false,true, false,false },
+    // U128  
+ .{ false,false,false,false,true, false,false,false,false,false,true, false,false,false,false,false },
+    // Usize 
+ .{ false,false,false,false,false,true, false,false,false,false,false,true, false,false,false,false },
+    // F32   
+ .{ false,false,false,false,false,false,false,false,false,false,false,false,true, true, false,false },
+    // F64   
+ .{ false,false,false,false,false,false,false,false,false,false,false,false,false,true, false,false },
+    // Bool  
+ .{ true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false },
+    // Rune  
+ .{ false,false,true, true, true, true, false,false,false,false,false,false,false,false,false,true },
+};
+
+
 //FIXME: span is wrong
-fn coerce(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId) !bool {
+fn coerce(self: *Context, span: types.Span, tree: *Ast, left: ast.TypeId, right: ast.TypeId) !bool {
     var lft = left;
     var rit = right;
-    if (self.type_map.get(left)) |leftty| {
-        if (leftty.base_type == .primitive and leftty.base_type.primitive == .Never) {
-            return true;
-        }
-        if (leftty.base_type == .user and self.contains(leftty.base_type.user.value)) {
-            lft = self.get(leftty.base_type.user.value).?.ty.?;
-        } else if (leftty.base_type == .user) {
-            try self.session.emit(.Error, span, "User type does not exist");
-            return error.UndefinedType;
-        } 
+    var leftty: ast.Type = undefined; 
+    var rightty: ast.Type = undefined;
+    if (self.type_map.get(left)) |leftt| {
+        leftty = leftt;
+    } else {
+        return false;
     }
-    if (self.type_map.get(right)) |rightty| {
-        if (rightty.base_type == .primitive and rightty.base_type.primitive == .Never) {
-            return true;
-        }
-        if (rightty.base_type == .user and self.contains(rightty.base_type.user.value)) {
-            rit = self.get(rightty.base_type.user.value).?.ty.?;
-        } else if (rightty.base_type == .user) {
-            try self.session.emit(.Error, span, "User type does not exist");
-            return error.UndefinedType;
-        }
+    if (self.type_map.get(right)) |rightt| {
+        rightty = rightt;
+    } else {
+        return false;
     }
-    return lft == rit;
+    if (rightty.base_type == .user and self.contains(rightty.base_type.user.value)) {
+        rit = self.get(rightty.base_type.user.value).?.ty.?;
+    } else if (rightty.base_type == .user) {
+        try self.session.emit(.Error, span, "User type does not exist");
+        return error.UndefinedType;
+    }
+    if (leftty.base_type == .user and self.contains(leftty.base_type.user.value)) {
+        lft = self.get(leftty.base_type.user.value).?.ty.?;
+    } else if (leftty.base_type == .user) {
+        try self.session.emit(.Error, span, "User type does not exist");
+        return error.UndefinedType;
+    } 
+    if (leftty.base_type != .primitive or rightty.base_type != .primitive) return lft == rit;
+    if (leftty.base_type.primitive == .Never or rightty.base_type.primitive == .Never) return true;
+    if (leftty.base_type.primitive == .Unit and rightty.base_type.primitive == .Unit) return true;
+
+
+    //const right_idx = @intFromEnum(rightty.base_type.primitive);
+    //const left_idx = @intFromEnum(leftty.base_type.primitive);
+    //if (right_idx >= coercion_matrix.len or left_idx >= coercion_matrix[0].len) {
+    //    return false;
+    //}
+    //const can_coerce = coercion_matrix[right_idx][left_idx];
+    //if (can_coerce) {
+    //    const tree_copy = Ast.create(tree.node, tree.span);
+    //    const cast = Ast.create(.{ .cast = .{
+    //        .expr = try mem.createWith(self.gpa, tree_copy),
+    //        .ty = lft,
+    //    }}, tree.span);
+    //    tree.* = cast;
+    //    tree.tyid = lft;
+    //}
+    _ = tree;
+
+    var mods_match = rit == lft;
+    const both_null = leftty.modifiers == null and rightty.modifiers == null;
+    const left_mut = leftty.modifiers != null and leftty.modifiers.?[0] == .Mut;
+    mods_match = mods_match and both_null or left_mut;
+    //both == null and left == right: true
+    //left != null and left is mutable and left == right : true
+    return mods_match;
 }
 
 
-fn check_type_equality(self: *Context, span: types.Span, left: ast.TypeId, right: ast.TypeId) !void {
-    if (!try coerce(self, span, left, right)) {
+fn check_type_equality(self: *Context, tree: *Ast, span: types.Span, left: ast.TypeId, right: ast.TypeId) !void {
+    if (!try coerce(self, span, tree, left, right)) {
         const leftty = try self.type_map.get(left).?.get_string(self.type_map, self.gpa, self.source);
 
         const rightty = try self.type_map.get(right).?.get_string(self.type_map, self.gpa, self.source);

@@ -70,7 +70,11 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             }
             std.debug.print(")", .{});
         },
-
+        .cast => |expr| {
+            print_tree(type_map, expr.expr);
+            std.debug.print("as ", .{});
+            print_type(type_map, expr.ty);
+        },
         .binary_expr => |expr| {
             print_tree(type_map, expr.left);
             std.debug.print("{s} ", .{expr.op.span.get_string(source)});
@@ -232,9 +236,11 @@ pub fn main() !u8 {
         print_tree(&type_map, tree);
         std.debug.print("\n", .{});
     }
+    const out_file = try std.fmt.allocPrint(gpa, "{s}.o", .{std.fs.path.stem(args[1])});
     const comp_unit: types.CompUnit = .{
         .file = args[1],
         .source = source,
+        .out_file = out_file,
         .ast = trees,
         .symbol_table = context.symtab.items[0],
         .type_table = context.type_map
@@ -246,8 +252,7 @@ pub fn main() !u8 {
     var err: [*c]u8 = null;
     if (llvm.Analysis.LLVMVerifyModule(@ptrCast(cg.llvm_context.module.?), llvm.Analysis.LLVMAbortProcessAction, &err) != 0) {
         std.debug.print("Module verification failed: {s}\n", .{err});
-
     }
-    cg.emit();
+    try cg.emit();
     return 0;
 }
