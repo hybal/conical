@@ -5,3 +5,6 @@ lib/*
 zig-out/
 .*
 !.gitignore
+*.o
+a.out
+*.log

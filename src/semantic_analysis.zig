@@ -152,7 +152,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 .string_literal, .raw_string_literal => {
                     out_type.base_type = .{ .primitive = .Rune };
                     var modifiers = std.ArrayList(ast.TypeModifier).init(self.gpa);
-                    try modifiers.append(.Slice);
+                    try modifiers.append(.Ref);
                     out_type.modifiers = try modifiers.toOwnedSlice();
                 },
                 .char_literal => out_type.base_type = .{ .primitive = .Rune },

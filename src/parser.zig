@@ -305,7 +305,10 @@ fn fn_decl(self: *@This()) !*Ast {
         if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
             if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
                 while (!self.lexer.is_next_token(.close_paren)) {
-                    try param_types.append((try self.parse_type()).hash());
+                    const param_ty = try self.parse_type();
+                    const param_tyid = param_ty.hash();
+                    _ = try self.type_map.getOrPutValue(param_tyid, param_ty);
+                    try param_types.append(param_tyid);
                     if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {
                         if (self.lexer.is_next_token(.close_paren)) {
                             try self.session.emit(.Error, span, "Type parameter list contains an extra comma");

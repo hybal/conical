@@ -475,7 +475,7 @@ pub const FnDecl = struct {
     params: []Ident, 
     param_types: []TypeId,
     return_ty: TypeId,
-    body: ?*Ast
+    body: ?*Ast,
 };
 
 pub const ParamList = struct {

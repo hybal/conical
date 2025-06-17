@@ -75,7 +75,7 @@ pub fn init(comp_unit: types.CompUnit, triple: [*]const u8, allocator: std.mem.A
         "generic",
         "",
         llvm.TargetMachine.LLVMCodeGenLevelDefault,
-        llvm.TargetMachine.LLVMRelocDefault,
+        llvm.TargetMachine.LLVMRelocPIC,
         llvm.TargetMachine.LLVMCodeModelDefault,
     );
 
@@ -113,9 +113,9 @@ pub fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
     switch (ty.base_type) {
         .primitive => |prim| {
             switch (prim) {
-                .I8, .U8 =>  base_type = llvm.Core.LLVMInt8TypeInContext(self.llvm_context.context),
+                .I8, .U8, .Rune=>  base_type = llvm.Core.LLVMInt8TypeInContext(self.llvm_context.context),
                 .I16, .U16 => base_type = llvm.Core.LLVMInt16TypeInContext(self.llvm_context.context),
-                .I32, .U32, .Rune => base_type = llvm.Core.LLVMInt32TypeInContext(self.llvm_context.context),
+                .I32, .U32=> base_type = llvm.Core.LLVMInt32TypeInContext(self.llvm_context.context),
                 .I64, .U64 => base_type = llvm.Core.LLVMInt64TypeInContext(self.llvm_context.context),
                 .I128, .U128 => base_type = llvm.Core.LLVMInt128TypeInContext(self.llvm_context.context),
                 .ISize, .USize => {
@@ -181,6 +181,27 @@ pub fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
         },
         else => unreachable,
     }
+    if (ty.modifiers) |mods| {
+        if (mods.len > 0) {
+            var i: usize = mods.len;
+            while (i > 0) : ( i -= 1 ){
+                switch (mods[i - 1]) {
+                    .Ref, .RefMut, .RefConst, .Ptr, .PtrMut, .PtrConst => {
+                        base_type = llvm.Core.LLVMPointerType(base_type, 0);
+                    },
+                    .Slice => {
+                        const ptr_type = llvm.Core.LLVMPointerType(base_type, 0);
+                        base_type = llvm.Core.LLVMStructType(
+                            @constCast(&[_]llvm.Core.LLVMTypeRef{ ptr_type, llvm.Core.LLVMIntType(self.target_size) }),
+                            2,
+                            0
+                        );
+                    },
+                    else => unreachable,
+                }
+            }
+        }
+    }
     return base_type;
 }
 
@@ -214,6 +235,67 @@ fn parse_escape(str: []const u8) !u32 {
         }
     }
 }
+fn parseHexEscape(comptime T: type, slice: []const u8) !T {
+    return std.fmt.parseInt(T, slice, 16) catch return error.InvalidHexEscape;
+}
+fn unescape_string(self: *@This(), input: []const u8) ![]u8 {
+    var list = std.ArrayList(u8).init(self.allocator);
+    defer list.deinit();
+
+    var i: usize = 0;
+    while (i < input.len) : (i += 1){
+        if (input[i] == '\\' and i + 1 < input.len) {
+            i += 1;
+            switch (input[i]) {
+                'n' => try list.append('\n'),
+                'r' => try list.append('\r'),
+                't' => try list.append('\t'),
+                'b' => try list.append(0x8),
+                'f' => try list.append(0xC),
+                'v' => try list.append(0xB),
+                '\\' => try list.append('\\'),
+                '"' => try list.append('"'),
+                '\'' => try list.append('\''),
+                '0' => try list.append(0),
+                'x' => {
+                    // \xHH (2 hex digits)
+                    if (i + 2 >= input.len) return error.InvalidHexEscape;
+                    const hex = input[i+1 .. i+3];
+                    const value = try parseHexEscape(u8, hex);
+                    try list.append(value);
+                    i += 2;
+                },
+
+                'u' => {
+                    // \uHHHH (4 hex digits)
+                    if (i + 4 >= input.len) return error.InvalidUnicodeEscape;
+                    const hex = input[i+1 .. i+5];
+                    const codepoint = try parseHexEscape(u21, hex);
+                    var buf: [4]u8 = undefined;
+                    const len = std.unicode.utf8Encode(codepoint, &buf) catch return error.InvalidCodepoint;
+                    try list.appendSlice(buf[0..len]);
+                    i += 4;
+                },
+
+                'U' => {
+                    // \UHHHHHHHH (8 hex digits)
+                    if (i + 8 >= input.len) return error.InvalidUnicodeEscape;
+                    const hex = input[i+1 .. i+9];
+                    const codepoint = try parseHexEscape(u21, hex);
+                    var buf: [4]u8 = undefined;
+                    const len = std.unicode.utf8Encode(codepoint, &buf) catch return error.InvalidCodepoint;
+                    try list.appendSlice(buf[0..len]);
+                    i += 8;
+                },                
+                else => unreachable,
+            }
+        } else {
+            try list.append(input[i]);
+        }
+    }
+
+    return list.toOwnedSlice();
+}
 
 fn parse_char_literal(self: *@This(), span: types.Span) !u32 {
     var local_span: types.Span = .{.start = span.start, .end = span.end};
@@ -224,7 +306,7 @@ fn parse_char_literal(self: *@This(), span: types.Span) !u32 {
         return parse_escape(char_string[0..]);
     }
     return char_string[0];
-    
+
 }
 
 pub fn emit(self: *@This()) !void {
@@ -286,12 +368,15 @@ fn lower_local(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                         .start = term.span.start + 1,
                         .end = term.span.end - 1
                     };
-                    return llvm.Core.LLVMConstStringInContext(self.llvm_context.context, 
-                        @ptrCast(actual_span.get_string(self.comp_unit.source)),
-                        @intCast(actual_span.end - actual_span.start),
-                        1
+                    var string = actual_span.get_string(self.comp_unit.source);
+                    if (term.tag == .string_literal) {
+                        string = try self.unescape_string(string);
+                    }
+                    return llvm.Core.LLVMBuildGlobalStringPtr(self.llvm_context.builder, 
+                        @ptrCast(string),
+                        @ptrCast(try self.gen_name("tmp")),
                     );
-                },
+                                    },
                 .char_literal => {
                     return llvm.Core.LLVMConstInt(type_ref, try self.parse_char_literal(term.span), 0);
                 },
@@ -436,72 +521,84 @@ fn lower_local(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
         },
         .cast => |expr| {
             if (expr.expr.tyid.? == expr.ty) return self.lower_local(expr.expr);
-            const from_ty = self.comp_unit.type_table.get(expr.expr.tyid.?).?.base_type.primitive;
+            const from_ty_full = self.comp_unit.type_table.get(expr.expr.tyid.?).?;
+            const from_ty = from_ty_full.base_type.primitive;
             const to_ty_full = self.comp_unit.type_table.get(expr.ty).?;
             const to_ty = to_ty_full.base_type.primitive;
             const to_ty_llvm = try self.createTypeRef(to_ty_full);
             const lowered_expr = try self.lower_local(expr.expr);
-            if (from_ty.is_int() and to_ty.is_int()) {
-                const name = try self.gen_name("tmp");
-                return llvm.Core.LLVMBuildIntCast2(
-                    self.llvm_context.builder,
-                    lowered_expr,
-                    to_ty_llvm,
-                    if (to_ty.is_signed_int()) 1 else 0,
-                    @ptrCast(name),
-                );
-            }
-            if (from_ty.is_int() and to_ty.is_float()) {
-                if (from_ty.is_signed_int()) {
-                    return llvm.Core.LLVMBuildSIToFP(
-                        self.llvm_context.builder,
-                        lowered_expr,
-                        to_ty_llvm,
-                        @ptrCast(try self.gen_name("tmp"))
-                    );
-                } else {
-                    return llvm.Core.LLVMBuildUIToFP(
-                        self.llvm_context.builder,
-                        lowered_expr,
-                        to_ty_llvm,
-                        @ptrCast(try self.gen_name("tmp")),
-                    );
-                }
-            }
-            if (from_ty.is_float() and to_ty.is_int()) {
-                if (to_ty.is_signed_int()) {
-                    return llvm.Core.LLVMBuildFPToSI(
-                        self.llvm_context.builder,
-                        lowered_expr,
-                        to_ty_llvm,
-                        @ptrCast(try self.gen_name("tmp")),
-                    );
-                } else {
-                    return llvm.Core.LLVMBuildFPToUI(
-                        self.llvm_context.builder,
-                        lowered_expr,
-                        to_ty_llvm,
-                        @ptrCast(try self.gen_name("tmp")),
-                    );
-                }
-            }
-            if (from_ty.is_float() and to_ty.is_float()) {
-                if (from_ty.get_bits(self.target_size) < to_ty.get_bits(self.target_size)) {
-                    return llvm.Core.LLVMBuildFPTrunc(
-                        self.llvm_context.builder,
-                        lowered_expr,
-                        to_ty_llvm,
-                        @ptrCast(try self.gen_name("tmp")),
-                    );
-                } else {
-                    return llvm.Core.LLVMBuildFPExt(
-                        self.llvm_context.builder,
-                        lowered_expr,
-                        to_ty_llvm,
-                        @ptrCast(try self.gen_name("tmp")),
-                    );
-                }
-            }
+            const from_is_signed = (from_ty.is_float() or from_ty.is_signed_int()) and from_ty_full.modifiers == null;
+            const to_is_signed = (to_ty.is_float() or to_ty.is_signed_int()) and to_ty_full.modifiers == null;
+            const cast_op = llvm.Core.LLVMGetCastOpcode(lowered_expr, if (from_is_signed) 1 else 0, to_ty_llvm, if (to_is_signed) 1 else 0); 
+            return llvm.Core.LLVMBuildCast(
+                self.llvm_context.builder,
+                cast_op,
+                lowered_expr,
+                to_ty_llvm,
+                @ptrCast(try self.gen_name("tmp")),
+            );
+
+            // if (from_ty.is_int() and to_ty.is_int()) {
+            //     const name = try self.gen_name("tmp");
+            //     return llvm.Core.LLVMBuildIntCast2(
+            //         self.llvm_context.builder,
+            //         lowered_expr,
+            //         to_ty_llvm,
+            //         if (to_ty.is_signed_int()) 1 else 0,
+            //         @ptrCast(name),
+            //     );
+            // }
+            // if (from_ty.is_int() and to_ty.is_float()) {
+            //     if (from_ty.is_signed_int()) {
+            //         return llvm.Core.LLVMBuildSIToFP(
+            //             self.llvm_context.builder,
+            //             lowered_expr,
+            //             to_ty_llvm,
+            //             @ptrCast(try self.gen_name("tmp"))
+            //         );
+            //     } else {
+            //         return llvm.Core.LLVMBuildUIToFP(
+            //             self.llvm_context.builder,
+            //             lowered_expr,
+            //             to_ty_llvm,
+            //             @ptrCast(try self.gen_name("tmp")),
+            //         );
+            //     }
+            // }
+            // if (from_ty.is_float() and to_ty.is_int()) {
+            //     if (to_ty.is_signed_int()) {
+            //         return llvm.Core.LLVMBuildFPToSI(
+            //             self.llvm_context.builder,
+            //             lowered_expr,
+            //             to_ty_llvm,
+            //             @ptrCast(try self.gen_name("tmp")),
+            //         );
+            //     } else {
+            //         return llvm.Core.LLVMBuildFPToUI(
+            //             self.llvm_context.builder,
+            //             lowered_expr,
+            //             to_ty_llvm,
+            //             @ptrCast(try self.gen_name("tmp")),
+            //         );
+            //     }
+            // }
+            // if (from_ty.is_float() and to_ty.is_float()) {
+            //     if (from_ty.get_bits(self.target_size) < to_ty.get_bits(self.target_size)) {
+            //         return llvm.Core.LLVMBuildFPTrunc(
+            //             self.llvm_context.builder,
+            //             lowered_expr,
+            //             to_ty_llvm,
+            //             @ptrCast(try self.gen_name("tmp")),
+            //         );
+            //     } else {
+            //         return llvm.Core.LLVMBuildFPExt(
+            //             self.llvm_context.builder,
+            //             lowered_expr,
+            //             to_ty_llvm,
+            //             @ptrCast(try self.gen_name("tmp")),
+            //         );
+            //     }
+            // }
         },
         .fn_call => |call| {
             const fn_value = try self.lower_local(call.left);
@@ -520,7 +617,7 @@ fn lower_local(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                 self.llvm_context.builder,
                 fn_type,
                 fn_value,
-                if (args.len == 0) null else args.ptr,
+                args.ptr,
                 @intCast(args.len),
                 @ptrCast(name),
             );
@@ -535,7 +632,7 @@ fn lower_local(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
             unreachable;
         },
     }
-    std.debug.print("Should not reach end of function\n", .{});
+    std.debug.print("Should not reach end of function with: {any}\n", .{ast});
     unreachable;
 }
 

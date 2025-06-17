@@ -321,7 +321,16 @@ pub const Lexer = struct {
                     tag = .char_literal;
                 },
                 '\"' => { //parses string literals
-                    while (self.has_next() and !self.is_next('\"')) : (_ = self.next()) {
+                    var current = self.next();
+                    while (self.has_next() and current != '\"') : (current = self.next()) {
+                        switch (self.peek() orelse 0) {
+                            '\n', 0x01...0x08, 0x0b...0x1f, 0x7f => {
+                                tag = .invalid;
+                                _ = self.next();
+                                break;
+                            },
+                            else => {},
+                        }
                         if (self.next_if('\\')) |_| {
                             if (!self.parse_escape()) {
                                 tag = .invalid;
@@ -331,15 +340,7 @@ pub const Lexer = struct {
                             tag = .invalid;
                             break;
                         }
-                        switch (self.peek() orelse 0) {
-                            '\n', 0x01...0x09, 0x0b...0x1f, 0x7f => {
-                                tag = .invalid;
-                                break;
-                            },
-                            else => {},
-                        }
                     }
-                    _ = self.next();
                     if (tag != .invalid) {
                         tag = .string_literal;
                     }

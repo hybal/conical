@@ -1,9 +1,12 @@
 
 extern fn print();
+extern fn puts(value): (&rune) -> i32;
 
 fn main() -> i32 {
     let a = 4;
-    print();
+    let v = "Hello, World!\0";
+    //print();
+    puts(v);
     add(1, a)
 }
 
