@@ -5,6 +5,12 @@ const llvm= @import("llvm");
 const Ast = @import("Ast.zig");
 const types = @import("types.zig");
 
+const SymbolEntry = struct {
+    value: llvm.Core.LLVMValueRef,
+    ty: llvm.Core.LLVMTypeRef,
+    is_alloca: bool
+};
+
 pub const LLVMContext = struct {
 
     builder: llvm.Core.LLVMBuilderRef,
@@ -19,10 +25,31 @@ llvm_context: LLVMContext,
 name_index: usize,
 allocator: std.mem.Allocator,
 comp_unit: types.CompUnit,
-symbol_map: std.StringHashMap(struct {value: llvm.Core.LLVMValueRef, ty: llvm.Core.LLVMTypeRef, is_alloca: bool}),
+symbol_map: std.ArrayList(std.StringHashMap(SymbolEntry)),
 in_assignment: bool,
 target_size: u8,
+at_global: bool = true,
 
+fn get_symbol(self: *@This(), sym: []const u8) ?SymbolEntry {
+    var i: usize = self.symbol_map.items.len - 1;
+    while (i >= 0) : ( i -= 1 ) {
+        if (self.symbol_map.items[i].get(sym)) |out| {
+            return out;
+        }
+    }
+    return null;
+}
+
+fn put_symbol(self: *@This(), sym: []const u8, value: SymbolEntry) !void {
+    _ = try self.symbol_map.items[self.symbol_map.items.len - 1].getOrPutValue(sym, value);
+}
+
+fn create_scope(self: *@This()) !void {
+    try self.symbol_map.append(.init(self.allocator));
+}
+fn exit_scope(self: *@This()) void {
+    self.symbol_map.shrinkRetainingCapacity(self.symbol_map.items.len - 1);
+}
 pub fn gen_name(self: *@This(), prefix: []const u8) ![]const u8 {
     const name = try std.fmt.allocPrint(self.allocator, "{s}{d}{c}", .{prefix, self.name_index, 0});
     self.name_index += 1;
@@ -61,6 +88,8 @@ pub fn init(comp_unit: types.CompUnit, triple: [*]const u8, allocator: std.mem.A
     const target_data = llvm.Target.LLVMCreateTargetData(layout_str);
     const pm = llvm.Core.LLVMCreateFunctionPassManagerForModule(module);
     llvm.Core.LLVMSetTarget(module, triple);
+    var arr_map: std.ArrayList(std.StringHashMap(SymbolEntry)) = .init(allocator);
+    try arr_map.append(.init(allocator));
     return .{
         .llvm_context = .{
             .builder = builder,
@@ -74,7 +103,7 @@ pub fn init(comp_unit: types.CompUnit, triple: [*]const u8, allocator: std.mem.A
         .name_index = 0,
         .allocator = allocator,
         .comp_unit = comp_unit,
-        .symbol_map = .init(allocator),
+        .symbol_map = arr_map,
         .in_assignment = false,
         .target_size = @intCast(llvm.Target.LLVMPointerSize(target_data) * 8)
     };
@@ -203,7 +232,44 @@ pub fn emit(self: *@This()) !void {
     var err: [*c]u8 = null;
     _ = llvm.TargetMachine.LLVMTargetMachineEmitToFile(self.llvm_context.target_machine, @ptrCast(self.llvm_context.module), @ptrCast(try self.allocator.dupeZ(u8, self.comp_unit.out_file)), llvm.TargetMachine.LLVMObjectFile, &err);
 }
-pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
+
+pub fn lower_global(self: *@This(), trees: []*Ast.Ast) !void{
+    for (trees) |ast| {
+        switch (ast.node) {
+            .fn_decl => |decl| {
+                const fnc_ty: Ast.Type = .{
+                    .base_type = .{ 
+                        .func = .{
+                            .args = decl.param_types,
+                            .ret = decl.return_ty
+                        }
+                    },
+                    .modifiers = null,
+                };
+
+                const llvm_fnc_ty = try self.createTypeRef(fnc_ty);
+                const id = try self.allocator.dupeZ(u8, decl.ident.value);
+                const func_ref = llvm.Core.LLVMAddFunction(self.llvm_context.module, @ptrCast(id), llvm_fnc_ty);
+                if (decl.decl_mod != null and decl.decl_mod.? == .Extern) {
+                    llvm.Core.LLVMSetLinkage(func_ref, llvm.Core.LLVMExternalLinkage);
+                }
+                //const entry = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, func_ref, "entry");
+                //_ = entry;
+                //llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, entry);
+                _ = try self.put_symbol(decl.ident.value, .{.value = func_ref, .ty = llvm_fnc_ty, .is_alloca = false});
+            },
+            else => unreachable
+        }
+    }
+}
+pub fn lower(self: *@This(), trees: []*Ast.Ast) !void {
+    try self.lower_global(trees);
+    self.at_global = false;
+    for (trees) |ast| {
+        _ = try self.lower_local(ast);
+    }
+}
+fn lower_local(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
     const node_type = self.comp_unit.type_table.get(ast.tyid.?).?;
     const type_ref = try self.createTypeRef(node_type);
     switch (ast.node) {
@@ -230,7 +296,7 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                     return llvm.Core.LLVMConstInt(type_ref, try self.parse_char_literal(term.span), 0);
                 },
                 .ident => {
-                    const symref = self.symbol_map.get(term.span.get_string(self.comp_unit.source)).?;
+                    const symref = self.get_symbol(term.span.get_string(self.comp_unit.source)).?;
                     if (symref.is_alloca and !self.in_assignment) {
                         const id = try self.allocator.dupeZ(u8, term.span.get_string(self.comp_unit.source));
                         const ptr_ty = llvm.Core.LLVMPointerType(symref.ty, 0);
@@ -252,8 +318,8 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
             }
         },
         .binary_expr => |expr| {
-            const lhs = try self.lower(expr.left);
-            const rhs = try self.lower(expr.right);
+            const lhs = try self.lower_local(expr.left);
+            const rhs = try self.lower_local(expr.right);
             switch (expr.op.tag) {
                 .plus => return llvm.Core.LLVMBuildAdd(self.llvm_context.builder, lhs, rhs, @ptrCast(try self.gen_name("tmp"))),
                 .minus => return llvm.Core.LLVMBuildSub(self.llvm_context.builder, lhs, rhs, @ptrCast(try self.gen_name("tmp"))),
@@ -276,7 +342,7 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
             }
         },
         .unary_expr => |expr| {
-            const ex = try self.lower(expr.expr);
+            const ex = try self.lower_local(expr.expr);
             const ty = try self.createTypeRef(self.comp_unit.type_table.get(ast.tyid.?).?);
             const zero = llvm.Core.LLVMConstInt(ty, 0, 0);
             return switch (expr.op.tag) {
@@ -287,6 +353,27 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
             };
         },
         .fn_decl => |decl| {
+            if (!self.at_global) {
+                const fnc_ty = self.get_symbol(decl.ident.value).?;
+                if (decl.body) |body| {
+                    try self.create_scope();
+                    for (decl.params, 0..) |param, i| {
+                        const param_ty = self.comp_unit.type_table.get(decl.param_types[i]).?;
+                        _ = try self.put_symbol(param.value, .{ 
+                            .value = llvm.Core.LLVMGetParam(fnc_ty.value, @intCast(i)),
+                            .ty = try self.createTypeRef(param_ty),
+                            .is_alloca = false
+                        });
+                    }
+                    const entry = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, fnc_ty.value, "entry");
+                    llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, entry);
+                    const out = try self.lower_local(body);
+                    self.exit_scope();
+                    return out;
+                }
+                return fnc_ty.value;
+
+            }
             const fnc_ty: Ast.Type = .{
                 .base_type = .{ 
                     .func = .{
@@ -300,51 +387,60 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
             const llvm_fnc_ty = try self.createTypeRef(fnc_ty);
             const id = try self.allocator.dupeZ(u8, decl.ident.value);
             const func_ref = llvm.Core.LLVMAddFunction(self.llvm_context.module, @ptrCast(id), llvm_fnc_ty);
-            const entry = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, func_ref, "entry");
-            llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, entry);
-            return try self.lower(decl.body.?);
+            if (decl.decl_mod != null and decl.decl_mod.? == .Extern) {
+                llvm.Core.LLVMSetLinkage(func_ref, llvm.Core.LLVMExternalLinkage);
+            }
+            _ = try self.put_symbol(decl.ident.value, .{.value = func_ref, .ty = llvm_fnc_ty, .is_alloca = false});
+            if (decl.body) |_| {
+                const entry = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, func_ref, "entry");
+                llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, entry);
+                return try self.lower_local(decl.body.?);
+            }
+            return func_ref;
         },
         .block => |block| {
+            try self.create_scope();
             for (block.exprs) |expr| {
-                _ = try self.lower(expr);
+                _ = try self.lower_local(expr);
             }
+            self.exit_scope();
             return null;
         },
         .return_stmt => |ret| {
-            return llvm.Core.LLVMBuildRet(self.llvm_context.builder, try self.lower(ret));
+            return llvm.Core.LLVMBuildRet(self.llvm_context.builder, try self.lower_local(ret));
         },
         .var_decl => |decl| {
             const var_ty = try self.createTypeRef(self.comp_unit.type_table.get(decl.ty.?).?);
-            const val = try self.lower(decl.initialize.?);
+            const val = try self.lower_local(decl.initialize.?);
             if (decl.is_mut) {
                 const name = try self.gen_name("tmp");
                 const value_ref = llvm.Core.LLVMBuildAlloca(self.llvm_context.builder, var_ty, @ptrCast(name));
 
-                _ = try self.symbol_map.getOrPutValue(decl.ident.value, .{.value = value_ref, .ty = var_ty, .is_alloca = true});
+                _ = try self.put_symbol(decl.ident.value, .{.value = value_ref, .ty = var_ty, .is_alloca = true});
                 const store = llvm.Core.LLVMBuildStore(self.llvm_context.builder, val, value_ref);
                 return store;
             }
-            _ = try self.symbol_map.getOrPutValue(decl.ident.value, .{.value = val, .ty = var_ty, .is_alloca = false});
+            _ = try self.put_symbol(decl.ident.value, .{.value = val, .ty = var_ty, .is_alloca = false});
             return val;
         },
         .assignment => |expr| {
             const saved_in_assignment = self.in_assignment;
             self.in_assignment = true;
-            const lhs = try self.lower(expr.lvalue);
+            const lhs = try self.lower_local(expr.lvalue);
             self.in_assignment = saved_in_assignment;
-            const rhs = try self.lower(expr.expr);
+            const rhs = try self.lower_local(expr.expr);
             return llvm.Core.LLVMBuildStore(self.llvm_context.builder, rhs, lhs);
         },
         .terminated => |expr| {
-            return try self.lower(expr);
+            return try self.lower_local(expr);
         },
         .cast => |expr| {
-            if (expr.expr.tyid.? == expr.ty) return self.lower(expr.expr);
+            if (expr.expr.tyid.? == expr.ty) return self.lower_local(expr.expr);
             const from_ty = self.comp_unit.type_table.get(expr.expr.tyid.?).?.base_type.primitive;
             const to_ty_full = self.comp_unit.type_table.get(expr.ty).?;
             const to_ty = to_ty_full.base_type.primitive;
             const to_ty_llvm = try self.createTypeRef(to_ty_full);
-            const lowered_expr = try self.lower(expr.expr);
+            const lowered_expr = try self.lower_local(expr.expr);
             if (from_ty.is_int() and to_ty.is_int()) {
                 const name = try self.gen_name("tmp");
                 return llvm.Core.LLVMBuildIntCast2(
@@ -406,6 +502,33 @@ pub fn lower(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                     );
                 }
             }
+        },
+        .fn_call => |call| {
+            const fn_value = try self.lower_local(call.left);
+            const fn_type = try self.createTypeRef(self.comp_unit.type_table.get(call.left.tyid.?).?);
+            const return_type = llvm.Core.LLVMGetReturnType(fn_type);
+            var args = try self.allocator.alloc(llvm.Core.LLVMValueRef, call.params.len);
+            defer self.allocator.free(args);
+            for (call.params, 0..call.params.len) |param, i| {
+                args[i] = try self.lower_local(param);
+            }
+            var name: []const u8 = "";
+            if (node_type.base_type != .primitive or node_type.base_type.primitive != .Unit) {
+                name = try self.gen_name("tmp");
+            }
+            const llvm_call = llvm.Core.LLVMBuildCall2(
+                self.llvm_context.builder,
+                fn_type,
+                fn_value,
+                if (args.len == 0) null else args.ptr,
+                @intCast(args.len),
+                @ptrCast(name),
+            );
+            _ = try self.put_symbol(name, .{.value = llvm_call, .ty = return_type, .is_alloca = false});
+            if (node_type.base_type == .primitive and node_type.base_type.primitive == .Unit) {
+                return null;
+            }
+            return llvm_call;
         },
         else => |val| {
             std.debug.print("Unhandled switch case: {s}\n", .{@tagName(val)});

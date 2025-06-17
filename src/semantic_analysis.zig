@@ -108,6 +108,7 @@ fn resolve_global(self: *Context, trees: []*Ast) !void {
                         .ident = decl.ident.span,
                         .ast = tree
                     });
+                    tree.tyid = fnctypeid;
                 } else {
                     try self.session.emit(.Error, tree.span, "Function Shadows Previous Decleration");
                     return error.FunctionShadowsPreviousDecleration;
@@ -329,8 +330,12 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                 const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
                 tree.tyid = out_hash;
                 return out_hash;
+            } else if (decl.decl_mod != null and decl.decl_mod == .Extern) {
+                const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
+                tree.tyid = out_hash;
+                return out_hash;
             }
-            return error.Unknown;
+            return error.Unsupported;
         },
         .block => |*expr| {
             if (expr.exprs.len == 0) {
@@ -354,12 +359,14 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             }
             self.current_scope = saved_scope;
             _ = self.symtab.pop();
-            const last_expr_copy = Ast.create(tree.node.block.exprs[expr.exprs.len - 1].node, expr.exprs[expr.exprs.len - 1].span);
+            var last_expr_copy = Ast.create(tree.node.block.exprs[expr.exprs.len - 1].node, expr.exprs[expr.exprs.len - 1].span);
+            last_expr_copy.tyid = expr.exprs[expr.exprs.len - 1].tyid;
             const return_stmt = Ast.create(.{.return_stmt = try mem.createWith(self.gpa, last_expr_copy)}, last_expr_copy.span);
             const return_node = try mem.createWith(self.gpa, return_stmt);
             return_node.tyid = ast.Type.createPrimitive(.Never, null).hash();
             expr.exprs[expr.exprs.len - 1] = return_node;
             tree.tyid = out;
+
             return out;
         },
         .assignment => |stmt| {
@@ -448,7 +455,7 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             tree.tyid = out_hash;
             return out_hash;
         },
-        .param_list => |*expr| {
+        .param_list => |expr| {
             const left_tyid = try analyze(self, expr.left);
             const left_ty = self.type_map.get(left_tyid).?;
             if (expr.left.node == .enum_cons) {
@@ -460,9 +467,24 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
                     expr.left.node.enum_cons.init = expr.params[0];
                 }
                 tree.node = expr.left.node;
+                tree.tyid = left_tyid;
+                return left_tyid;
             } else if (left_ty.base_type == .func) {
-                tree.node = .{ .fn_call = expr.* };
-                return try analyze(self, tree);
+                if (left_ty.base_type != .func) {
+                    try self.session.emit(.Error, tree.span, "Only functions can be called");
+                    return error.NonFunctionCall;
+                }
+                const func = left_ty.base_type.func;
+                if (func.args.len != expr.params.len) {
+                    try self.session.emit(.Error, tree.span, "Function call with incorrect number of arguments");
+                    return error.IncorrectArguments;
+                }
+                for (expr.params, 0..) |param, i| {
+                    _ = try analyze_expect(self, param, func.args[i]);
+                }
+                tree.node = .{ .fn_call = expr };
+                tree.tyid = func.ret;
+                return func.ret;
             }
             tree.tyid = left_tyid;
             return left_tyid;
@@ -604,37 +626,37 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
 const coercion_matrix: [16][16]bool = .{
     // To:      I8   I16  I32  I64  I128 Isize U8   U16  U32  U64  U128 Usize F32  F64  Bool Rune
     // I8    
- .{ true, true, true, true, true, true, false,false,false,false,false,false,true, true, false,true },
+    .{ true, true, true, true, true, true, false,false,false,false,false,false,true, true, false,true },
     // I16   
- .{ false,true, true, true, true, true, false,false,false,false,false,false,true, true, false,true },
+    .{ false,true, true, true, true, true, false,false,false,false,false,false,true, true, false,true },
     // I32   
- .{ false,false,true, true, true, true, false,false,false,false,false,false,true, true, false,true },
+    .{ false,false,true, true, true, true, false,false,false,false,false,false,true, true, false,true },
     // I64   
- .{ false,false,false,true, true, true, false,false,false,false,false,false,false,true, false,false },
+    .{ false,false,false,true, true, true, false,false,false,false,false,false,false,true, false,false },
     // I128  
- .{ false,false,false,false,true, false,false,false,false,false,false,false,false,false,false,false },
+    .{ false,false,false,false,true, false,false,false,false,false,false,false,false,false,false,false },
     // Isize 
- .{ false,false,false,false,false,true, false,false,false,false,false,false,false,false,false,false },
+    .{ false,false,false,false,false,true, false,false,false,false,false,false,false,false,false,false },
     // U8    
- .{ true, true, true, true, true, true, true, true, true, true, true, true, true, true, false,false },
+    .{ true, true, true, true, true, true, true, true, true, true, true, true, true, true, false,false },
     // U16   
- .{ false,true, true, true, true, true, true, true, true, true, true, true, true, true, false,false },
+    .{ false,true, true, true, true, true, true, true, true, true, true, true, true, true, false,false },
     // U32   
- .{ false,false,true, true, true, true, true, true, true, true, true, true, true, true, false,false },
+    .{ false,false,true, true, true, true, true, true, true, true, true, true, true, true, false,false },
     // U64   
- .{ false,false,false,true, true, true, true, true, true, true, true, true, false,true, false,false },
+    .{ false,false,false,true, true, true, true, true, true, true, true, true, false,true, false,false },
     // U128  
- .{ false,false,false,false,true, false,false,false,false,false,true, false,false,false,false,false },
+    .{ false,false,false,false,true, false,false,false,false,false,true, false,false,false,false,false },
     // Usize 
- .{ false,false,false,false,false,true, false,false,false,false,false,true, false,false,false,false },
+    .{ false,false,false,false,false,true, false,false,false,false,false,true, false,false,false,false },
     // F32   
- .{ false,false,false,false,false,false,false,false,false,false,false,false,true, true, false,false },
+    .{ false,false,false,false,false,false,false,false,false,false,false,false,true, true, false,false },
     // F64   
- .{ false,false,false,false,false,false,false,false,false,false,false,false,false,true, false,false },
+    .{ false,false,false,false,false,false,false,false,false,false,false,false,false,true, false,false },
     // Bool  
- .{ true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false },
+    .{ true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false },
     // Rune  
- .{ false,false,true, true, true, true, false,false,false,false,false,false,false,false,false,true },
+    .{ false,false,true, true, true, true, false,false,false,false,false,false,false,false,false,true },
 };
 
 

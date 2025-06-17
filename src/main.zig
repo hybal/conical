@@ -247,8 +247,7 @@ pub fn main() !u8 {
     };
     const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
     var cg = try codegen.init(comp_unit, triple, gpa);
-    const llvm_ref = try cg.lower(comp_unit.ast[0]);
-    _ = llvm_ref;
+    try cg.lower(comp_unit.ast);
     var err: [*c]u8 = null;
     if (llvm.Analysis.LLVMVerifyModule(@ptrCast(cg.llvm_context.module.?), llvm.Analysis.LLVMAbortProcessAction, &err) != 0) {
         std.debug.print("Module verification failed: {s}\n", .{err});
