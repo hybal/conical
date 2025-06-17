@@ -380,16 +380,16 @@ fn analyze(self: *Context, tree: *Ast) anyerror!ast.TypeId {
             return out_hash;
         },
         .if_stmt => |stmt| {
-            const cond = try analyze(self, stmt.condition);
             const bol = ast.Type.createPrimitive(.Bool, null).hash();
-            try check_type_equality(self, tree, tree.span, cond, bol);
+            _ = try analyze_expect(self, stmt.condition, bol);
             const blk = try analyze(self, stmt.block);
             if (stmt.else_block == null) {
                 const out_hash = ast.Type.createPrimitive(.Unit, null).hash();
                 tree.tyid = out_hash;
+                return out_hash;
             }
             const else_block = stmt.else_block.?;
-            try check_type_equality(self, tree, tree.span, blk, try analyze(self, else_block));
+            _ = try analyze_expect(self, else_block,blk);
             tree.tyid = blk;
             return blk;
         },

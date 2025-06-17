@@ -19,6 +19,7 @@ pub const LLVMContext = struct {
     target_data: llvm.Target.LLVMTargetDataRef, 
     data_layout: llvm.TargetMachine.LLVMTargetDataRef,
     module: llvm.Core.LLVMModuleRef,
+    current_function: llvm.Core.LLVMValueRef = null,
     pm: llvm.Core.LLVMPassManagerRef,
 };
 llvm_context: LLVMContext,
@@ -335,9 +336,6 @@ pub fn lower_global(self: *@This(), trees: []*Ast.Ast) !void{
                 if (decl.decl_mod != null and decl.decl_mod.? == .Extern) {
                     llvm.Core.LLVMSetLinkage(func_ref, llvm.Core.LLVMExternalLinkage);
                 }
-                //const entry = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, func_ref, "entry");
-                //_ = entry;
-                //llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, entry);
                 _ = try self.put_symbol(decl.ident.value, .{.value = func_ref, .ty = llvm_fnc_ty, .is_alloca = false});
             },
             else => unreachable
@@ -452,7 +450,10 @@ fn lower_local(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                     }
                     const entry = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, fnc_ty.value, "entry");
                     llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, entry);
+                    const saved_current_function = self.llvm_context.current_function;
+                    self.llvm_context.current_function = fnc_ty.value;
                     const out = try self.lower_local(body);
+                    self.llvm_context.current_function = saved_current_function;
                     self.exit_scope();
                     return out;
                 }
@@ -626,6 +627,26 @@ fn lower_local(self: *@This(), ast: *Ast.Ast) !llvm.Core.LLVMValueRef {
                 return null;
             }
             return llvm_call;
+        },
+        .if_stmt => |stmt| {
+            const cond = try self.lower_local(stmt.condition);
+            const then_block = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, self.llvm_context.current_function, @ptrCast(try self.gen_name("then")));
+            const else_block = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, self.llvm_context.current_function, @ptrCast(try self.gen_name("else")));
+            const merge_block = llvm.Core.LLVMAppendBasicBlockInContext(self.llvm_context.context, self.llvm_context.current_function, @ptrCast(try self.gen_name("merge")));
+            _ = llvm.Core.LLVMBuildCondBr(self.llvm_context.builder, cond, then_block, else_block);
+            llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, then_block);
+            const out = try self.lower_local(stmt.block);
+            _ = llvm.Core.LLVMBuildBr(self.llvm_context.builder, merge_block);
+            if (stmt.else_block) |else_blk|  {
+                llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, else_block);
+                _ = try self.lower_local(else_blk);
+                _ = llvm.Core.LLVMBuildBr(self.llvm_context.builder, merge_block);
+            }
+
+            llvm.Core.LLVMPositionBuilderAtEnd(self.llvm_context.builder, merge_block);
+            return out;
+
+
         },
         else => |val| {
             std.debug.print("Unhandled switch case: {s}\n", .{@tagName(val)});
