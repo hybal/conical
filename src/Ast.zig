@@ -476,6 +476,25 @@ pub const FnDecl = struct {
     param_types: []TypeId,
     return_ty: TypeId,
     body: ?*Ast,
+
+    pub fn hash(self: *const @This(), type_tbl: *types.TypeTbl, allocator: std.mem.Allocator) !TypeId {
+        var args = std.ArrayList(TypeId).init(allocator);
+        for (self.param_types) |ty| {
+            try args.append(ty);
+        }
+        const fnctype: Type = .{
+            .base_type = .{
+                .func = .{
+                    .args = try args.toOwnedSlice(),
+                    .ret = self.return_ty,
+                },
+                },
+            .modifiers = null,
+        };
+        const fnctypeid = fnctype.hash();
+        _ = try type_tbl.getOrPutValue(fnctypeid, fnctype);
+        return fnctypeid;
+    }
 };
 
 pub const ParamList = struct {

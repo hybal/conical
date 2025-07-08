@@ -45,7 +45,6 @@ pub const Tag = enum {
     caret, //^
     careteq, //^=
     tilde, //~
-    tildeeq, //~=
     percent, //%
     percenteq, //%=
     at, //@

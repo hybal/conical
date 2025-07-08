@@ -808,7 +808,7 @@ fn unary(self: *@This()) anyerror!*Ast {
         .end = self.lexer.index,
     };
 
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.minus, .bang, .tilde, .star, .amp})) |op| {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.minus, .bang, .tilde, .star, .amp, .amp2})) |op| {
         const unry = try self.unary();
         span.merge(unry.span);
         const out: Ast = Ast.create(.{ .unary_expr = .{

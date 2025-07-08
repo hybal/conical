@@ -7,6 +7,7 @@ const parse = @import("parser.zig");
 const sema = @import("semantic_analysis.zig");
 const types = @import("types.zig");
 const diag = @import("diag.zig");
+const lower_hir = @import("lower.zig");
 
 
 var source: []const u8 = "let a = 1;";
@@ -245,13 +246,18 @@ pub fn main() !u8 {
         .symbol_table = context.symtab.items[0],
         .type_table = context.type_map
     };
-    const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
-    var cg = try codegen.init(comp_unit, triple, gpa);
-    try cg.lower(comp_unit.ast);
-    var err: [*c]u8 = null;
-    if (llvm.Analysis.LLVMVerifyModule(@ptrCast(cg.llvm_context.module.?), llvm.Analysis.LLVMAbortProcessAction, &err) != 0) {
-        std.debug.print("Module verification failed: {s}\n", .{err});
-    }
-    try cg.emit();
+    _ = comp_unit;
+    _ = lower_hir.lower(trees, &session, source, gpa) catch |err| {
+        try session.flush(std.io.getStdErr().writer());
+        return err;
+    };
+//    const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
+//    var cg = try codegen.init(comp_unit, triple, gpa);
+//    try cg.lower(comp_unit.ast);
+//    var err: [*c]u8 = null;
+//    if (llvm.Analysis.LLVMVerifyModule(@ptrCast(cg.llvm_context.module.?), llvm.Analysis.LLVMAbortProcessAction, &err) != 0) {
+//        std.debug.print("Module verification failed: {s}\n", .{err});
+//    }
+//    try cg.emit();
     return 0;
 }
