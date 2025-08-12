@@ -4,19 +4,7 @@ const types = @import("types.zig");
 const mem = @import("mem.zig");
 
 pub const DefId = usize;
-
-pub const HirId = struct {
-    owner: usize,
-    local: usize,
-
-    pub fn eql(a: @This(), b: @This()) bool {
-        return a.owner == b.owner and a.local == b.local;
-    }
-
-    pub fn hash(id: @This()) u64 {
-        return @intCast(id.owner * 31 + id.local);
-    }
-};
+pub const HirId = u64;
 
 pub const AdjustmentStep = union(enum) {
     AutoDeref: usize,
@@ -56,6 +44,10 @@ pub const BinaryOp = enum {
     LtEq,
     Dot,
     Cast,
+
+    pub fn hash(self: *const @This()) u64 {
+        return @intFromEnum(self.*);
+    }
 };
 
 pub const UnaryOp = enum {
@@ -64,17 +56,36 @@ pub const UnaryOp = enum {
     DeRef,
     Ref,
     Minus,
+    pub fn hash(self: *const @This()) u64 {
+        return @intFromEnum(self.*);
+    }
 };
 
 pub const BinaryExpr = struct {
     lhs: Hir,
     rhs: Hir,
     op: BinaryOp,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.op.hash()));
+        hasher.update(std.mem.asBytes(&self.lhs.hash()));
+        hasher.update(std.mem.asBytes(&self.rhs.hash()));
+        return hasher.final();
+    }
 };
 
 pub const Ident = struct {
     location: types.Span,
     value: []const u8,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.location.start));
+        hasher.update(std.mem.asBytes(&self.location.end));
+        hasher.update(self.value);
+        return hasher.final();
+    }
 };
 
 pub const Terminal = union(enum) {
@@ -86,16 +97,62 @@ pub const Terminal = union(enum) {
     type_literal: *Ast.Type,
     bool_literal: bool,
     unit,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        switch (self.*) {
+            .string_literal => |v| {
+                hasher.update(v);
+            },
+            .char_literal => |v| {
+                hasher.update(std.mem.asBytes(&v));
+            },
+            .integer_literal => |v| {
+                hasher.update(std.mem.asBytes(&v));
+            },
+            .float_literal => |v| {
+                hasher.update(std.mem.asBytes(&v));
+            },
+            .identifier => |v| {
+                hasher.update(std.mem.asBytes(&v));
+            },
+            .type_literal => |v| {
+                hasher.update(std.mem.asBytes(&v.hash()));
+            },
+            .bool_literal => |v| {
+                const val: u8 = if (v) 0 else 1;
+                hasher.update(std.mem.asBytes(&val));
+            },
+            .unit => {
+                hasher.update(std.mem.asBytes(&1));
+            }
+        }
+        return hasher.final();
+    }
 };
 
 pub const UnaryExpr = struct {
     op: UnaryOp,
     expr: Hir,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.op.hash()));
+        hasher.update(std.mem.asBytes(&self.expr.hash()));
+        return hasher.final();
+    }
 };
 
 pub const Assignment = struct {
     lvalue: Hir,
     expr: Hir,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.lvalue.hash()));
+        hasher.update(std.mem.asBytes(&self.expr.hash()));
+        return hasher.final();
+    }
 };
 
 pub const Binding = struct {
@@ -107,6 +164,21 @@ pub const Binding = struct {
     is_export: bool,
     is_static: bool,
     expr: Hir,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.id.hash()));
+        if (self.ty) |ty| {
+            hasher.update(std.mem.asBytes(&ty));
+        }
+        hasher.update(std.mem.asBytes(&self.is_mutable));
+        hasher.update(std.mem.asBytes(&self.is_pub));
+        hasher.update(std.mem.asBytes(&self.is_extern));
+        hasher.update(std.mem.asBytes(&self.is_export));
+        hasher.update(std.mem.asBytes(&self.is_static));
+        hasher.update(std.mem.asBytes(&self.expr.hash()));
+        return hasher.final();
+    }
 };
 
 pub const TypeDecl = struct {
@@ -114,25 +186,69 @@ pub const TypeDecl = struct {
     is_pub: bool,
     is_extern: bool,
     tyid: Ast.TypeId,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.id.hash()));
+        hasher.update(std.mem.asBytes(&self.is_pub));
+        hasher.update(std.mem.asBytes(&self.is_extern));
+        hasher.update(std.mem.asBytes(&self.tyid));
+        return hasher.final();
+    }
 };
 
 pub const EnumCons = struct {
     ty: Ast.TypeId,
     field: []const u8,
     value: ?*Ast.Ast,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.ty));
+        hasher.update(self.field);
+        if (self.value) |value| {
+            hasher.update(std.mem.asBytes(&value));
+        }
+        return hasher.final();
+    }
 };
 
 pub const StructCons = struct {
     ty: Ast.TypeId,
     fields: std.StringHashMap(Hir),
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.ty));
+        var iter = self.fields.iterator();
+        while (iter.next()) |next| {
+            hasher.update(next.key_ptr.*);
+            hasher.update(std.mem.asBytes(&next.value_ptr.hash()));
+        }
+        return hasher.final();
+    }
 };
 
 pub const Block = struct {
     body: []Hir,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        for (self.body) |stmt| {
+            hasher.update(std.mem.asBytes(&stmt.hash()));
+        }
+        return hasher.final();
+    }
 };
 
 pub const Loop = struct {
     block: Block,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.block.hash()));
+        return hasher.final();
+    }
 };
 
 pub const Fn = struct {
@@ -143,26 +259,76 @@ pub const Fn = struct {
     is_extern: bool,
     is_export: bool,
     body: ?Hir,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.id.hash()));
+
+        for (self.parameters) |param| {
+            hasher.update(std.mem.asBytes(&param.id.hash()));
+            hasher.update(std.mem.asBytes(&param.ty));
+        }
+        hasher.update(std.mem.asBytes(&self.return_type));
+        hasher.update(std.mem.asBytes(&self.is_public));
+        hasher.update(std.mem.asBytes(&self.is_extern));
+        hasher.update(std.mem.asBytes(&self.is_export));
+        if (self.body) |body| {
+            hasher.update(std.mem.asBytes(&body.hash()));
+        }
+        return hasher.final();
+    }
 };
 
 pub const FnCall = struct {
     expr: Hir,
-    arguments: []Hir
+    arguments: []Hir,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.expr.hash()));
+        for (self.arguments) |arg| {
+            hasher.update(std.mem.asBytes(&arg.hash()));
+        }
+        return hasher.final();
+    }
 };
 
 pub const Branch = struct {
     a_path: Block,
     b_path: Block,
     condition: InlineExpr,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.a_path.hash()));
+        hasher.update(std.mem.asBytes(&self.b_path.hash()));
+        hasher.update(std.mem.asBytes(&self.condition.hash()));
+        return hasher.final();
+    }
 };
 
 pub const Cast = struct {
     expr: Hir,
-    tyid: Ast.TypeId
+    tyid: Ast.TypeId,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.expr.hash()));
+        hasher.update(std.mem.asBytes(&self.tyid));
+        return hasher.final();
+    }
 };
+
+
 
 pub const Return = struct {
     expr: Hir,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.expr.hash()));
+        return hasher.final();
+    }
 };
 
 pub const InlineExpr = union(enum) {
@@ -174,6 +340,22 @@ pub const InlineExpr = union(enum) {
     block: *Block,
     enum_cons: *EnumCons,
     struct_cons: *StructCons,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+
+        switch (self.*) {
+            .binary_expr => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+            .unary_expr => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+            .terminal => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+            .fn_call => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+            .cast => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+            .block => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+            .enum_cons => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+            .struct_cons => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+        }
+        return hasher.final();
+    }
 };
 
 pub const TopLevelExpr = union(enum) {
@@ -184,48 +366,29 @@ pub const TopLevelExpr = union(enum) {
     branch: *Branch,
     binding: *Binding,
     type_decl: *TypeDecl,
-};
 
-pub const HirIdGenerator = struct {
-    allocator: std.mem.Allocator,
-    local_counters: std.AutoHashMap(usize, usize),
-    current_owner: usize,
-    pub fn init(allocator: std.mem.Allocator) @This() {
-        return .{
-            .allocator = allocator,
-            .local_counters = .init(allocator),
-            .current_owner = 0
-        };
-    }
-
-    pub fn next(self: *@This()) !HirId {
-        _ = try self.local_counters.getOrPutValue(self.current_owner, 0);
-        const next_local = self.local_counters.get(self.current_owner).?;
-        const out: HirId = .{ .owner = self.current_owner, .local = next_local };
-        try self.local_counters.put(self.current_owner, next_local + 1);
-        return out;
-    }
-
-    pub fn push_owner(self: *@This()) void {
-        self.current_owner += 1;
-    }
-
-    pub fn pop_owner(self: *@This()) usize {
-        defer self.current_owner -= 1;
-        return self.current_owner;
-    }
-
-    pub fn set_owner(self: *@This(), owner: usize) void {
-        self.current_owner = owner;
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        switch (self.*) {
+            .assignment => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
+            .func => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
+            .return_stmt => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
+            .loop => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
+            .branch => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
+            .binding => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
+            .type_decl => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
+        }
+        return hasher.final();
     }
 };
+
 
 //This should always be trivially copiable other than the node.
 pub const Hir = struct {
     node: HirNode,
     id: HirId,
-    pub fn create(node: HirNode, span: types.Span, hir_table: *HirInfoTable, id_gen: *HirIdGenerator) !@This() {
-        const id = try id_gen.next();
+    pub fn create(node: HirNode, span: types.Span, hir_table: *HirInfoTable) !@This() {
+        const id = node.hash();
         try hir_table.put(id, .{
             .ty = null,
             .adjustments = null,
@@ -236,10 +399,23 @@ pub const Hir = struct {
             .id = id,
         };
     }
+
+    pub fn hash(self: *const @This()) u64 {
+        return self.id;
+    }
 };
 
 //This should always be pointer sized + the tag size
 pub const HirNode = union(enum) {
     inline_expr: InlineExpr,
-    top_level: TopLevelExpr
+    top_level: TopLevelExpr,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        switch (self.*) {
+            .inline_expr => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+            .top_level => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+        }
+        return hasher.final();
+    }
 };

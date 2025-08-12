@@ -18,7 +18,6 @@ at_global_scope: bool = true,
 //expected_type: ?Ast.TypeId = null,
 current_scope: usize = 0,
 source: []const u8,
-hir_gen: Hir.HirIdGenerator,
 
 
 fn enter_scope(self: *@This()) !void {
@@ -91,7 +90,6 @@ pub fn init_context(session: *diag.Session, source: []const u8, type_tbl: types.
         .def_table = .init(allocator),
         .session = session,
         .source = source,
-        .hir_gen = .init(allocator),
         .hir_table = .init(allocator),
     };
     return self;
@@ -410,7 +408,7 @@ fn get_float_type(value: f64) Ast.PrimitiveType {
 }
 
 fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
-    var out_node: Hir.HirNode = undefined;
+    var out_node: ?Hir.HirNode = null;
     switch (ast.node) {
         .terminal => |expr| {
             var terminal: Hir.Terminal = Hir.Terminal.unit;
@@ -545,6 +543,9 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 },
                 else => unreachable,
             }
+            out_node = .{ .inline_expr = .{
+                .binary_expr = try mem.createWith(self.allocator, node)
+            }};
         },
         .assignment => |expr| {
             const left = try self.lower_single(expr.lvalue);
@@ -577,7 +578,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 };
                 assignment_node.expr = try Hir.Hir.create(.{ .inline_expr = .{ 
                     .binary_expr = try mem.createWith(self.allocator, desugered_expr)
-                }}, ast.span, &self.hir_table, &self.hir_gen);
+                }}, ast.span, &self.hir_table);
             }
             out_node = .{ .top_level = .{ 
                 .assignment = try mem.createWith(self.allocator, assignment_node)}};
@@ -605,7 +606,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     };
                     try out_block.append(try Hir.Hir.create(.{ .top_level = .{
                         .return_stmt = try mem.createWith(self.allocator, return_node),
-                    }}, ast.span, &self.hir_table, &self.hir_gen));
+                    }}, ast.span, &self.hir_table));
                 } else {
                     try out_block.append(hir);
                 }
@@ -715,6 +716,9 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     out_node = .{.inline_expr = .{
                         .struct_cons = try mem.createWith(self.allocator, struct_cons)
                     }};
+                } else {
+                    try self.session.emit(.Error, ast.span, "Not a compound type");
+                    return error.NonCompoundTypeCons;
                 }
             },
             else => |node| {
@@ -722,14 +726,18 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 unreachable;
             }
     }
-    const id = try self.hir_gen.next();
+    if (out_node == null) {
+        std.debug.print("`out_node` should not be null, case missing initializer\n", .{});
+        unreachable;
+    }
+    const id = out_node.?.hash();
     _ = try self.hir_table.getOrPutValue(id, .{
         .adjustments = .init(self.allocator),
         .span = ast.span,
         .ty = null
     });
     const out = Hir.Hir{ 
-        .node = out_node,
+        .node = out_node.?,
         .id = id,
     };
     return out;
