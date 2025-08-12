@@ -276,7 +276,7 @@ pub const Lexer = struct {
                 '{' => tag = .open_bracket,
                 '}' => tag = .close_bracket,
                 '@' => tag = .at,
-                '~' => tag = if (self.next_if('=')) |_| .tildeeq else .tilde,
+                '~' => tag = .tilde,
                 ';' => tag = .semicolon,
                 ',' => tag = .comma,
                 '#' => {

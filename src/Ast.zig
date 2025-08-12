@@ -391,15 +391,10 @@ pub const Struct = struct {
     }
 };
 
-pub const GeneralTypeCons = struct {
-    ty: TypeId,
-    id: Ident,
-    value: ?*Ast
-};
 
-pub const StructCons = struct {
+pub const TypeCons = struct {
     ty: TypeId,
-    fields: std.StringHashMap(*Ast),
+    fields: std.StringHashMap(?*Ast),
 };
 
 pub const TypeDecl = struct {
@@ -409,11 +404,6 @@ pub const TypeDecl = struct {
     //This will also actually be an expression since you can do weird comptime things
 };
 
-pub const EnumCons = struct {
-    ty: TypeId,
-    ident: Ident,
-    init: ?*Ast
-};
 pub const Enum = struct { //TODO:finalize syntax
     variants: std.StringHashMap(?TypeId),
 
@@ -476,6 +466,25 @@ pub const FnDecl = struct {
     param_types: []TypeId,
     return_ty: TypeId,
     body: ?*Ast,
+
+    pub fn hash(self: *const @This(), type_tbl: *types.TypeTbl, allocator: std.mem.Allocator) !TypeId {
+        var args = std.ArrayList(TypeId).init(allocator);
+        for (self.param_types) |ty| {
+            try args.append(ty);
+        }
+        const fnctype: Type = .{
+            .base_type = .{
+                .func = .{
+                    .args = try args.toOwnedSlice(),
+                    .ret = self.return_ty,
+                },
+                },
+            .modifiers = null,
+        };
+        const fnctypeid = fnctype.hash();
+        _ = try type_tbl.getOrPutValue(fnctypeid, fnctype);
+        return fnctypeid;
+    }
 };
 
 pub const ParamList = struct {
@@ -510,7 +519,7 @@ pub const Block = struct {
     exprs: []*Ast
 };
 
-pub const TypeId = u64;
+pub const TypeId = usize;
 
 pub const Ast = struct {
     node: AstNode,
@@ -543,10 +552,8 @@ pub const AstNode = union(enum) {
     param_list: ParamList,
     return_stmt: *Ast, 
     type_decl: TypeDecl,
-    terminated: *Ast, 
-    general_cons: GeneralTypeCons,
-    struct_cons: StructCons,
-    enum_cons: EnumCons,
+    terminated: *Ast,
+    type_cons: TypeCons,
     access_operator: AccessOperator,
     cast: Cast, 
     _,

@@ -206,7 +206,12 @@ fn parse_type(self: *@This()) !AstTypes.Type {
             const ident = try self.expect_ret(.ident);
             try self.expect(.colon);
             const field_type = try self.parse_type();
-            try self.expect(.semicolon); //NOTE: could possibly change to commas, not sure
+            if (!self.lexer.is_next_token(.comma) and !self.lexer.is_next_token(.close_bracket)) {
+                span.merge(.{ .start = span.start, .end = self.lexer.index});
+                try self.session.emit(.Error, span, "Missing comma");
+                return error.MissingCommaInStruct;
+            }
+            _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
             fields.putNoClobber(ident.span.get_string(self.lexer.buffer), field_type.hash()) catch {
                 span.merge(.{ .start = span.start, .end = self.lexer.index});
                 try self.session.emit(.Error, span, "Struct with duplicate fields");
@@ -259,6 +264,7 @@ fn try_decl_mod(self: *@This()) ?AstTypes.GlobalDeclMod {
 
 
 // parses a function decleration
+// NOTE: This may be changed to the more common inline style
 // fn_decl = decl_mod? fn_mod? "fn" ident "(" param* ")" (":" "(" (type ",") | type ")" )? ("->" type)? block?
 fn fn_decl(self: *@This()) !*Ast {
     var decl_mod: ?AstTypes.GlobalDeclMod = null;
@@ -808,7 +814,7 @@ fn unary(self: *@This()) anyerror!*Ast {
         .end = self.lexer.index,
     };
 
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.minus, .bang, .tilde, .star, .amp})) |op| {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.minus, .bang, .tilde, .star, .amp, .amp2})) |op| {
         const unry = try self.unary();
         span.merge(unry.span);
         const out: Ast = Ast.create(.{ .unary_expr = .{
@@ -855,7 +861,7 @@ fn access(self: *@This()) !*Ast {
         .start = self.lexer.index,
         .end = self.lexer.index
     };
-    const left = try self.struct_cons();
+    const left = try self.type_cons();
     if (self.lexer.consume_if_eq(&[_]types.Tag{.dot})) |_| {
         span.merge(left.span);
         const ident = try self.expect_ret(.ident);
@@ -869,7 +875,7 @@ fn access(self: *@This()) !*Ast {
     return left;
 }
 
-fn struct_cons(self: *@This()) !*Ast {
+fn type_cons(self: *@This()) !*Ast {
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
@@ -877,17 +883,16 @@ fn struct_cons(self: *@This()) !*Ast {
     const saved = self.lexer.index;
     self.session.freeze();
     const ty = self.parse_type() catch null;
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket})) |_| {
-        self.session.unfreeze();
+    self.session.unfreeze();
+    if (ty != null and self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket}) != null) {
         const tyid = ty.?.hash();
         _ = try self.type_map.getOrPutValue(tyid, ty.?);
-        var fields = std.StringHashMap(*Ast).init(self.gpa);
+        var fields = std.StringHashMap(?*Ast).init(self.gpa);
         while (!self.lexer.is_next_token(.close_bracket)) {
             try self.expect(.dot);
             const field = try self.expect_ret(.ident);
             const field_name = field.span.get_string(self.lexer.buffer);
-            try self.expect(.eq);
-            const value = try self.expression();
+            const value = if (self.lexer.consume_if_eq(&[_]types.Tag{.eq})) |_| try self.expression() else null; 
             if (!self.lexer.is_next_token(.comma) 
                 and !self.lexer.is_next_token(.close_bracket)) {
                 span.merge(.{.start = span.start, .end = self.lexer.index});
@@ -902,12 +907,11 @@ fn struct_cons(self: *@This()) !*Ast {
             }
             try fields.put(field_name, value);
         }
-        self.session.unfreeze();
         try self.expect(.close_bracket);
 
         span.merge(.{.start = span.start, .end = self.lexer.index});
         const out = Ast.create(.{
-            .struct_cons = .{
+            .type_cons = .{
                 .ty = tyid,
                 .fields = fields
             }
