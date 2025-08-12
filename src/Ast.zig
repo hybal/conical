@@ -391,15 +391,10 @@ pub const Struct = struct {
     }
 };
 
-pub const GeneralTypeCons = struct {
-    ty: TypeId,
-    id: Ident,
-    value: ?*Ast
-};
 
-pub const StructCons = struct {
+pub const TypeCons = struct {
     ty: TypeId,
-    fields: std.StringHashMap(*Ast),
+    fields: std.StringHashMap(?*Ast),
 };
 
 pub const TypeDecl = struct {
@@ -409,11 +404,6 @@ pub const TypeDecl = struct {
     //This will also actually be an expression since you can do weird comptime things
 };
 
-pub const EnumCons = struct {
-    ty: TypeId,
-    ident: Ident,
-    init: ?*Ast
-};
 pub const Enum = struct { //TODO:finalize syntax
     variants: std.StringHashMap(?TypeId),
 
@@ -529,7 +519,7 @@ pub const Block = struct {
     exprs: []*Ast
 };
 
-pub const TypeId = u64;
+pub const TypeId = usize;
 
 pub const Ast = struct {
     node: AstNode,
@@ -563,9 +553,7 @@ pub const AstNode = union(enum) {
     return_stmt: *Ast,
     type_decl: TypeDecl,
     terminated: *Ast,
-    general_cons: GeneralTypeCons,
-    struct_cons: StructCons,
-    enum_cons: EnumCons,
+    type_cons: TypeCons,
     access_operator: AccessOperator,
     cast: Cast,
     _,

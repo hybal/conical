@@ -1,5 +1,36 @@
 const std = @import("std");
 const Ast = @import("Ast.zig");
+const Hir = @import("Hir.zig");
+
+pub const Symbol = struct {
+    name: []const u8,
+    tyid: ?Ast.TypeId,
+    node: *Ast.Ast,
+    qualifier: enum {
+        Public,
+        Private,
+        Protected,
+        Extern,
+        Export,
+    } = .Private,
+    scope: enum {
+        Local,
+        LocalEscapes,
+        Global,
+        Static,
+    } = .Local,
+};
+
+pub const SymbolTable = struct {
+    symbol_map: std.HashMap(Hir.DefId, Symbol, std.hash_map.AutoContext(Hir.DefId), 80),
+    parent: ?usize,
+    children: ?[]usize,
+    is_function_scope: bool = false,
+};
+
+
+
+
 
 
 //This represents a region in the source code
@@ -141,23 +172,7 @@ pub const Token = struct {
     tag: Tag,
 };
 
-pub const SymbolScope = enum {
-    this,
-    parent,
-    static
-};
-//A symbol in the symbol table
-//the type is optional to allow for type inference
-//the ast field may also be removed
-pub const Symbol = struct {
-    ty: ?Ast.TypeId,
-    ident: Span,
-    ast: *Ast.Ast,
-    scope: SymbolScope = .this,
-};
 
-
-pub const SymTab = std.StringHashMap(Symbol);
 pub const TypeTbl = std.HashMap(Ast.TypeId, Ast.Type, std.hash_map.AutoContext(Ast.TypeId), 80);
 
 pub fn init_type_map(gpa: std.mem.Allocator) !TypeTbl {
@@ -176,7 +191,7 @@ pub const CompUnit = struct {
     out_file: []const u8, //the filename of the output file
     source: []const u8, //the file source
     ast: []*Ast.Ast, //the ast
-    symbol_table: SymTab, //the symbol table (currently would only contain the global definitions)
+    symbol_table: SymbolTable, //the symbol table (currently would only contain the global definitions)
     type_table: *TypeTbl,  //the type table (maps typeids to types)
 };
 

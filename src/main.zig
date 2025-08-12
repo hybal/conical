@@ -4,7 +4,7 @@ const llvm = @import("llvm");
 const lex = @import("lexer.zig");
 const ast = @import("Ast.zig");
 const parse = @import("parser.zig");
-const sema = @import("semantic_analysis.zig");
+const sema = @import("sema.zig");
 const types = @import("types.zig");
 const diag = @import("diag.zig");
 const lower_hir = @import("lower.zig");
@@ -167,7 +167,7 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             print_type(type_map, decl.ty);
             std.debug.print(";", .{});
         },
-        .struct_cons => |val| {
+        .type_cons => |val| {
             print_type(type_map, val.ty);
             std.debug.print(" {{ ", .{});
             var iter = val.fields.iterator();
@@ -177,17 +177,6 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
                 std.debug.print(", ", .{});
             }
             std.debug.print(" }}", .{});
-        },
-        .enum_cons => |val| {
-            std.debug.print("enum<", .{});
-            print_type(type_map, val.ty);
-            std.debug.print(".{s}", .{val.ident.value});
-            if (val.init) |init| {
-                std.debug.print("(", .{});
-                print_tree(type_map, init);
-                std.debug.print(")", .{});
-            }
-            std.debug.print(">", .{});
         },
         .return_stmt => |stmt| {
             std.debug.print("return ", .{});
@@ -222,15 +211,23 @@ pub fn main() !u8 {
     var session = diag.Session.init(gpa, source);
     var type_map = try types.init_type_map(gpa); 
     var parser = parse.init_from_source(source, &session, &type_map, gpa);
-    var context = try sema.init_context(source, &session, &type_map, gpa);
+//    var context = try sema.init_context(source, &session, &type_map, gpa);
     const trees = parser.parse() catch |err| {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
-    sema.resolve(&context, trees) catch |err| {
+    var hir_context = try lower_hir.init_context(&session, source, type_map, gpa);
+    const hir = hir_context.lower(trees) catch |err| {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
+
+    var sema_context = sema.init_context(hir_context.sym_tab, hir_context.hir_table, type_map, source, gpa, &session);
+    _ = try sema.analyze(&sema_context, hir);
+   // sema.resolve(&context, trees) catch |err| {
+   //     try session.flush(std.io.getStdErr().writer());
+   //     return err;
+   // };
     try session.flush(std.io.getStdErr().writer());
 
     for (trees) |tree| {
@@ -243,15 +240,11 @@ pub fn main() !u8 {
         .source = source,
         .out_file = out_file,
         .ast = trees,
-        .symbol_table = context.symtab.items[0],
-        .type_table = context.type_map
+        .symbol_table = sema_context.symtree.items[0],
+        .type_table = &sema_context.type_map
     };
     _ = comp_unit;
-    _ = lower_hir.lower(trees, &session, source, gpa) catch |err| {
-        try session.flush(std.io.getStdErr().writer());
-        return err;
-    };
-//    const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
+   //    const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
 //    var cg = try codegen.init(comp_unit, triple, gpa);
 //    try cg.lower(comp_unit.ast);
 //    var err: [*c]u8 = null;

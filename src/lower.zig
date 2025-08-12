@@ -5,47 +5,24 @@ const Hir = @import("Hir.zig");
 const diag = @import("diag.zig");
 const mem = @import("mem.zig");
 
-const Symbol = struct {
-    name: []const u8,
-    tyid: ?Ast.TypeId,
-    node: *Ast.Ast,
-    qualifier: enum {
-        Public,
-        Private,
-        Protected,
-        Extern,
-        Export,
-    } = .Private,
-    scope: enum {
-        Local,
-        LocalEscapes,
-        Global,
-        Static,
-    } = .Local,
-};
-
-const SymbolTable = struct {
-    symbol_map: std.HashMap(Hir.DefId, Symbol, std.hash_map.AutoContext(Hir.DefId), 80),
-    parent: ?usize,
-    children: ?[]usize,
-    is_function_scope: bool = false,
-};
 
 allocator: std.mem.Allocator,
-sym_tab: std.ArrayList(SymbolTable),
+sym_tab: std.ArrayList(types.SymbolTable),
 def_table: std.StringHashMap(Hir.DefId),
+hir_table: Hir.HirInfoTable,
 type_tbl: types.TypeTbl,
 session: *diag.Session,
 in_function: bool = false,
 in_assignment: bool = false,
 at_global_scope: bool = true,
-expected_type: ?Ast.TypeId = null,
+//expected_type: ?Ast.TypeId = null,
 current_scope: usize = 0,
 source: []const u8,
+hir_gen: Hir.HirIdGenerator,
 
 
 fn enter_scope(self: *@This()) !void {
-var children: std.ArrayList(usize) = undefined;
+    var children: std.ArrayList(usize) = undefined;
     const current_children = self.sym_tab.items[self.current_scope].children;
     if (current_children) |ccsn| {
         children = .fromOwnedSlice(self.allocator, ccsn);
@@ -55,7 +32,7 @@ var children: std.ArrayList(usize) = undefined;
     const child_index = self.sym_tab.items.len;
     try children.append(child_index);
     self.sym_tab.items[self.current_scope].children = try children.toOwnedSlice();
-    const symtab = SymbolTable {
+    const symtab = types.SymbolTable {
         .symbol_map = .init(self.allocator),
         .parent = self.current_scope,
         .children = null,
@@ -70,7 +47,7 @@ fn leave_scope(self: *@This()) void {
     }
 }
 
-fn add_symbol(self: *@This(), name: []const u8, symbol: Symbol) !void {
+fn add_symbol(self: *@This(), name: []const u8, symbol: types.Symbol) !void {
     const defid = std.hash.Fnv1a_64.hash(name);
     _ = try self.def_table.getOrPutValue(name, defid);
     if (self.sym_tab.items[self.current_scope].symbol_map.contains(defid)) {
@@ -79,7 +56,7 @@ fn add_symbol(self: *@This(), name: []const u8, symbol: Symbol) !void {
     try self.sym_tab.items[self.current_scope].symbol_map.put(defid, symbol);
 }
 
-fn get_symbol(self: *@This(), name: []const u8) ?Symbol {
+fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
     const defid = self.def_table.get(name);
     if (defid) |dfid| {
         var current_scope = self.sym_tab.items[self.current_scope];
@@ -99,28 +76,36 @@ fn get_symbol(self: *@This(), name: []const u8) ?Symbol {
     return null;
 }
 
-pub fn lower(ast: []*Ast.Ast, session: *diag.Session, source: []const u8, allocator: std.mem.Allocator) ![]Hir.Hir {
-    var sym_tab: std.ArrayList(SymbolTable) = .init(allocator);
+
+pub fn init_context(session: *diag.Session, source: []const u8, type_tbl: types.TypeTbl, allocator: std.mem.Allocator) !@This() {
+    var sym_tab: std.ArrayList(types.SymbolTable) = .init(allocator);
     try sym_tab.append(.{
         .symbol_map = .init(allocator),
         .children = null,
         .parent = null,
     });
-    var self: @This() = .{
+    const self: @This() = .{
         .allocator = allocator,
         .sym_tab = sym_tab,
-        .type_tbl = .init(allocator),
+        .type_tbl = type_tbl,
         .def_table = .init(allocator),
         .session = session,
         .source = source,
+        .hir_gen = .init(allocator),
+        .hir_table = .init(allocator),
     };
+    return self;
+}
 
+pub fn lower(self: *@This(), ast: []*Ast.Ast) ![]Hir.Hir {
+    var out: std.ArrayList(Hir.Hir) = .init(self.allocator);
     try self.resolve_global_symbols(ast);
     for (ast) |tree| {
         try self.resolve_local_symbols(tree);
-        _ = try self.lower_single(tree);
+        try out.append(try self.lower_single(tree));
     }
-    return error.Unfinished;
+    return try out.toOwnedSlice();
+
 }
 
 fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
@@ -197,7 +182,7 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                 for (decl.params, 0..) |param_id, i| {
                     self.add_symbol(param_id.value, .{
                         .name = param_id.value,
-.node = ast,
+                        .node = ast,
                         .tyid = decl.param_types[i],
                         .scope = .LocalEscapes,
                     }) catch |err| {
@@ -221,13 +206,13 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                     .name = decl.ident.value,
                     .node = ast,
                     .tyid = decl.ty
-}) catch {
+                }) catch {
                     return error.TypeShadowsPreviousDecleration;
                 };
             }
         },
         .binary_expr => |expr| {
-try self.resolve_local_symbols(expr.left);
+            try self.resolve_local_symbols(expr.left);
             try self.resolve_local_symbols(expr.right);
         },
         .unary_expr => |expr| {
@@ -238,7 +223,7 @@ try self.resolve_local_symbols(expr.left);
             try self.resolve_local_symbols(expr.expr);
         },
         .block => |exprs| {
-            
+
             try self.enter_scope();
             for (exprs.exprs) |expr| {
                 try self.resolve_local_symbols(expr);
@@ -254,13 +239,13 @@ try self.resolve_local_symbols(expr.left);
                 try self.resolve_local_symbols(param);
             }
         },
-.return_stmt => |expr| {
+        .return_stmt => |expr| {
             try self.resolve_local_symbols(expr);
         },
         .terminated => |expr| try self.resolve_local_symbols(expr),
         .terminal => |expr| {
             if (expr.tag == .ident) {
-if (self.get_symbol(expr.span.get_string(self.source)) == null) {
+                if (self.get_symbol(expr.span.get_string(self.source)) == null) {
                     try self.session.emit(.Error, expr.span, "Unknown Identifier");
                     return error.UnknownIdentifier;
                 }
@@ -284,11 +269,20 @@ if (self.get_symbol(expr.span.get_string(self.source)) == null) {
             try self.resolve_local_symbols(expr.condition);
             try self.resolve_local_symbols(expr.block);
         },
+        .type_cons => |cons| {
+            const ty = self.type_tbl.get(cons.ty).?;
+            if (ty.base_type == .user) {
+                if (self.get_symbol(ty.base_type.user.value) == null) {
+                    try self.session.emit(.Error, ty.base_type.user.span, "Unknown Identifier");
+                    return error.UnknownIdentifier;
+                }
+            }
+        },
         else => {
             std.debug.print("Unhandled case: {s}\n", .{@tagName(ast.node)});
             unreachable;
         },
-        
+
     }
 }
 fn parse_int_literal(self: *@This(), span: types.Span) !u128 {
@@ -401,13 +395,13 @@ fn pow(base: comptime_int, power: comptime_int) comptime_int {
     return out;
 }
 fn get_int_type(value: u128, signed: bool) Ast.PrimitiveType {
-        return switch (value) {
-            0...pow(2, 8) - 1 => if (signed) .I8 else .U8,
-            pow(2, 8)...pow(2, 16) - 1 => if (signed) .I16 else .U16,
-            pow(2, 16)...pow(2, 32) - 1 => if (signed) .I32 else .U32,
-            pow(2, 32)...pow(2, 64) - 1 => if (signed) .I64 else .U64,
-            pow(2, 64)...pow(2, 128) - 1 => if (signed) .I128 else .U128
-        };
+    return switch (value) {
+        0...pow(2, 8) - 1 => if (signed) .I8 else .U8,
+        pow(2, 8)...pow(2, 16) - 1 => if (signed) .I16 else .U16,
+        pow(2, 16)...pow(2, 32) - 1 => if (signed) .I32 else .U32,
+        pow(2, 32)...pow(2, 64) - 1 => if (signed) .I64 else .U64,
+        pow(2, 64)...pow(2, 128) - 1 => if (signed) .I128 else .U128
+    };
 }
 
 fn get_float_type(value: f64) Ast.PrimitiveType {
@@ -417,11 +411,9 @@ fn get_float_type(value: f64) Ast.PrimitiveType {
 
 fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
     var out_node: Hir.HirNode = undefined;
-    var out_ty: Ast.TypeId = 0;
     switch (ast.node) {
         .terminal => |expr| {
             var terminal: Hir.Terminal = Hir.Terminal.unit;
-            var ty: Ast.TypeId = Ast.Type.createPrimitive(.Unit, null).hash();
             switch (expr.tag) {
                 .ident => {
                     const id = expr.span.get_string(self.source);
@@ -434,61 +426,47 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     terminal = .{ 
                         .integer_literal = value
                     };
-                    ty = Ast.Type.createPrimitive(get_int_type(value, false), null).hash();
                 },
                 .float_literal => {
                     const value = try self.parse_float_literal(expr.span);
                     terminal = .{
                         .float_literal = value,
                     };
-                    ty = Ast.Type.createPrimitive(get_float_type(value), null).hash();
                 },
                 .char_literal => {
                     //NOTE: will probably have to adjust for quotes
                     terminal = .{
                         .char_literal = 
                             try self.parse_char_literal(expr.span)
-                    };
-                    ty = Ast.Type.createPrimitive(.Rune, null).hash();
-                },
-                .string_literal => {
-                    //NOTE: will probably have to adjust for quotes
-                    terminal = .{
-                        .string_literal =
-                            try self.unescape_string(expr.span.get_string(self.source))
-                    };
-                    var mods = [_]Ast.TypeModifier{.Slice};
-                    ty = Ast.Type.createPrimitive(.Rune, &mods).hash();
-                },
-                .raw_string_literal => {
-                    //NOTE: will probably have to adjust for quotes
-                    terminal = .{
-                        .string_literal = expr.span.get_string(self.source),
-                    };
-                    var mods = [_]Ast.TypeModifier{.Slice};
-                    ty = Ast.Type.createPrimitive(.Rune, &mods).hash();
-                },
-                .keyword_true, .keyword_false => {
-                    terminal = .{
-                        .bool_literal = if (expr.tag == .keyword_true) true else false,
-                    };
-                    ty = Ast.Type.createPrimitive(.Bool, null).hash();
-                },
-                else => unreachable
+                        };
+                    },
+                    .string_literal => {
+                        //NOTE: will probably have to adjust for quotes
+                        terminal = .{
+                            .string_literal =
+                                try self.unescape_string(expr.span.get_string(self.source))
+                            };
+                        },
+                        .raw_string_literal => {
+                            //NOTE: will probably have to adjust for quotes
+                            terminal = .{
+                                .string_literal = expr.span.get_string(self.source),
+                            };
+                        },
+                        .keyword_true, .keyword_false => {
+                            terminal = .{
+                                .bool_literal = if (expr.tag == .keyword_true) true else false,
+                            };
+                        },
+                        else => unreachable
             }
             out_node = .{ .inline_expr = .{ .terminal = try mem.createWith(self.allocator, terminal)}};
-            out_ty = ty;
         },
         .unary_expr => |expr| {
             const expr_node = try self.lower_single(expr.expr);
-            var ty = self.type_tbl.get(expr_node.typeid.?).?;
             var op: Hir.UnaryOp = undefined;
             switch (expr.op.tag) {
                 .minus => {
-                    if (ty.base_type == .primitive 
-                        and !ty.base_type.primitive.is_signed_int()) {
-                        ty.base_type.primitive = ty.base_type.primitive.switch_sign();
-                    }
                     op = .Minus;
                 },
                 .tilde => {
@@ -496,54 +474,26 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 },
                 .bang => {
                     op = .Not;
-                    ty.base_type.primitive = .Bool;
                 },
                 .amp, .amp2 => {
-                    var mods: std.ArrayList(Ast.TypeModifier) = undefined;
-                    if (ty.modifiers) |modds| {
-                        mods = .fromOwnedSlice(self.allocator, modds);
-                    } else {
-                        mods = .init(self.allocator);
-                    }
-                    try mods.insert(0, .Ref);
-                    if (expr.op.tag == .amp2) {
-                        try mods.insert(0, .Ref);
-                    }
-                    ty.modifiers = try mods.toOwnedSlice();
-                    _ = try self.type_tbl.getOrPutValue(ty.hash(), ty);
                     op = .Ref;
-                    
+
                 },
                 .star => {
-                    if (ty.modifiers == null
-                        or ty.modifiers.?.len == 0
-                        or ty.modifiers.?[0] != .Ref) {
-                        try self.session.emit(.Error, expr.expr.span, "Dereference of non-reference type");
-                        return error.InvalidDeref;
-                    }
-                    var mods: std.ArrayList(Ast.TypeModifier) = undefined;
-                    mods = .fromOwnedSlice(self.allocator, ty.modifiers.?);
-                    _ = mods.orderedRemove(0);
-                    ty.modifiers = try mods.toOwnedSlice();
                     op = .DeRef;
                 },
                 else => unreachable,
             }
             const node: Hir.UnaryExpr = .{ .op = op, .expr = expr_node };
             out_node = .{ .inline_expr = .{ .unary_expr = try mem.createWith(self.allocator, node)}};
-            out_ty = ty.hash();
         },
         .binary_expr => |expr| {
             const left = try self.lower_single(expr.left);
             var node: Hir.BinaryExpr = undefined;
-            var ty: ?Ast.TypeId = null;
             switch (expr.op.tag) {
                 .plus, .minus, .slash, .star, .caret, .percent,
                 .pipe, .amp, .shl, .shr => {
-                    const saved_exp_ty = self.expected_type;
-                    self.expected_type = left.typeid;
                     const right = try self.lower_single(expr.right);
-                    self.expected_type = saved_exp_ty;
                     const op: Hir.BinaryOp = switch (expr.op.tag) {
                         .plus => .Add,
                         .minus => .Sub,
@@ -557,7 +507,6 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                         .caret => .BinXor,
                         else => unreachable,
                     };
-                    ty = left.typeid;
                     node = .{
                         .lhs = left,
                         .rhs = right,
@@ -565,10 +514,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     };
                 },
                 .eq2, .noteq, .lt, .lteq, .gt, .gteq => {
-                    const saved_expr_ty = self.expected_type;
-                    self.expected_type = Ast.Type.createPrimitive(.Bool, null).hash();
                     const right = try self.lower_single(expr.right);
-                    self.expected_type = saved_expr_ty;
                     const op: Hir.BinaryOp = switch(expr.op.tag) {
                         .eq2 => .Eq,
                         .noteq => .NotEq,
@@ -578,7 +524,6 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                         .gteq => .GtEq,
                         else => unreachable
                     };
-                    ty = Ast.Type.createPrimitive(.Bool, null).hash();
                     node = .{
                         .lhs = left,
                         .rhs = right,
@@ -586,21 +531,12 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     };
                 },
                 .amp2, .pipe2 => {
-                    const bool_type = Ast.Type.createPrimitive(.Bool, null).hash();
-                    if (left.typeid != bool_type) {
-                        try self.session.emit(.Error, ast.span, "Type mismatch");
-                        return error.TypeMismatch;
-                    }
-                    const saved_expr_ty = self.expected_type;
-                    self.expected_type = bool_type;
                     const right = try self.lower_single(expr.right);
-                    self.expected_type = saved_expr_ty;
                     const op: Hir.BinaryOp = switch (expr.op.tag) {
                         .amp2 => .LAnd,
                         .pipe2 => .LOr,
                         else => unreachable,
                     };
-                    ty = bool_type;
                     node = .{
                         .lhs = left,
                         .rhs = right,
@@ -612,12 +548,9 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
         },
         .assignment => |expr| {
             const left = try self.lower_single(expr.lvalue);
-            const saved_expected_type = self.expected_type;
-            self.expected_type = left.typeid;
             const saved_in_assignment = self.in_assignment;
             self.in_assignment = true;
             const right = try self.lower_single(expr.expr);
-            self.expected_type = saved_expected_type;
             self.in_assignment = saved_in_assignment;
             var assignment_node: Hir.Assignment = .{
                 .expr = right,
@@ -642,71 +575,163 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .rhs = right,
                     .op = op
                 };
-                assignment_node.expr = Hir.Hir.create(.{ .inline_expr = .{ 
+                assignment_node.expr = try Hir.Hir.create(.{ .inline_expr = .{ 
                     .binary_expr = try mem.createWith(self.allocator, desugered_expr)
-                }}, ast.span);
+                }}, ast.span, &self.hir_table, &self.hir_gen);
             }
             out_node = .{ .top_level = .{ 
                 .assignment = try mem.createWith(self.allocator, assignment_node)}};
-            out_ty = Ast.Type.createPrimitive(.Unit, null).hash();
-        },
-        .cast => |expr| {
-            const left = try self.lower_single(expr.expr);
-            const out: Hir.Cast = .{
-                .expr = left,
-                .tyid = expr.ty
-            };
-            out_node = .{ .inline_expr = .{
-                .cast = try mem.createWith(self.allocator, out)
-            }};
-        },
-        .block => |expr| {
-            const unit_type = Ast.Type.createPrimitive(.Unit, null).hash();
-            var out_block: std.ArrayList(Hir.Hir) = .init(self.allocator);
-            for (0..expr.exprs.len - 1) |i| {
-                const saved_expected_type = self.expected_type;
-                self.expected_type = unit_type;
-                try out_block.append(try self.lower_single(expr.exprs[i]));
-                self.expected_type = saved_expected_type;
-            }
+            },
+            .cast => |expr| {
+                const left = try self.lower_single(expr.expr);
+                const out: Hir.Cast = .{
+                    .expr = left,
+                    .tyid = expr.ty
+                };
+                out_node = .{ .inline_expr = .{
+                    .cast = try mem.createWith(self.allocator, out)
+                }};
+            },
+            .block => |expr| {
+                var out_block: std.ArrayList(Hir.Hir) = .init(self.allocator);
+                for (0..expr.exprs.len - 1) |i| {
+                    try out_block.append(try self.lower_single(expr.exprs[i]));
+                }
 
-            const hir = try self.lower_single(expr.exprs[expr.exprs.len - 1]);
-            if (self.in_function and expr.exprs[expr.exprs.len - 1].node != .return_stmt) {
+                const hir = try self.lower_single(expr.exprs[expr.exprs.len - 1]);
+                if (self.in_function and expr.exprs[expr.exprs.len - 1].node != .return_stmt) {
                     const return_node: Hir.Return = .{
                         .expr = hir,
                     };
-                    try out_block.append(Hir.Hir.create(.{ .top_level = .{
+                    try out_block.append(try Hir.Hir.create(.{ .top_level = .{
                         .return_stmt = try mem.createWith(self.allocator, return_node),
-                    }}, hir.span));
-                    out_ty = unit_type;
-            } else {
-                try out_block.append(hir);
-                out_ty = hir.typeid.?;
-            }
-            out_node = .{
-                .inline_expr = .{ 
-                    .block = try mem.createWith(self.allocator, Hir.Block{ .body = try out_block.toOwnedSlice()}),
+                    }}, ast.span, &self.hir_table, &self.hir_gen));
+                } else {
+                    try out_block.append(hir);
                 }
-            };
-        },
-        .fn_decl => |decl| {
-        },
-        else => unreachable
+                out_node = .{
+                    .inline_expr = .{ 
+                        .block = try mem.createWith(self.allocator, Hir.Block{ .body = try out_block.toOwnedSlice()}),
+                    }
+                };
+            },
+            .fn_decl => |decl| {
+                var params: std.ArrayList(struct { id: Ast.Ident, ty: Ast.TypeId }) = .init(self.allocator);
+                for (decl.params, decl.param_types) |param, param_ty| {
+                    try params.append(.{ .id = param, .ty = param_ty });
+                }
+                //TODO: Handle modifiers
+                const fnc: Hir.Fn = .{
+                    .id = .{ .value = decl.ident.value, .location = decl.ident.span },
+                    .body = if (decl.body) |body| try self.lower_single(body) else null,
+                    .return_type = decl.return_ty,
+                    .parameters = @ptrCast(try params.toOwnedSlice()),
+                    .is_public = true,
+                    .is_extern = false,
+                    .is_export = true,
+                };
+
+                out_node = .{ .top_level = .{ .func = try mem.createWith(self.allocator, fnc)} };
+            },
+            .type_decl => |decl| {
+                const tydecl = Hir.TypeDecl {
+                    .id = .{.location = decl.ident.span, .value = decl.ident.value },
+                    .is_extern = false,
+                    .is_pub = false,
+                    .tyid = decl.ty
+                };
+                out_node = .{ .top_level = .{ .type_decl = try mem.createWith(self.allocator, tydecl)}};
+            },
+            .var_decl => |decl| {
+                const out: Hir.Binding = .{
+                    .id = .{ .location = decl.ident.span, .value = decl.ident.value },
+                    .ty = decl.ty,
+                    .is_mutable = decl.is_mut,
+                    .expr = try self.lower_single(decl.initialize.?),
+                    .is_extern = false,
+                    .is_pub = true,
+                    .is_static = false,
+                    .is_export = false,
+                };
+                out_node = .{ .top_level = .{ .binding = try mem.createWith(self.allocator, out)}};
+            },
+            .return_stmt => |stmt| {
+                const out: Hir.Return = .{ 
+                    .expr = try self.lower_single(stmt)
+                };
+                out_node = .{ .top_level = .{ .return_stmt = try mem.createWith(self.allocator, out)}};
+            },
+            .fn_call => |expr| {
+                var args = try std.ArrayList(Hir.Hir).initCapacity(self.allocator, expr.params.len);
+                for (expr.params) |param| {
+                    try args.append(try self.lower_single(param));
+                }
+                const out: Hir.FnCall = .{
+                    .expr = try self.lower_single(expr.left),
+                    .arguments = try args.toOwnedSlice(),
+                };
+                out_node = .{ .inline_expr = .{ .fn_call = try mem.createWith(self.allocator, out)}};
+            },
+            .type_cons => |cons| {
+                var ty = self.type_tbl.get(cons.ty).?;
+                if (ty.base_type == .user) {
+                    ty = self.type_tbl.get(self.get_symbol(ty.base_type.user.value).?.tyid.?).?;
+                }
+                if (ty.base_type == .@"enum") {
+                    if (cons.fields.count() > 1) {
+                        try self.session.emit(.Error, ast.span, "Too many values for enum literal");
+                        return error.EnumLiteral;
+                    }
+                    if (cons.fields.count() == 0) {
+                        try self.session.emit(.Error, ast.span, "Enum literal requires at least one field");
+                        return error.EnumLiteral;
+                    }
+                    var iter = cons.fields.iterator();
+                    const field = iter.next().?;
+                    const enum_cons = Hir.EnumCons {
+                        .ty = ty.hash(),
+                        .field = field.key_ptr.*,
+                        .value = field.value_ptr.*
+                    };
+                    out_node = .{ .inline_expr = .{
+                        .enum_cons = try mem.createWith(self.allocator, enum_cons)
+                    }};
+                } else if (ty.base_type == .strct) {
+                    if (cons.fields.count() != ty.base_type.strct.fields.count()) {
+                        try self.session.emit(.Error, ast.span, "Missing or too many struct fields");
+                        return error.StructLiteral;
+                    }
+
+                    var fields = std.StringHashMap(Hir.Hir).init(self.allocator);
+                    var iter = cons.fields.iterator();
+                    while (iter.next()) |val| {
+                        try fields.put(val.key_ptr.*, try self.lower_single(val.value_ptr.*.?));
+                    }
+                    const struct_cons = Hir.StructCons {
+                        .fields = fields,
+                        .ty = ty.hash()
+                    };
+
+                    out_node = .{.inline_expr = .{
+                        .struct_cons = try mem.createWith(self.allocator, struct_cons)
+                    }};
+                }
+            },
+            else => |node| {
+                std.debug.print("Unhandled AST node: {any}\n", .{node});
+                unreachable;
+            }
     }
-    var out = Hir.Hir{ 
-        .node = out_node,
-        .typeid = out_ty,
+    const id = try self.hir_gen.next();
+    _ = try self.hir_table.getOrPutValue(id, .{
+        .adjustments = .init(self.allocator),
         .span = ast.span,
+        .ty = null
+    });
+    const out = Hir.Hir{ 
+        .node = out_node,
+        .id = id,
     };
-    if (self.expected_type) |expected_type| {
-        if (try self.get_cast(expected_type, out)) |cast| {
-            out = Hir.Hir {
-                .node = .{ .inline_expr = .{ .cast = try mem.createWith(self.allocator, cast)}},
-                .typeid = self.expected_type,
-                .span = ast.span
-            };
-        }
-    }
     return out;
 
 }

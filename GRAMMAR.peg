@@ -1,0 +1,42 @@
+Conical = Module / TopLevel
+
+Module = "mod"
+
+TopLevel = Import* / TypeDecl* / VariableDecl* / FnDecl*
+
+Import = "import" Location ";"
+
+Location = Id ("::" Id)*
+
+TypeDecl = "type" Id "=" TypeExpr* ";"
+
+TypeExpr = (Id ":")? StructDecl / EnumDecl / ImplBlock / SetOp / Lambda / Id
+
+StructDecl = "struct" "{" (Id ":" TypeExpr ","?)* "}"
+
+EnumDecl = "enum" "{" (Id (":" TypeExpr) ","?)* "}"
+
+ImplBlock = "impl" "{" FnDecl* "}"
+
+SetOp = Union / Product
+
+Union = TypeExpr "|" Product
+
+Product = TypeExpr "*" TypeExpr
+
+Lambda = "\"" LambdaParamList
+
+LambdaParamList = Id / Generic / "(" (Id / Generic / Id ":" TypeExpr)* ")" ("->" TypeExpr)?
+
+Generic = "$"Id
+
+VariableDecl = "let" / "mut"
+
+FnDecl = "fn" Id "(" (Id ","?)* ")" (":" (TypeExpr ",")+)? ("->" TypeExpr)? (";" / Block)
+
+Block = "{" BlockTopExpr* "}"
+
+BlockTopExpr = TopLevel / Expr / IfStmt / MatchStmt / ForLoop / WhileLoop / Loop / ReturnStmt
+
+
+Id = [a-zA-Z_] [a-zA-Z0-9_]*

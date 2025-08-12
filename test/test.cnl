@@ -1,13 +1,14 @@
 
 extern fn print();
 extern fn puts(value): (&rune) -> i32;
-
-type A = i32;
-fn main() -> A {
+type Test = struct {
+    a: i32,
+    b: i32
+};
+fn main() -> i32 {
     let a = 4;
     let v = "Hello, World!\0";
-    //print();
-    add(1, a)
+    let c = Test { .a = 1, .b = 2 };
 }
 
 fn add(a, b): (i32, i32) -> i32 {
