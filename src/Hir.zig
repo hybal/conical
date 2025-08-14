@@ -19,6 +19,7 @@ pub const HirInfo = struct {
     ty: ?Ast.TypeId,
     adjustments: ?std.ArrayList(AdjustmentStep),
     span: types.Span,
+    scope_id: usize,
 };
 
 pub const HirInfoTable = std.AutoHashMap(HirId, HirInfo);
@@ -156,7 +157,7 @@ pub const Assignment = struct {
 };
 
 pub const Binding = struct {
-    id: Ident,
+    id: DefId,
     ty: ?Ast.TypeId,
     is_mutable: bool,
     is_pub: bool,
@@ -167,7 +168,7 @@ pub const Binding = struct {
 
     pub fn hash(self: *const @This()) u64 {
         var hasher = std.hash.Fnv1a_64.init();
-        hasher.update(std.mem.asBytes(&self.id.hash()));
+        hasher.update(std.mem.asBytes(&self.id));
         if (self.ty) |ty| {
             hasher.update(std.mem.asBytes(&ty));
         }
@@ -182,14 +183,14 @@ pub const Binding = struct {
 };
 
 pub const TypeDecl = struct {
-    id: Ident,
+    id: DefId,
     is_pub: bool,
     is_extern: bool,
     tyid: Ast.TypeId,
 
     pub fn hash(self: *const @This()) u64 {
         var hasher = std.hash.Fnv1a_64.init();
-        hasher.update(std.mem.asBytes(&self.id.hash()));
+        hasher.update(std.mem.asBytes(&self.id));
         hasher.update(std.mem.asBytes(&self.is_pub));
         hasher.update(std.mem.asBytes(&self.is_extern));
         hasher.update(std.mem.asBytes(&self.tyid));
@@ -200,7 +201,7 @@ pub const TypeDecl = struct {
 pub const EnumCons = struct {
     ty: Ast.TypeId,
     field: []const u8,
-    value: ?*Ast.Ast,
+    value: ?Hir,
 
     pub fn hash(self: *const @This()) u64 {
         var hasher = std.hash.Fnv1a_64.init();
@@ -252,7 +253,7 @@ pub const Loop = struct {
 };
 
 pub const Fn = struct {
-    id: Ident,
+    id: DefId,
     parameters: []struct { id: Ident, ty: Ast.TypeId },
     return_type: Ast.TypeId,
     is_public: bool,
@@ -262,7 +263,7 @@ pub const Fn = struct {
 
     pub fn hash(self: *const @This()) u64 {
         var hasher = std.hash.Fnv1a_64.init();
-        hasher.update(std.mem.asBytes(&self.id.hash()));
+        hasher.update(std.mem.asBytes(&self.id));
 
         for (self.parameters) |param| {
             hasher.update(std.mem.asBytes(&param.id.hash()));
@@ -366,6 +367,7 @@ pub const TopLevelExpr = union(enum) {
     branch: *Branch,
     binding: *Binding,
     type_decl: *TypeDecl,
+    terminated: *Hir,
 
     pub fn hash(self: *const @This()) u64 {
         var hasher = std.hash.Fnv1a_64.init();
@@ -377,6 +379,7 @@ pub const TopLevelExpr = union(enum) {
             .branch => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
             .binding => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
             .type_decl => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
+            .terminated => |stmt| hasher.update(std.mem.asBytes(&stmt.hash())),
         }
         return hasher.final();
     }
@@ -387,10 +390,11 @@ pub const TopLevelExpr = union(enum) {
 pub const Hir = struct {
     node: HirNode,
     id: HirId,
-    pub fn create(node: HirNode, span: types.Span, hir_table: *HirInfoTable) !@This() {
+    pub fn create(node: HirNode, scope_id: usize, span: types.Span, hir_table: *HirInfoTable) !@This() {
         const id = node.hash();
         try hir_table.put(id, .{
             .ty = null,
+            .scope_id = scope_id,
             .adjustments = null,
             .span = span
         });

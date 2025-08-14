@@ -245,18 +245,35 @@ fn parse_type(self: *@This()) !AstTypes.Type {
         try self.expect(.close_bracket);
         base_ty.base_type = .{ .@"enum" = .{ .variants = variants } };
     }
+    const tyid = base_ty.hash();
+    _ = try self.type_map.getOrPutValue(tyid, base_ty);
+    base_ty.chash = tyid;
     return base_ty;
 }
 
 // trys to parse a global decleration modifier otherwise returns null
-fn try_decl_mod(self: *@This()) ?AstTypes.GlobalDeclMod {
+fn try_decl_mod(self: *@This()) !?AstTypes.GlobalDeclMod {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_pub, .keyword_export, .keyword_extern})) |key| {
-        return switch (key.tag) {
-            .keyword_pub => .Pub,
-            .keyword_export => .Export,
-            .keyword_extern => .Extern,
+        var out: AstTypes.GlobalDeclMod = .Pub;
+        switch (key.tag) {
+            .keyword_pub => {
+                if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_export})) |_| {
+                    out = .PubExport;
+                }
+                if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_extern})) |_| {
+                    out = .PubExtern;
+                }
+                out = .Pub;
+            },
+            .keyword_export => out = .Export,
+            .keyword_extern => out = .Extern,
             else => unreachable,
-        };
+        }
+        if (try self.try_decl_mod()) |_| {
+            try self.session.emit(.Error, key.span, "Invalid decleration modifier");
+            return error.InvalidGlobalMod;
+        }
+        return out;
     }
     return null;
 }
@@ -273,7 +290,7 @@ fn fn_decl(self: *@This()) !*Ast {
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
-    if (self.try_decl_mod()) |decl| {
+    if (try self.try_decl_mod()) |decl| {
         decl_mod = decl;
     }
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_async, .keyword_pure, .keyword_comp})) |fnm| {
@@ -847,7 +864,7 @@ fn fn_call(self: *@This()) !*Ast {
             }
         }
         try self.expect(.close_paren);
-        const out: Ast = Ast.create(.{ .param_list = .{
+        const out: Ast = Ast.create(.{ .fn_call = .{
             .left = left,
             .params = try args.toOwnedSlice()
         }}, span);
@@ -885,8 +902,6 @@ fn type_cons(self: *@This()) !*Ast {
     const ty = self.parse_type() catch null;
     self.session.unfreeze();
     if (ty != null and self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket}) != null) {
-        const tyid = ty.?.hash();
-        _ = try self.type_map.getOrPutValue(tyid, ty.?);
         var fields = std.StringHashMap(?*Ast).init(self.gpa);
         while (!self.lexer.is_next_token(.close_bracket)) {
             try self.expect(.dot);
@@ -912,7 +927,7 @@ fn type_cons(self: *@This()) !*Ast {
         span.merge(.{.start = span.start, .end = self.lexer.index});
         const out = Ast.create(.{
             .type_cons = .{
-                .ty = tyid,
+                .ty = ty.?.hash(),
                 .fields = fields
             }
         }, span);
@@ -955,9 +970,9 @@ fn primary(self: *@This()) anyerror!*Ast {
     if (self.lexer.is_next_token(.eof)) {
         return error.EOF;
     }
-    const ty = try self.parse_type();
     span.merge(.{.start = span.start, .end = self.lexer.index});
-    return try mem.createWith(self.gpa, Ast.create(.{ .type_literal = ty}, span));
+    try self.session.emit(.Error, span, "Invalid Syntax");
+    return error.InvalidSyntax;
 }
 
 

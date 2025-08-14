@@ -28,11 +28,6 @@ pub const SymbolTable = struct {
     is_function_scope: bool = false,
 };
 
-
-
-
-
-
 //This represents a region in the source code
 pub const Span = struct {
     start: usize,

@@ -451,6 +451,8 @@ pub const GlobalDeclMod = enum {
     Pub,
     Extern,
     Export,
+    PubExtern,
+    PubExport,
 };
 
 pub const FnModifier = union(enum) {
@@ -525,6 +527,7 @@ pub const Ast = struct {
     node: AstNode,
     span: types.Span,
     tyid: ?TypeId,
+    scope_id: ?usize = null,
     pub fn create(node: AstNode, span: types.Span) @This() {
         return .{
             .node = node,

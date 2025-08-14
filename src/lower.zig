@@ -20,7 +20,7 @@ current_scope: usize = 0,
 source: []const u8,
 
 
-fn enter_scope(self: *@This()) !void {
+fn enter_new_scope(self: *@This()) !void {
     var children: std.ArrayList(usize) = undefined;
     const current_children = self.sym_tab.items[self.current_scope].children;
     if (current_children) |ccsn| {
@@ -45,6 +45,7 @@ fn leave_scope(self: *@This()) void {
         self.current_scope = parent;
     }
 }
+
 
 fn add_symbol(self: *@This(), name: []const u8, symbol: types.Symbol) !void {
     const defid = std.hash.Fnv1a_64.hash(name);
@@ -140,12 +141,17 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                     return error.TypeShadowsPreviousDecleration;
                 };
             },
-            else => unreachable,
+            else => |v| {
+                _ = v;
+                std.debug.print("Unimplemented: {s}\n", .{ast.span.get_string(self.source)});
+                unreachable;
+            }
         }
     }
 }
 
 fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
+    ast.scope_id = self.current_scope;
     switch (ast.node) {
         .var_decl => |decl| {
             if (!self.at_global_scope) {
@@ -176,7 +182,8 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                 self.at_global_scope = false;
                 const saved_in_function = self.in_function;
                 self.in_function = true;
-                try self.enter_scope();
+                try self.enter_new_scope();
+                ast.node.fn_decl.body.?.scope_id = self.current_scope;
                 for (decl.params, 0..) |param_id, i| {
                     self.add_symbol(param_id.value, .{
                         .name = param_id.value,
@@ -222,7 +229,8 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         },
         .block => |exprs| {
 
-            try self.enter_scope();
+            try self.enter_new_scope();
+            ast.scope_id = self.current_scope;
             for (exprs.exprs) |expr| {
                 try self.resolve_local_symbols(expr);
             }
@@ -385,27 +393,6 @@ fn parse_char_literal(self: *@This(), span: types.Span) !i32 {
     return char_string[0];
 
 }
-fn pow(base: comptime_int, power: comptime_int) comptime_int {
-    var out = 1;
-    for (0..power) |_| {
-        out = out * base;
-    }
-    return out;
-}
-fn get_int_type(value: u128, signed: bool) Ast.PrimitiveType {
-    return switch (value) {
-        0...pow(2, 8) - 1 => if (signed) .I8 else .U8,
-        pow(2, 8)...pow(2, 16) - 1 => if (signed) .I16 else .U16,
-        pow(2, 16)...pow(2, 32) - 1 => if (signed) .I32 else .U32,
-        pow(2, 32)...pow(2, 64) - 1 => if (signed) .I64 else .U64,
-        pow(2, 64)...pow(2, 128) - 1 => if (signed) .I128 else .U128
-    };
-}
-
-fn get_float_type(value: f64) Ast.PrimitiveType {
-    const conv = @as(f32, @floatCast(value));
-    return if (@as(f64, conv) == value) .F32 else .F64;
-}
 
 fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
     var out_node: ?Hir.HirNode = null;
@@ -440,23 +427,22 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     },
                     .string_literal => {
                         //NOTE: will probably have to adjust for quotes
-                        terminal = .{
-                            .string_literal =
+                        terminal = .{ .string_literal = 
                                 try self.unescape_string(expr.span.get_string(self.source))
-                            };
-                        },
-                        .raw_string_literal => {
-                            //NOTE: will probably have to adjust for quotes
-                            terminal = .{
-                                .string_literal = expr.span.get_string(self.source),
-                            };
-                        },
-                        .keyword_true, .keyword_false => {
-                            terminal = .{
-                                .bool_literal = if (expr.tag == .keyword_true) true else false,
-                            };
-                        },
-                        else => unreachable
+                        };
+                    },
+                    .raw_string_literal => {
+                        //NOTE: will probably have to adjust for quotes
+                        terminal = .{
+                            .string_literal = expr.span.get_string(self.source),
+                        };
+                    },
+                    .keyword_true, .keyword_false => {
+                        terminal = .{
+                            .bool_literal = if (expr.tag == .keyword_true) true else false,
+                        };
+                    },
+                    else => unreachable
             }
             out_node = .{ .inline_expr = .{ .terminal = try mem.createWith(self.allocator, terminal)}};
         },
@@ -578,7 +564,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 };
                 assignment_node.expr = try Hir.Hir.create(.{ .inline_expr = .{ 
                     .binary_expr = try mem.createWith(self.allocator, desugered_expr)
-                }}, ast.span, &self.hir_table);
+                }}, self.current_scope, ast.span, &self.hir_table);
             }
             out_node = .{ .top_level = .{ 
                 .assignment = try mem.createWith(self.allocator, assignment_node)}};
@@ -600,13 +586,15 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 }
 
                 const hir = try self.lower_single(expr.exprs[expr.exprs.len - 1]);
-                if (self.in_function and expr.exprs[expr.exprs.len - 1].node != .return_stmt) {
+                if (self.in_function 
+                    and expr.exprs[expr.exprs.len - 1].node != .return_stmt
+                    and expr.exprs[expr.exprs.len - 1].node != .terminated) {
                     const return_node: Hir.Return = .{
                         .expr = hir,
                     };
                     try out_block.append(try Hir.Hir.create(.{ .top_level = .{
                         .return_stmt = try mem.createWith(self.allocator, return_node),
-                    }}, ast.span, &self.hir_table));
+                    }}, self.current_scope, ast.span, &self.hir_table));
                 } else {
                     try out_block.append(hir);
                 }
@@ -621,22 +609,48 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 for (decl.params, decl.param_types) |param, param_ty| {
                     try params.append(.{ .id = param, .ty = param_ty });
                 }
-                //TODO: Handle modifiers
+                const body = if (decl.body) |body| blk: {
+                    const saved_scope = self.current_scope;
+                    self.current_scope = body.scope_id.?;
+                    const out = try self.lower_single(body);
+                    self.current_scope = saved_scope;
+                    break :blk out;
+                } else null;
+
+                var is_public = false;
+                var is_extern = false;
+                var is_export = false;
+                if (decl.decl_mod) |mod| {
+                    switch (mod) {
+                        .Pub => is_public = true,
+                        .Extern => is_extern = true,
+                        .Export => is_export = true,
+                        .PubExtern => {
+                            is_public = true;
+                            is_extern = true;
+                        },
+                        .PubExport => {
+                            is_public = true;
+                            is_export = true;
+                        }
+                    }
+                }
+
                 const fnc: Hir.Fn = .{
-                    .id = .{ .value = decl.ident.value, .location = decl.ident.span },
-                    .body = if (decl.body) |body| try self.lower_single(body) else null,
+                    .id = self.def_table.get(decl.ident.value).?,
+                    .body = body,
                     .return_type = decl.return_ty,
                     .parameters = @ptrCast(try params.toOwnedSlice()),
-                    .is_public = true,
-                    .is_extern = false,
-                    .is_export = true,
+                    .is_public = is_public,
+                    .is_extern = is_extern,
+                    .is_export = is_export,
                 };
 
                 out_node = .{ .top_level = .{ .func = try mem.createWith(self.allocator, fnc)} };
             },
             .type_decl => |decl| {
                 const tydecl = Hir.TypeDecl {
-                    .id = .{.location = decl.ident.span, .value = decl.ident.value },
+                    .id = self.def_table.get(decl.ident.value).?,
                     .is_extern = false,
                     .is_pub = false,
                     .tyid = decl.ty
@@ -645,7 +659,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
             },
             .var_decl => |decl| {
                 const out: Hir.Binding = .{
-                    .id = .{ .location = decl.ident.span, .value = decl.ident.value },
+                    .id = self.def_table.get(decl.ident.value).?,
                     .ty = decl.ty,
                     .is_mutable = decl.is_mut,
                     .expr = try self.lower_single(decl.initialize.?),
@@ -692,7 +706,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     const enum_cons = Hir.EnumCons {
                         .ty = ty.hash(),
                         .field = field.key_ptr.*,
-                        .value = field.value_ptr.*
+                        .value = if (field.value_ptr.*) |value| try self.lower_single(value) else null
                     };
                     out_node = .{ .inline_expr = .{
                         .enum_cons = try mem.createWith(self.allocator, enum_cons)
@@ -721,6 +735,11 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     return error.NonCompoundTypeCons;
                 }
             },
+            .terminated => |term| {
+                out_node = .{ .top_level = .{
+                    .terminated = try mem.createWith(self.allocator, try self.lower_single(term)),
+                }};
+            },
             else => |node| {
                 std.debug.print("Unhandled AST node: {any}\n", .{node});
                 unreachable;
@@ -732,6 +751,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
     }
     const id = out_node.?.hash();
     _ = try self.hir_table.getOrPutValue(id, .{
+        .scope_id = self.current_scope,
         .adjustments = .init(self.allocator),
         .span = ast.span,
         .ty = null
@@ -744,39 +764,4 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
 
 }
 
-fn get_cast(self: *@This(), expected_ty: Ast.TypeId, tree: Hir.Hir) !?Hir.Cast {
-    if (tree.typeid == expected_ty) {
-        return null;
-    }
-    const ty1 = self.type_tbl.get(expected_ty).?;
-    const ty2 = self.type_tbl.get(tree.typeid.?).?;
-    const out: Hir.Cast = .{
-        .expr = tree,
-        .tyid = expected_ty
-    };
-    if (ty1.base_type == .primitive 
-        and ty2.base_type == .primitive
-        and (ty1.modifiers == null 
-            and ty2.modifiers == null)) {
-        if (ty1.base_type.primitive.is_signed_int()
-            and ty2.base_type.primitive.is_int()
-            and (ty1.base_type.primitive.get_bits(64) 
-                >= ty2.base_type.primitive.get_bits(64))) {
-            return out;
-        }
-        if (ty1.base_type.primitive.is_unsigned_int()
-            and ty2.base_type.primitive.is_unsigned_int()
-            and (ty1.base_type.primitive.get_bits(64)
-                >= ty2.base_type.primitive.get_bits(64))) {
-            return out;
-        }
-        if (ty1.base_type.primitive.is_float()
-            and (ty2.base_type.primitive.is_int()
-                or ty2.base_type.primitive.is_float())
-            and (ty1.base_type.primitive.get_bits(64)
-                >= ty2.base_type.primitive.get_bits(64))) {
-            return out;
-        }
-    }
-    return error.TypeMismatch;
-}
+
