@@ -222,14 +222,14 @@ pub const TypeModifier = union(enum) {
             else => unreachable
         }
     }
-    pub fn equal(self: *const @This(), other: @This()) bool {
-        if (self.Array) |sarr| {
-            if (other.Array) |oarr| {
-                return sarr.tag == oarr.tag;
+    pub fn equal(self: @This(), other: @This()) bool {
+        if (self == .Array) {
+            if (other == .Array) {
+                return self.Array.tag == other.Array.tag;
             }
             return true;
         }
-        return self == other;
+        return @intFromEnum(self) == @intFromEnum(other);
     }
 
     pub fn hash(self: *const @This()) u64 {

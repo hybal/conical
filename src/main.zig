@@ -216,13 +216,13 @@ pub fn main() !u8 {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
-    var hir_context = try lower_hir.init_context(&session, source, type_map, gpa);
+    var hir_context = try lower_hir.init_context(&session, source, &type_map, gpa);
     const hir = hir_context.lower(trees) catch |err| {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
 
-    var sema_context = sema.init_context(hir_context.sym_tab, hir_context.hir_table, type_map, source, gpa, &session);
+    var sema_context = sema.init_context(hir_context.sym_tab, hir_context.hir_table, &type_map, source, gpa, &session);
     _ = sema.analyze(&sema_context, hir) catch |err| {
         try session.flush(std.io.getStdErr().writer());
         return err;
@@ -244,7 +244,7 @@ pub fn main() !u8 {
         .out_file = out_file,
         .ast = trees,
         .symbol_table = sema_context.symtree.items[0],
-        .type_table = &sema_context.type_map
+        .type_table = sema_context.type_map
     };
     _ = comp_unit;
    //    const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();

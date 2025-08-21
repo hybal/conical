@@ -10,7 +10,7 @@ allocator: std.mem.Allocator,
 sym_tab: std.ArrayList(types.SymbolTable),
 def_table: std.StringHashMap(Hir.DefId),
 hir_table: Hir.HirInfoTable,
-type_tbl: types.TypeTbl,
+type_tbl: *types.TypeTbl,
 session: *diag.Session,
 in_function: bool = false,
 in_assignment: bool = false,
@@ -77,7 +77,7 @@ fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
 }
 
 
-pub fn init_context(session: *diag.Session, source: []const u8, type_tbl: types.TypeTbl, allocator: std.mem.Allocator) !@This() {
+pub fn init_context(session: *diag.Session, source: []const u8, type_tbl: *types.TypeTbl, allocator: std.mem.Allocator) !@This() {
     var sym_tab: std.ArrayList(types.SymbolTable) = .init(allocator);
     try sym_tab.append(.{
         .symbol_map = .init(allocator),
@@ -121,7 +121,7 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                 };
             },
             .fn_decl => |decl| {
-                const fnctypeid = try decl.hash(&self.type_tbl, self.allocator);
+                const fnctypeid = try decl.hash(self.type_tbl, self.allocator);
                 self.add_symbol(decl.ident.value, .{
                     .tyid = fnctypeid,
                     .name = decl.ident.value,
@@ -172,7 +172,7 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                 self.add_symbol(decl.ident.value, .{
                     .name = decl.ident.value,
                     .node = ast,
-                    .tyid = try decl.hash(&self.type_tbl, self.allocator)
+                    .tyid = try decl.hash(self.type_tbl, self.allocator)
                 }) catch {
                     return error.FunctionShadowsPreviousDecleration;
                 };
@@ -720,14 +720,16 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     var fields = std.StringHashMap(Hir.Hir).init(self.allocator);
                     var iter = cons.fields.iterator();
                     while (iter.next()) |val| {
-                        try fields.put(val.key_ptr.*, try self.lower_single(val.value_ptr.*.?));
+                        const field_init = try self.lower_single(val.value_ptr.*.?);
+                        try fields.put(val.key_ptr.*, field_init);
                     }
+                    _ = try self.type_tbl.getOrPutValue(ty.hash(), ty);
                     const struct_cons = Hir.StructCons {
                         .fields = fields,
                         .ty = ty.hash()
                     };
 
-                    out_node = .{.inline_expr = .{
+                    out_node = .{ .inline_expr = .{
                         .struct_cons = try mem.createWith(self.allocator, struct_cons)
                     }};
                 } else {

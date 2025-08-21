@@ -7,7 +7,7 @@ const diag = @import("diag.zig");
 
 
 symtree: std.ArrayList(types.SymbolTable),
-type_map: types.TypeTbl,
+type_map: *types.TypeTbl,
 hir_table: Hir.HirInfoTable,
 source: []const u8,
 gpa: std.mem.Allocator,
@@ -21,7 +21,7 @@ current_scope: usize = 0,
 
 pub fn init_context(symtree: std.ArrayList(types.SymbolTable),
         hir_table: Hir.HirInfoTable,
-        type_map: types.TypeTbl,
+        type_map: *types.TypeTbl,
         source: []const u8,
         gpa: std.mem.Allocator,
         session: *diag.Session,
@@ -201,7 +201,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         }
                     }
                     const ty_hash = ty.hash();
-                    _ = try self.type_map.getOrPutValue(ty_hash, ty);
+                    //_ = try self.type_map.getOrPutValue(ty_hash, ty);
                     out_type = ty_hash;
                 },
                 .binary_expr => |expr| {
@@ -219,7 +219,8 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                                     "Return statement outside of function");
                                 return error.ReturnOutsideFunction;
                             }
-                            _ = try self.type_check_expect(ln, self.function_return_type.?);
+                            const ty = try self.type_check_expect(ln, self.function_return_type.?);
+                            _ = try self.type_equal(ty, Ast.Type.createPrimitive(.Unit, null).hash(), ln);
                             continue;
                         }
                         _ = try self.type_check(ln);
@@ -382,13 +383,85 @@ fn get_float_type(value: f64) Ast.PrimitiveType {
     return if (@as(f64, conv) == value) .F32 else .F64;
 }
 
-fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, node: Hir.Hir) ?[]Hir.AdjustmentStep {
-    var out: std.ArrayList(Hir.AdjustmentStep) = .init(self.gpa);
-    const ty1 = self.type_map.get(expected_type).?;
-    const tyid2 = self.hir_table.get(node.id).?.ty.?;
-    const ty2 = self.type_map.get(tyid2).?;
-    if (expected_type == tyid2) {
-        return null;
+fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId, node: Hir.Hir) !bool {
+    if (expected_type == actual_type) {
+        return true;
     }
+    const hir_info = self.hir_table.get(node.id).?;
+    const adjustment = try self.get_adjustment(expected_type, actual_type);
+    if (adjustment == null) {
+        try self.session.emit(.Error, hir_info.span, 
+            try std.fmt.allocPrint(self.gpa, "Type Mismatch, expected type: `{s}`, got: `{s}`",
+                .{try self.type_map.get(expected_type).?
+                    .get_string(self.type_map, self.gpa, self.source),
+                  try self.type_map.get(actual_type).?
+                    .get_string(self.type_map, self.gpa, self.source)}));
+        return error.TypeMismatch;
+    }
+    return false;
 
+}
+
+fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId) !?[]Hir.AdjustmentStep {
+    const expected = self.type_map.get(expected_type).?;
+    const actual = self.type_map.get(actual_type).?;
+    var adjustments: std.ArrayList(Hir.AdjustmentStep) = .init(self.gpa);
+
+    if (actual.modifiers) |actual_mods| {
+        if (expected.modifiers) |expected_mods| {
+            var i: usize = actual_mods.len - 1;
+            var j: usize = expected_mods.len - 1;
+            while (i >= 0 and j >= 0) {
+                const actual_mod = actual_mods[i];
+                const expected_mod = expected_mods[j];
+                if (actual_mod.equal(expected_mod)) {
+                    i -= 1;
+                    j -= 1;
+                } else if (actual_mod == .RefMut and expected_mod == .Ref) {
+                    i -= 1;
+                    j -= 1;
+                    try adjustments.append(.RefMutDiscard);
+                } else if (actual_mod == .Mut and expected_mod != .Mut) {
+                    i -= 1;
+                    try adjustments.append(.MutDiscard);
+                } else if (actual_mod == .Ref and expected_mod != .Ref) {
+                    i -= 1;
+                    try adjustments.append(.AutoDeref);
+                } else if (expected_mod == .Ref and actual_mod != .Ref) {
+                    j -= 1;
+                    try adjustments.append(.AutoRef);
+                } else {
+                    return null;
+                }
+            }
+        } else {
+            var i: usize = actual_mods.len - 1;
+            while (i >= 0) {
+                const actual_mod = actual_mods[i];
+                if (actual_mod == .Ref or actual_mod == .RefMut) {
+                    if (actual_mod == .RefMut) {
+                        try adjustments.append(.RefMutDiscard);
+                    }
+                    try adjustments.append(.AutoDeref);
+                } else if (actual_mod == .Mut) {
+                    try adjustments.append(.MutDiscard);
+                }
+                i -= 1;
+            }
+        }
+    } else {
+        if (expected.modifiers) |expected_mods| {
+            var i: usize = expected_mods.len - 1;
+            while (i >= 0) {
+                const expected_mod = expected_mods[i];
+                if (expected_mod == .Ref) {
+                    try adjustments.append(.AutoDeref);
+                } else {
+                    return null;
+                }
+                i -= 1;
+            }
+        }
+    }
+    return try adjustments.toOwnedSlice();
 }

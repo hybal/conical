@@ -7,10 +7,10 @@ pub const DefId = usize;
 pub const HirId = u64;
 
 pub const AdjustmentStep = union(enum) {
-    AutoDeref: usize,
-    AutoRef: usize,
-    FunctionPointerCoercion,
-    ClosureFnPointerCoercion,
+    AutoDeref,
+    AutoRef,
+    RefMutDiscard,
+    MutDiscard,
     NumericCast: Ast.TypeId,
     PointerCast: Ast.TypeId,
 };

@@ -9,8 +9,7 @@ pub fn main() -> i32 {
     let a = 4;
     let v = "Hello, World!\0";
     let c = Test { .a = 1, .b = 2 };
-    print();
-    puts("Hello");
+    print()
     "e"
 }
 
