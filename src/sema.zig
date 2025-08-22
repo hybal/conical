@@ -219,11 +219,11 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                                     "Return statement outside of function");
                                 return error.ReturnOutsideFunction;
                             }
-                            const ty = try self.type_check_expect(ln, self.function_return_type.?);
-                            _ = try self.type_equal(ty, Ast.Type.createPrimitive(.Unit, null).hash(), ln);
+                           _ = try self.type_check_expect(ln, self.function_return_type.?);
                             continue;
                         }
-                        _ = try self.type_check(ln);
+                        const ty = try self.type_check(ln);
+                        _ = try self.type_equal(Ast.Type.createPrimitive(.Unit, null).hash(), ty, ln);
                     }
                     self.current_scope = saved_scope;
                 },
@@ -436,7 +436,7 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
             }
         } else {
             var i: usize = actual_mods.len - 1;
-            while (i >= 0) {
+            while (i > 0) {
                 const actual_mod = actual_mods[i];
                 if (actual_mod == .Ref or actual_mod == .RefMut) {
                     if (actual_mod == .RefMut) {
@@ -452,7 +452,7 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
     } else {
         if (expected.modifiers) |expected_mods| {
             var i: usize = expected_mods.len - 1;
-            while (i >= 0) {
+            while (i > 0) {
                 const expected_mod = expected_mods[i];
                 if (expected_mod == .Ref) {
                     try adjustments.append(.AutoDeref);
@@ -462,6 +462,14 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
                 i -= 1;
             }
         }
+    }
+    const expected_base = expected.base_type;
+    const actual_base = actual.base_type;
+    if (expected_base.equal(actual_base)) {
+        return try adjustments.toOwnedSlice();
+    }
+    if (expected.is_int() and actual.is_int()) {
+
     }
     return try adjustments.toOwnedSlice();
 }
