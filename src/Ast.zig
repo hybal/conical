@@ -189,6 +189,10 @@ pub const PrimitiveType = enum {
         };
     }
 
+    pub fn equals(self: *const @This(), other: *const @This()) bool {
+        return self.* == other.*;
+    }
+
 };
 
 //Various type modifiers such as references and slices
@@ -222,7 +226,7 @@ pub const TypeModifier = union(enum) {
             else => unreachable
         }
     }
-    pub fn equal(self: @This(), other: @This()) bool {
+    pub fn equals(self: @This(), other: @This()) bool {
         if (self == .Array) {
             if (other == .Array) {
                 return self.Array.tag == other.Array.tag;
@@ -250,7 +254,23 @@ pub const TypeModifier = union(enum) {
 //which may be shared among other compilation units which wont have access to the source that it came from
 pub const Ident = struct {
     span: types.Span,
-    value: []const u8
+    value: []const u8,
+
+    pub fn equals(self: *const @This(), other: *const @This()) bool {
+        if (self.span.start != other.span.start or self.span.end != other.span.end) {
+            return false;
+        }
+        //technically checking "value" is redundent but is included for completness
+        if (self.value.len != other.value.len) {
+            return false;
+        }
+        for (self.value, 0..self.value.len) |val, i| {
+            if (val != other.value[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
 };
 
 //represents a function type
@@ -277,18 +297,47 @@ pub const FuncType = struct {
             hasher.update(std.mem.asBytes(&arg));
         }
     }
+
+    pub fn equals(self: *const @This(), other: *const @This()) bool {
+        if (self.args.len != other.args.len) return false;
+        if (self.ret != other.ret) return false;
+        for (self.args, 0..self.args.len) |arg, i| {
+            if (arg != other.args[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
 };
+
+pub const BaseType = union(enum) { //what the underlying type is
+    primitive: PrimitiveType,
+    func: FuncType,
+    strct: Struct,
+    @"enum": Enum,
+    user: Ident,
+    @"type": TypeId,
+
+    pub fn equals(self: *const @This(), other: *const @This()) bool {
+        if (@intFromEnum(self.*) != @intFromEnum(other.*)) {
+            return false;
+        }
+
+        return switch (self.*) {
+            .primitive => self.primitive.equals(&other.primitive),
+            .func => self.func.equals(&other.func),
+            .strct => self.strct.equals(&other.strct),
+            .@"enum" => self.@"enum".equals(&other.@"enum"),
+            .user => self.user.equals(&other.user),
+            .@"type" => self.@"type" == other.@"type",
+        };
+    }
+};
+
 
 //the overall type representation
 pub const Type = struct {
-    base_type: union(enum) { //what the underlying type is
-        primitive: PrimitiveType,
-        func: FuncType,
-        strct: Struct,
-        @"enum": Enum,
-        user: Ident,
-        @"type": TypeId,
-    },
+    base_type: BaseType,
     modifiers: ?[]TypeModifier, //the modifiers for this type
     chash: ?u64 = null, //not really used, but is intended to cache the hash of this type
 
@@ -345,7 +394,7 @@ pub const Type = struct {
         return try out.toOwnedSlice();
     }
 
-    pub fn equal(self: *const @This(), other: *const @This()) bool {
+    pub fn equals(self: *const @This(), other: *const @This()) bool {
         return self.hash() == other.hash();
     }
 
@@ -363,6 +412,14 @@ pub const Type = struct {
     }
     pub fn is_unsigned_int(self: *const @This()) bool {
         return self.base_type == .primitive and self.base_type.primitive.is_unsigned_int();
+    }
+
+    pub fn is_int(self: *const @This()) bool {
+        return self.is_signed_int() or self.is_unsigned_int();
+    }
+
+    pub fn is_float(self: *const @This()) bool {
+        return self.base_type == .primitive and self.base_type.primitive.is_float();
     }
 
 };
@@ -388,6 +445,24 @@ pub const Struct = struct {
             try out.appendSlice(try (type_map.get(val.value_ptr.*).?.get_string(type_map, gpa, source)));
         }
         return try out.toOwnedSlice();
+    }
+
+    pub fn equals(self: *const @This(), other: *const @This()) bool {
+        if (self.fields.count() != other.fields.count()) {
+            return false;
+        }
+
+        var iterator = self.fields.iterator();
+        while (iterator.next()) |next| {
+            if (other.fields.get(next.key_ptr.*)) |val| {
+                if (val != next.value_ptr.*) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        return true;
     }
 };
 
@@ -435,6 +510,24 @@ pub const Enum = struct { //TODO:finalize syntax
         }
         try out.appendSlice(" }");
         return try out.toOwnedSlice();
+    }
+
+    pub fn equals(self: *const @This(), other: *const @This()) bool {
+        if (self.variants.count() != other.variants.count()) {
+            return false;
+        }
+
+        var iterator = self.variants.iterator();
+        while (iterator.next()) |next| {
+            if (other.variants.get(next.key_ptr.*)) |val| {
+                if (val != next.value_ptr.*) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        return true;
     }
 
 };

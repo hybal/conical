@@ -87,7 +87,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         const saved_scope = self.current_scope;
                         self.current_scope = hir_info.scope_id;
                         const saved_function_return_type = self.function_return_type;
-                        self.function_return_type = hir_info.ty;
+                        self.function_return_type = func.return_type;
                         _ = try self.type_check(body);
                         self.function_return_type = saved_function_return_type;
                         self.current_scope = saved_scope;
@@ -109,11 +109,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                 },
                 .return_stmt => |stmt| {
                     const val = try self.type_check_expect(stmt.expr, self.function_return_type.?);
-                    if (val != self.function_return_type.?) {
-                        try self.session.emit(.Error, hir_info.span, 
-                            "Return expression type does not match the return type of the function");
-                        return error.TypeMismatch;
-                    }
+                    _ = try self.type_equal(self.function_return_type.?, val, stmt.expr);
                 },
                 else => |v| {
                     std.debug.print("Unhandled case: {any}\n", .{v});
@@ -212,18 +208,31 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                 .block => |expr| {
                     const saved_scope = self.current_scope;
                     self.current_scope = hir_info.scope_id;
-                    for (expr.body) |ln| {
-                        if (ln.node == .top_level and ln.node.top_level == .return_stmt) {
-                            if (self.function_return_type == null) {
-                                try self.session.emit(.Error, hir_info.span, 
-                                    "Return statement outside of function");
-                                return error.ReturnOutsideFunction;
+                    for (expr.body, 0..) |ln, i| {
+                        if (i < expr.body.len - 1) {
+                            const ty = try self.type_check(ln);
+                            _ = try self.type_equal(Ast.Type.createPrimitive(.Unit, null).hash(), ty, ln);
+                        } else {
+                            const ty = try self.type_check(ln);
+                            //horribly convoluted, but essentially only runs if the node is not a return statement, even if the return statement is terminated
+                            //may eventually make return statements require semicolons, but im not sure
+                            if (!(
+                                    (ln.node == .top_level and
+                                     ln.node.top_level == .terminated and
+                                     ln.node.top_level.terminated.node == .top_level and
+                                     ln.node.top_level.terminated.node.top_level == .return_stmt)
+                                    or 
+                                    (ln.node == .top_level and
+                                     ln.node.top_level == .return_stmt)
+                            )) {
+                                if (self.function_return_type) |ret| {
+                                    _ = try self.type_equal(ret, ty, ln);
+                                }
+                                    out_type = ty;
+
+                                
                             }
-                           _ = try self.type_check_expect(ln, self.function_return_type.?);
-                            continue;
                         }
-                        const ty = try self.type_check(ln);
-                        _ = try self.type_equal(Ast.Type.createPrimitive(.Unit, null).hash(), ty, ln);
                     }
                     self.current_scope = saved_scope;
                 },
@@ -406,15 +415,16 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
     const expected = self.type_map.get(expected_type).?;
     const actual = self.type_map.get(actual_type).?;
     var adjustments: std.ArrayList(Hir.AdjustmentStep) = .init(self.gpa);
-
-    if (actual.modifiers) |actual_mods| {
-        if (expected.modifiers) |expected_mods| {
+    if (actual.modifiers != null and actual.modifiers.?.len > 0) {
+        const actual_mods = actual.modifiers.?;
+        if (expected.modifiers != null and expected.modifiers.?.len > 0) {
+            const expected_mods = expected.modifiers.?;
             var i: usize = actual_mods.len - 1;
             var j: usize = expected_mods.len - 1;
             while (i >= 0 and j >= 0) {
                 const actual_mod = actual_mods[i];
                 const expected_mod = expected_mods[j];
-                if (actual_mod.equal(expected_mod)) {
+                if (actual_mod.equals(expected_mod)) {
                     i -= 1;
                     j -= 1;
                 } else if (actual_mod == .RefMut and expected_mod == .Ref) {
@@ -436,7 +446,7 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
             }
         } else {
             var i: usize = actual_mods.len - 1;
-            while (i > 0) {
+            while (i >= 0) {
                 const actual_mod = actual_mods[i];
                 if (actual_mod == .Ref or actual_mod == .RefMut) {
                     if (actual_mod == .RefMut) {
@@ -445,14 +455,17 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
                     try adjustments.append(.AutoDeref);
                 } else if (actual_mod == .Mut) {
                     try adjustments.append(.MutDiscard);
+                } else {
+                    return null;
                 }
                 i -= 1;
             }
         }
     } else {
-        if (expected.modifiers) |expected_mods| {
+        if (expected.modifiers != null and expected.modifiers.?.len > 0) {
+            const expected_mods = expected.modifiers.?;
             var i: usize = expected_mods.len - 1;
-            while (i > 0) {
+            while (i >= 0) {
                 const expected_mod = expected_mods[i];
                 if (expected_mod == .Ref) {
                     try adjustments.append(.AutoDeref);
@@ -462,14 +475,29 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
                 i -= 1;
             }
         }
-    }
+    } 
     const expected_base = expected.base_type;
     const actual_base = actual.base_type;
-    if (expected_base.equal(actual_base)) {
+    if (expected_base.equals(&actual_base)) {
         return try adjustments.toOwnedSlice();
     }
-    if (expected.is_int() and actual.is_int()) {
-
+    if (expected.is_signed_int() 
+        and actual.is_int()
+        and expected.base_type.primitive.get_bits(64)
+           >= actual.base_type.primitive.get_bits(64)) {
+        try adjustments.append(.{ .NumericCast = expected_type });
+    } else if (expected.is_unsigned_int()
+        and actual.is_unsigned_int()
+        and expected.base_type.primitive.get_bits(64)
+           >= actual.base_type.primitive.get_bits(64)) {
+        try adjustments.append(.{ .NumericCast = expected_type });
+    } else if (expected.is_float()
+        and (actual.is_int() or actual.is_float())
+        and expected.base_type.primitive.get_bits(64)
+            >= actual.base_type.primitive.get_bits(64)) {
+        try adjustments.append(.{.NumericCast = expected_type});
+    } else {
+        return null;
     }
     return try adjustments.toOwnedSlice();
 }

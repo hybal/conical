@@ -284,6 +284,9 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                 }
             }
         },
+        .unit => {
+
+        },
         else => {
             std.debug.print("Unhandled case: {s}\n", .{@tagName(ast.node)});
             unreachable;
@@ -740,6 +743,12 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
             .terminated => |term| {
                 out_node = .{ .top_level = .{
                     .terminated = try mem.createWith(self.allocator, try self.lower_single(term)),
+                }};
+            },
+            .unit => {
+                const terminal: Hir.Terminal = .unit;
+                out_node = .{ .inline_expr = .{
+                    .terminal = try mem.createWith(self.allocator, terminal)
                 }};
             },
             else => |node| {

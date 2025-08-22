@@ -186,7 +186,10 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             print_tree(type_map, exp.left);
             std.debug.print(".{s}", .{exp.right.value});
         },
-        else => |thing| std.debug.print("unkown: {any}\n", .{thing}),
+        .unit => {
+            std.debug.print("()", .{});
+        },
+        else => |thing| std.debug.print("unknown: {any}\n", .{thing}),
     }
 }
 

@@ -9,8 +9,9 @@ pub fn main() -> i32 {
     let a = 4;
     let v = "Hello, World!\0";
     let c = Test { .a = 1, .b = 2 };
-    print()
-    "e"
+    print();
+    puts("Hello, World\0");
+    return 1.0;
 }
 
 fn add(a, b): (i32, i32) -> i32 {
