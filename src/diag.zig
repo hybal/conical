@@ -57,10 +57,10 @@ pub const Session = struct {
     //FIXME: this is completely broken
     pub fn flush(self: *@This(), writer: anytype) !void {
         for (self.diags.items) |diag| {
-            const line, const col = self.get_loc(diag);
-            const src_span = self.get_line(diag);
-            const src_line = self.source[src_span.start..src_span.end];
-            _ = src_line;
+            std.debug.print("DEBUG: span: {any}, sorce: {s}\n", .{diag.span, diag.span.get_string(self.source)});
+            const src_line = self.get_line(diag.span);
+            const line, const col = self.get_loc(diag.span);
+            const caret_line = try self.get_caret_line(src_line, diag.span);
             try writer.print(
                 "{s}{s} [{};{}]: {s}\x1b[0m\n{s}\n{s}{s}\x1b[0m\n",
                 .{
@@ -69,84 +69,95 @@ pub const Session = struct {
                     line,
                     col,
                     diag.message,
-                    diag.span.get_string(self.source),
+                    src_line,
                     diag.severity.get_color(),
-                    try self.get_marker_line(0, .{.start = 0, .end = diag.span.end - diag.span.start})
+                    caret_line,
                 });
                     
         }
     }
-    
-    fn get_marker_line(self: *@This(), cursor: usize, span: types.Span) ![] const u8 {
-        var out = std.ArrayList(u8).init(self.gpa);
-        if (cursor > 0) {
-            try out.appendNTimes(' ', cursor - 1);
+    //FIXME: for some reason does not work with spans that are the full line
+    fn get_caret_line(self: *@This(), line: []const u8, span: types.Span) ![]const u8 {
+        var out = std.ArrayList(u8).init(std.heap.page_allocator);
+        const line_start = @intFromPtr(line.ptr) - @intFromPtr(self.source.ptr);
+        const span_start = line_start - span.start;
+        const span_len = span.end - span.start;
+        for (0..span_start) |_| {
+            try out.append('-');
         }
-        for (0..(span.end - span.start)) |_|{
+        for (0..span_len) |_| {
             try out.append('^');
         }
-        return out.toOwnedSlice();
-    }
-    fn get_line(self: *@This(), diag: Diag) struct {length: usize, start: usize, end: usize}  {
-        var start = diag.span.start;
-        var end = diag.span.end;
-        var length: usize = 0;
-        var found_start = false;
-        var found_end = false;
-        while (!found_start or !found_end) {
-            if (!found_start) {
-                if (start == 0) {
-                    found_start = true;
-                    length += 1;
-                } else {
-                    switch (self.source[start]) {
-                        '\n', '\r', 0 => found_start = true,
-                        '\t' => {
-                            length += 4;
-                            start -= 1;
-                        },
-                        else => {
-                            start -= 1;
-                            length += 1;
-                        }
-                    }
-                }
-            }
-            if (!found_end) {
-                switch(self.source[end]) {
-                    '\n', '\r', 0 => found_end = true,
-                    else => end += 1
-                }
-            }
-        }
-        return .{.length = length, .start = start, .end = end};
+        return try out.toOwnedSlice();
     }
 
-    fn get_loc(self: *@This(), diag: Diag) struct { usize, usize } {
-        var line: usize = 2;
+    fn get_line(self: *@This(), span: types.Span) []const u8 {
+        var start = span.start;
+        var end = span.end;
+        var start_c = self.source[start];
+        var end_c = self.source[end];
+        var at_start = false;
+        var at_end = false;
+        while (!at_start or !at_end) {
+            if (start_c == '\n' or start == 0) {
+                at_start = true;
+            }
+            if (end_c == '\r' or end_c == '\n' or end_c == 0 or end >= self.source.len) {
+                at_end = true;
+            }
+            if (!at_start) {
+                start_c = self.source[start];
+                start -= 1;
+            }
+            if (!at_end) {
+                end_c = self.source[end];
+                end += 1;
+            }
+                   }
+        const stripped = strip(self.source[start + 1..end ]);
+        return stripped;
+    }
+
+    fn strip(string: []const u8) []const u8 {
+        var i: usize = 0;
+        var j = string.len - 1;
+        var c = string[i];
+        while (i < string.len and std.ascii.isWhitespace(c)) {
+            i += 1;
+            c = string[i];
+        }
+        c = string[j];
+        while (j > 0 and std.ascii.isWhitespace(c)) {
+            j -= 1;
+            c = string[j];
+        }
+        return string[i..j - 1];
+    }
+
+    fn get_loc(self: *@This(), span: types.Span) struct { usize, usize } {
+        var line: usize = 1;
         var col: usize = 1;
-        for (self.source, 0..) |char, i| {
-            if (i == diag.span.start) break; 
-            switch (char) {
-                '\n' => {
+        var i: usize = 0;
+        while (i < span.start) {
+            const c = self.source[i];
+            i += 1;
+            switch (c) {
+                '\n', '\r' => {
                     line += 1;
-                    col = 0;
+                    col = 1;
                 },
-                '\r' => {
-                    if (i + 1 < self.source.len and self.source[i + 1] == '\n') continue;
-                    line += 1;
-                    col = 0;
+                '\t' => {
+                    col += 8;
                 },
-                else => |val| switch(val) {
-                    '\t' => col += 8,
-                    else => col += 1
+                else => {
+                    col += 1;
                 }
             }
         }
-        return .{ line, col};
-
+        return .{ line, col };
     }
-
+    
+    
 };
 
 
