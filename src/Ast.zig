@@ -174,6 +174,7 @@ pub const PrimitiveType = enum {
         return self == .F32 or self == .F64;
     }
 
+
     pub fn get_bits(self: @This(), platform_size: u8) u8 {
         return switch(self) {
             .I8, .U8 => 8,
@@ -332,6 +333,7 @@ pub const BaseType = union(enum) { //what the underlying type is
             .@"type" => self.@"type" == other.@"type",
         };
     }
+
 };
 
 
@@ -420,6 +422,10 @@ pub const Type = struct {
 
     pub fn is_float(self: *const @This()) bool {
         return self.base_type == .primitive and self.base_type.primitive.is_float();
+    }
+
+    pub fn is_never(self: *const @This()) bool {
+
     }
 
 };

@@ -239,6 +239,17 @@ pub const Lexer = struct {
         return out;
     }
 
+    pub fn skip_whitespace(self: *Lexer) void {
+        while (self.has_next()) {
+            switch (self.peek() orelse 0) {
+                '\n', ' ', 0x01...0x09, 0x0b...0x1f, 0x7f => {
+                    _ = self.next();
+                }, 
+                else => break
+            }
+        }
+    }
+
     //This is the function used to mainpulate the lexer
     //it will consume and return the next token in the buffer.
     //This lexer is "lazy" meaning it does not tokenize the whole source

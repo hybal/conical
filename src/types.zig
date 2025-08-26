@@ -6,6 +6,7 @@ pub const Symbol = struct {
     name: []const u8,
     tyid: ?Ast.TypeId,
     node: *Ast.Ast,
+    span: Span,
     qualifier: enum {
         Public,
         Private,

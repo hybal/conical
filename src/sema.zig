@@ -13,6 +13,7 @@ source: []const u8,
 gpa: std.mem.Allocator,
 expected_type: ?Ast.TypeId = null,
 function_return_type: ?Ast.TypeId = null,
+function_id_span: ?types.Span = null,
 session: *diag.Session,
 in_loop: bool = false,
 in_assignment: bool = false,
@@ -88,9 +89,12 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         self.current_scope = hir_info.scope_id;
                         const saved_function_return_type = self.function_return_type;
                         self.function_return_type = func.return_type;
+                        const saved_function_id_span = self.function_id_span;
+                        self.function_id_span = self.get_symbol(func.id).?.span;
                         _ = try self.type_check(body);
                         self.function_return_type = saved_function_return_type;
                         self.current_scope = saved_scope;
+                        self.function_id_span = saved_function_id_span;
                     }
                 },
                 .type_decl => |_| {},
@@ -107,9 +111,11 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                 .terminated => |term| {
                     _ = try self.type_check(term.*);
                 },
+                //may in the future be converted into an inline expr
                 .return_stmt => |stmt| {
                     const val = try self.type_check_expect(stmt.expr, self.function_return_type.?);
-                    _ = try self.type_equal(self.function_return_type.?, val, stmt.expr);
+                    _ = try self.type_equal(self.function_return_type.?, val, self.hir_table.get(stmt.expr.id).?.span);
+                    out_type = Ast.Type.createPrimitive(.Never, null).hash();
                 },
                 else => |v| {
                     std.debug.print("Unhandled case: {any}\n", .{v});
@@ -153,6 +159,9 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                             std.debug.print("Type Literals are not yet implemented\n", .{});
                             unreachable;
                         },
+                    }
+                    if (self.expected_type) |exty| {
+                        _ = try self.type_equal(exty, ty, hir_info.span);
                     }
                     out_type = ty;
                 },
@@ -211,27 +220,15 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                     for (expr.body, 0..) |ln, i| {
                         if (i < expr.body.len - 1) {
                             const ty = try self.type_check(ln);
-                            _ = try self.type_equal(Ast.Type.createPrimitive(.Unit, null).hash(), ty, ln);
+                            _ = try self.type_equal(Ast.Type.createPrimitive(.Unit, null).hash(), ty, self.hir_table.get(ln.id).?.span);
                         } else {
                             const ty = try self.type_check(ln);
-                            //horribly convoluted, but essentially only runs if the node is not a return statement, even if the return statement is terminated
-                            //may eventually make return statements require semicolons, but im not sure
-                            if (!(
-                                    (ln.node == .top_level and
-                                     ln.node.top_level == .terminated and
-                                     ln.node.top_level.terminated.node == .top_level and
-                                     ln.node.top_level.terminated.node.top_level == .return_stmt)
-                                    or 
-                                    (ln.node == .top_level and
-                                     ln.node.top_level == .return_stmt)
-                            )) {
-                                if (self.function_return_type) |ret| {
-                                    _ = try self.type_equal(ret, ty, ln);
-                                }
-                                    out_type = ty;
+                            if (self.function_return_type) |ret| {
+                                _ = try self.type_equal(ret, ty, self.function_id_span.?);
+                            }
+                            out_type = ty;
 
                                 
-                            }
                         }
                     }
                     self.current_scope = saved_scope;
@@ -280,11 +277,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                                 "Missing struct field");
                             return error.MissingStructField;
                         }
-                        _ = self.type_check_expect(cons.fields.get(entr.key_ptr.*).?, entr.value_ptr.*) catch {
-                            try self.session.emit(.Error, hir_info.span,
-                                "Type mismatch in struct initializer");
-                            return error.TypeMismatch;
-                        };
+                        _ = try self.type_check_expect(cons.fields.get(entr.key_ptr.*).?, entr.value_ptr.*);
                     }
                     if (cons.fields.count() > count) {
                         try self.session.emit(.Error, hir_info.span,
@@ -392,14 +385,13 @@ fn get_float_type(value: f64) Ast.PrimitiveType {
     return if (@as(f64, conv) == value) .F32 else .F64;
 }
 
-fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId, node: Hir.Hir) !bool {
+fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId, span: types.Span) !bool {
     if (expected_type == actual_type) {
         return true;
     }
-    const hir_info = self.hir_table.get(node.id).?;
     const adjustment = try self.get_adjustment(expected_type, actual_type);
     if (adjustment == null) {
-        try self.session.emit(.Error, hir_info.span, 
+        try self.session.emit(.Error, span, 
             try std.fmt.allocPrint(self.gpa, "Type Mismatch, expected type: `{s}`, got: `{s}`",
                 .{try self.type_map.get(expected_type).?
                     .get_string(self.type_map, self.gpa, self.source),

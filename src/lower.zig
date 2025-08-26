@@ -116,6 +116,7 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                     .name = decl.ident.value,
                     .node = ast,
                     .scope = .Global,
+                    .span = decl.ident.span,
                 }) catch {
                     return error.VariableShadowsPreviousDecleration;
                 };
@@ -126,7 +127,8 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                     .tyid = fnctypeid,
                     .name = decl.ident.value,
                     .node = ast,
-                    .scope = .Global
+                    .scope = .Global,
+                    .span = decl.ident.span,
                 }) catch {
                     return error.FunctionShadowsPreviousDecleration;
                 };
@@ -137,6 +139,7 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                     .name = decl.ident.value,
                     .node = ast,
                     .scope = .Global,
+                    .span = decl.ident.span,
                 }) catch {
                     return error.TypeShadowsPreviousDecleration;
                 };
@@ -159,6 +162,7 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                     .name = decl.ident.value,
                     .node = ast,
                     .tyid = decl.ty,
+                    .span = decl.ident.span,
                 }) catch {
                     return error.VariableShadowsPreviousDecleration;
                 };
@@ -172,7 +176,8 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                 self.add_symbol(decl.ident.value, .{
                     .name = decl.ident.value,
                     .node = ast,
-                    .tyid = try decl.hash(self.type_tbl, self.allocator)
+                    .tyid = try decl.hash(self.type_tbl, self.allocator),
+                    .span = decl.ident.span,
                 }) catch {
                     return error.FunctionShadowsPreviousDecleration;
                 };
@@ -190,6 +195,7 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                         .node = ast,
                         .tyid = decl.param_types[i],
                         .scope = .LocalEscapes,
+                        .span = param_id.span,
                     }) catch |err| {
                         switch (err) {
                             error.SymbolShadow => {},
@@ -210,7 +216,8 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                 self.add_symbol(decl.ident.value, .{
                     .name = decl.ident.value,
                     .node = ast,
-                    .tyid = decl.ty
+                    .tyid = decl.ty,
+                    .span = decl.ident.span,
                 }) catch {
                     return error.TypeShadowsPreviousDecleration;
                 };

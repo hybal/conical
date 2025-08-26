@@ -77,6 +77,7 @@ fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
 // a required block 
 // block = "{" stmt* "}"
 fn block(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
@@ -127,6 +128,7 @@ fn optional_block(self: *@This()) !*Ast {
 // parse a type with modifiers and primitives
 // type = typemods* (primitivetype | ident)
 fn parse_type(self: *@This()) !AstTypes.Type { 
+    self.lexer.skip_whitespace();
     var modifiers = std.ArrayList(AstTypes.TypeModifier).init(self.gpa);
     var span: types.Span = .{
         .start = self.lexer.index,
@@ -284,6 +286,7 @@ fn try_decl_mod(self: *@This()) !?AstTypes.GlobalDeclMod {
 // NOTE: This may be changed to the more common inline style
 // fn_decl = decl_mod? fn_mod? "fn" ident "(" param* ")" (":" "(" (type ",") | type ")" )? ("->" type)? block?
 fn fn_decl(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var decl_mod: ?AstTypes.GlobalDeclMod = null;
     var fn_mod: ?AstTypes.FnModifier = null;
     var span: types.Span = .{
@@ -291,6 +294,7 @@ fn fn_decl(self: *@This()) !*Ast {
         .end = self.lexer.index,
     };
     if (try self.try_decl_mod()) |decl| {
+        span.merge(.{ .start = span.start, .end = self.lexer.index });
         decl_mod = decl;
     }
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_async, .keyword_pure, .keyword_comp})) |fnm| {
@@ -304,6 +308,7 @@ fn fn_decl(self: *@This()) !*Ast {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_fn})) |_| {
         var params = std.ArrayList(AstTypes.Ident).init(self.gpa);
         const ident = try self.expect_ret(.ident);
+        span.merge(ident.span);
         self.expect(.open_paren) catch |err| {
             span.merge(.{.start = span.start, .end = self.lexer.index});
             try self.session.emit(.Error, span, "Expected an open parenthesis");
@@ -311,6 +316,7 @@ fn fn_decl(self: *@This()) !*Ast {
         };
         while (!self.lexer.is_next_token(.close_paren)) {
             const tok = self.lexer.next_token();
+            span.merge(tok.span);
             if (tok.tag == .ident) {
                 try params.append(.{ .span = tok.span, .value = tok.span.get_string(self.lexer.buffer)});
             } else if (tok.tag == .comma) {
@@ -334,6 +340,7 @@ fn fn_decl(self: *@This()) !*Ast {
                     try param_types.append(param_tyid);
                     if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {
                         if (self.lexer.is_next_token(.close_paren)) {
+                            span.merge(.{.start = span.start, .end = self.lexer.index});
                             try self.session.emit(.Error, span, "Type parameter list contains an extra comma");
                             return error.UnfinishedTypeParamaterList;
                         }
@@ -380,6 +387,7 @@ fn fn_decl(self: *@This()) !*Ast {
 // parses a variable decleration
 // var_decl = ("let" | "mut") (":" type)? ("=" expression)? ";"?
 fn var_decl(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -387,8 +395,8 @@ fn var_decl(self: *@This()) !*Ast {
 
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_let, .keyword_mut})) |key| {
         const ident = try self.expect_ret(.ident);
-        span.merge(ident.span);
         span.merge(key.span);
+        span.merge(ident.span);
         var ty: ?AstTypes.Type = null;
         if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
             ty = try self.parse_type();
@@ -399,10 +407,6 @@ fn var_decl(self: *@This()) !*Ast {
             span.merge(eq.span);
             initial = try self.expression();
             span.merge(initial.?.span);
-            self.expect(.semicolon) catch |err| {
-                try self.session.emit(.Error, span, "Expected a semicolon at the end of assignment");
-                return err;
-            };
         }
         var tyid: ?u64 = null;
         if (ty) |tyy| {
@@ -418,6 +422,9 @@ fn var_decl(self: *@This()) !*Ast {
         if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |tok| {
             span.merge(tok.span);
             out = Ast.create(.{ .terminated = try mem.createWith(self.gpa, out)}, span);
+        } else {
+            try self.session.emit(.Error, span, "Missing Semicolon");
+            return error.MissingSemicolon;
         }
         return try mem.createWith(self.gpa, out);
     }
@@ -425,6 +432,7 @@ fn var_decl(self: *@This()) !*Ast {
 }
 
 fn type_decl(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -459,6 +467,7 @@ fn expression(self: *@This()) anyerror!*Ast {
     return self.return_stmt();
 }
 fn return_stmt(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -473,6 +482,7 @@ fn return_stmt(self: *@This()) !*Ast {
     return self.ifstmt();
 }
 fn ifstmt(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -499,6 +509,7 @@ fn ifstmt(self: *@This()) !*Ast {
 }
 
 fn while_loop(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -520,6 +531,7 @@ fn while_loop(self: *@This()) !*Ast {
 }
 
 fn assignment(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -575,6 +587,7 @@ fn assignment(self: *@This()) anyerror!*Ast {
 }
 
 fn ternary(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -603,6 +616,7 @@ fn ternary(self: *@This()) !*Ast {
 }
 
 fn logical_or(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -623,6 +637,7 @@ fn logical_or(self: *@This()) !*Ast {
     return left;
 }
 fn logical_and(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -644,6 +659,7 @@ fn logical_and(self: *@This()) !*Ast {
 }
 
 fn bitwise_or(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -664,6 +680,7 @@ fn bitwise_or(self: *@This()) !*Ast {
     return left;
 }
 fn bitwise_xor(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -684,6 +701,7 @@ fn bitwise_xor(self: *@This()) anyerror!*Ast {
     return left;
 }
 fn bitwise_and(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -705,6 +723,7 @@ fn bitwise_and(self: *@This()) anyerror!*Ast {
 }
 
 fn equality(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -726,6 +745,7 @@ fn equality(self: *@This()) anyerror!*Ast {
 }
 
 fn relational(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -746,6 +766,7 @@ fn relational(self: *@This()) anyerror!*Ast {
     return left;
 }
 fn shift(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -767,6 +788,7 @@ fn shift(self: *@This()) anyerror!*Ast {
 }
 
 fn additive(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -787,6 +809,7 @@ fn additive(self: *@This()) anyerror!*Ast {
     return left;
 }
 fn multiplicative(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -807,6 +830,7 @@ fn multiplicative(self: *@This()) anyerror!*Ast {
     return left;
 }
 fn cast(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
@@ -827,6 +851,7 @@ fn cast(self: *@This()) anyerror!*Ast {
 }
 
 fn unary(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
@@ -847,6 +872,7 @@ fn unary(self: *@This()) anyerror!*Ast {
 
 
 fn fn_call(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
@@ -875,6 +901,7 @@ fn fn_call(self: *@This()) !*Ast {
 }
 
 fn access(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
@@ -894,6 +921,7 @@ fn access(self: *@This()) !*Ast {
 }
 
 fn type_cons(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
@@ -943,6 +971,7 @@ fn type_cons(self: *@This()) !*Ast {
 
 
 fn primary(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
     var span: types.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,

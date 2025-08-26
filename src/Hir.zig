@@ -3,7 +3,7 @@ const Ast = @import("Ast.zig");
 const types = @import("types.zig");
 const mem = @import("mem.zig");
 
-pub const DefId = usize;
+pub const DefId = u64;
 pub const HirId = u64;
 
 pub const AdjustmentStep = union(enum) {
