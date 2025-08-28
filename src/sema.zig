@@ -109,13 +109,26 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                     }
                 },
                 .terminated => |term| {
-                    _ = try self.type_check(term.*);
+                    const tyid = try self.type_check(term.*);
+                    const ty = self.type_map.get(tyid).?;
+                    if (ty.is_never()) {
+                        out_type = tyid;
+                    }
                 },
                 //may in the future be converted into an inline expr
                 .return_stmt => |stmt| {
                     const val = try self.type_check_expect(stmt.expr, self.function_return_type.?);
                     _ = try self.type_equal(self.function_return_type.?, val, self.hir_table.get(stmt.expr.id).?.span);
                     out_type = Ast.Type.createPrimitive(.Never, null).hash();
+                },
+                .branch => |branch| {
+                    _ = try self.type_check_expect(branch.condition, Ast.Type.createPrimitive(.Bool, null).hash());
+                    const a_branch = try self.type_check(branch.a_path);
+                    if (branch.b_path) |b_path| {
+                        _ = try self.type_check_expect(b_path, a_branch);
+                    }
+                    out_type = a_branch;
+
                 },
                 else => |v| {
                     std.debug.print("Unhandled case: {any}\n", .{v});
@@ -387,6 +400,11 @@ fn get_float_type(value: f64) Ast.PrimitiveType {
 
 fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId, span: types.Span) !bool {
     if (expected_type == actual_type) {
+        return true;
+    }
+    const expected = self.type_map.get(expected_type).?;
+    const actual = self.type_map.get(actual_type).?;
+    if (expected.is_never() or actual.is_never()) {
         return true;
     }
     const adjustment = try self.get_adjustment(expected_type, actual_type);

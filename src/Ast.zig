@@ -425,7 +425,7 @@ pub const Type = struct {
     }
 
     pub fn is_never(self: *const @This()) bool {
-
+        return self.base_type == .primitive and self.base_type.primitive == .Never;
     }
 
 };

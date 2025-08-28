@@ -295,14 +295,16 @@ pub const FnCall = struct {
 };
 
 pub const Branch = struct {
-    a_path: Block,
-    b_path: Block,
-    condition: InlineExpr,
+    a_path: Hir,
+    b_path: ?Hir,
+    condition: Hir,
 
     pub fn hash(self: *const @This()) u64 {
         var hasher = std.hash.Fnv1a_64.init();
         hasher.update(std.mem.asBytes(&self.a_path.hash()));
-        hasher.update(std.mem.asBytes(&self.b_path.hash()));
+        if (self.b_path) |b_path| {
+            hasher.update(std.mem.asBytes(&b_path.hash()));
+        }
         hasher.update(std.mem.asBytes(&self.condition.hash()));
         return hasher.final();
     }
