@@ -1,4 +1,5 @@
 //! This file contains the parser for the conical language, it does not do semantic analysis
+//TODO: Paths, Module struct, Module/Import parsing, Symbol Resolution?
 const std = @import("std");
 
 const Ast = @import("Ast.zig").Ast;
@@ -977,7 +978,26 @@ fn primary(self: *@This()) anyerror!*Ast {
         .end = self.lexer.index,
     };
 
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.ident, .float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.ident})) |fid| {
+        span.merge(fid.span);
+        var parts = std.ArrayList(AstTypes.Ident).init(self.gpa);
+        while (self.lexer.consume_if_eq(&[_]types.Tag{.colon2})) |tok| {
+            span.merge(tok.span);
+            if (self.lexer.consume_if_eq(&[_]types.Tag{.ident})) |id| {
+                span.merge(id.span);
+                try parts.append(.{ .span = id.span, .value = id.span.get_string(self.lexer.buffer)});
+            } else {
+                try self.session.emit(.Error, tok.span, "Expected identifier after `::`");
+            }
+        }
+        const path: AstTypes.Path = .{
+            .parts = try parts.toOwnedSlice(),
+        };
+        const out: Ast = Ast.create(.{ .path = path}, span);
+        return try mem.createWith(self.gpa, out);
+
+    }
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
         span.merge(lit.span);
         const out: Ast = Ast.create(.{ .terminal = lit }, span);
         return try mem.createWith(self.gpa, out);

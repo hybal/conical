@@ -251,7 +251,7 @@ pub const TypeModifier = union(enum) {
 };
 
 //represents an identifier,
-//it has both a span and a value because it is including in the ast
+//it has both a span and a value because it is included in the ast
 //which may be shared among other compilation units which wont have access to the source that it came from
 pub const Ident = struct {
     span: types.Span,
@@ -271,6 +271,38 @@ pub const Ident = struct {
             }
         }
         return true;
+    }
+
+};
+
+
+pub const Path = struct {
+    parts: []Ident,
+
+    pub fn equals(self: *const @This(), other: *const @This()) bool {
+        if (self.parts.len != other.parts.len) {
+            return false;
+        }
+
+        for (self.parts, 0..) |part, i| {
+            if (!part.equals(other.parts[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    pub fn get_base(self: *const @This()) Ident {
+        return self.parts[self.parts.len - 1];
+    }
+
+    pub fn get_string(self: *const @This(), gpa: std.mem.Allocator) ![]const u8 {
+        var out = std.ArrayList(u8).init(gpa);
+        for (self.parts) |part| {
+            try out.appendSlice(part.value);
+            try out.appendSlice("::");
+        }
+        return try out.toOwnedSlice();
     }
 };
 
@@ -658,5 +690,6 @@ pub const AstNode = union(enum) {
     type_cons: TypeCons,
     access_operator: AccessOperator,
     cast: Cast, 
+    path: Path,
     _,
 };

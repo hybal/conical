@@ -12,7 +12,6 @@ const SymbolEntry = struct {
 };
 
 pub const LLVMContext = struct {
-
     builder: llvm.Core.LLVMBuilderRef,
     context: llvm.Core.LLVMContextRef,
     target_machine: llvm.TargetMachine.LLVMTargetMachineRef,

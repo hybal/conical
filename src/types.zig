@@ -2,6 +2,8 @@ const std = @import("std");
 const Ast = @import("Ast.zig");
 const Hir = @import("Hir.zig");
 
+pub const DefId = u64;
+
 pub const Symbol = struct {
     name: []const u8,
     tyid: ?Ast.TypeId,
@@ -23,7 +25,7 @@ pub const Symbol = struct {
 };
 
 pub const SymbolTable = struct {
-    symbol_map: std.HashMap(Hir.DefId, Symbol, std.hash_map.AutoContext(Hir.DefId), 80),
+    symbol_map: std.HashMap(DefId, Symbol, std.hash_map.AutoContext(DefId), 80),
     parent: ?usize,
     children: ?[]usize,
     is_function_scope: bool = false,
@@ -43,6 +45,20 @@ pub const Span = struct {
         self.end = @max(self.end, other.end);
     }
 
+};
+
+pub const Module = struct {
+    symbols: std.HashMap(DefId, Symbol, std.hash_map.AutoContext(DefId), 80),
+    path: Ast.Path,
+    source_files: [][]const u8,
+    imports: []Ast.Path,
+    //TODO: add llvm or paths to object files once full compliation is done
+    pub fn get_symbol(self: *@This(), defid: DefId) ?Symbol {
+        if (self.symbols.get(defid)) |val| {
+            return val;
+        }
+        return null;
+    }
 };
 
 

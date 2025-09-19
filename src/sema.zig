@@ -37,7 +37,7 @@ pub fn init_context(symtree: std.ArrayList(types.SymbolTable),
     };
 }
 
-fn get_symbol(self: *@This(), defid: Hir.DefId) ?*types.Symbol {
+fn get_symbol(self: *@This(), defid: types.DefId) ?*types.Symbol {
     var current: ?usize = self.current_scope;
     while (current != null): (current = self.symtree.items[current.?].parent) {
         if (self.symtree.items[current.?].symbol_map.contains(defid)) {
@@ -154,7 +154,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         .integer_literal => |i| {
                             ty = Ast.Type.createPrimitive(get_int_type(i, false), null).hash();
                         },
-                        .identifier => |id| {
+                        .path => |id| {
                             if (self.get_symbol(id)) |sym| {
                                 ty = sym.tyid.?;
                             } else {

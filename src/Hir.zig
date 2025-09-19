@@ -2,8 +2,7 @@ const std = @import("std");
 const Ast = @import("Ast.zig");
 const types = @import("types.zig");
 const mem = @import("mem.zig");
-
-pub const DefId = u64;
+const DefId = types.DefId;
 pub const HirId = u64;
 
 pub const AdjustmentStep = union(enum) {
@@ -89,12 +88,25 @@ pub const Ident = struct {
     }
 };
 
+pub const Path = struct {
+    parts: []Ident,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        for (self.parts) |part| {
+            hasher.update(part.value);
+            hasher.update(std.mem.asBytes(&part.location));
+        }
+        return hasher.final();
+    }
+};
+
 pub const Terminal = union(enum) {
     string_literal: []const u8, 
     char_literal: i32,
     integer_literal: u128,
     float_literal: f64, 
-    identifier: DefId, 
+    path: DefId,
     type_literal: *Ast.Type,
     bool_literal: bool,
     unit,
@@ -114,9 +126,6 @@ pub const Terminal = union(enum) {
             .float_literal => |v| {
                 hasher.update(std.mem.asBytes(&v));
             },
-            .identifier => |v| {
-                hasher.update(std.mem.asBytes(&v));
-            },
             .type_literal => |v| {
                 hasher.update(std.mem.asBytes(&v.hash()));
             },
@@ -126,6 +135,9 @@ pub const Terminal = union(enum) {
             },
             .unit => {
                 hasher.update(std.mem.asBytes(&1));
+            },
+            .path => |v| {
+                hasher.update(std.mem.asBytes(&v));
             }
         }
         return hasher.final();

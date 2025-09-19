@@ -8,7 +8,7 @@ const mem = @import("mem.zig");
 
 allocator: std.mem.Allocator,
 sym_tab: std.ArrayList(types.SymbolTable),
-def_table: std.StringHashMap(Hir.DefId),
+def_table: std.StringHashMap(types.DefId),
 hir_table: Hir.HirInfoTable,
 type_tbl: *types.TypeTbl,
 session: *diag.Session,
@@ -294,6 +294,9 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         .unit => {
 
         },
+        .path => {
+
+        },
         else => {
             std.debug.print("Unhandled case: {s}\n", .{@tagName(ast.node)});
             unreachable;
@@ -413,7 +416,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 .ident => {
                     const id = expr.span.get_string(self.source);
                     const defid = self.def_table.get(id).?;
-                    terminal = .{.identifier = defid };
+                    terminal = .{ .path = defid };
 
                 },
                 .int_literal => {
