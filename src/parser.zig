@@ -73,6 +73,13 @@ fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
     }
 }
 
+fn stmt(self: *@This()) anyerror!*Ast {
+    return self.module_decl();
+}
+
+fn expression(self: *@This()) anyerror!*Ast {
+    return self.return_stmt();
+}
 
 
 // a required block 
@@ -460,13 +467,53 @@ fn type_decl(self: *@This()) !*Ast {
 
 }
 
-fn stmt(self: *@This()) anyerror!*Ast {
+fn module_decl(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_mod})) |key| {
+        span.merge(key.span);
+        const path = try self.parse_path();
+        if (path == null) {
+            span.merge(.{.start= span.start, .end = self.lexer.index});
+            try self.session.emit(.Error, span, "Malformed module path");
+            return error.MalformedModulePath;
+        }
+        const node: AstTypes.ModuleDecl = .{
+            .path = path.?,
+        };
+        const out = Ast.create(.{.module_decl = node}, span);
+        return try mem.createWith(self.gpa, out);
+    }
+    return self.import_stmt();
+}
+
+fn import_stmt(self: *@This()) !*Ast {
+    self.lexer.skip_whitespace();
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+
+    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_import})) |key| {
+        span.merge(key.span);
+        const path = try self.parse_path();
+        if (path == null) {
+            span.merge(.{.start= span.start, .end = self.lexer.index});
+            try self.session.emit(.Error, span, "Malformed import path");
+            return error.MalformedModulePath;
+        }
+        const node: AstTypes.Import = .{
+            .path = path.?,
+        };
+        const out = Ast.create(.{ .import = node }, span);
+        return try mem.createWith(self.gpa, out);
+    }
     return self.fn_decl();
 }
 
-fn expression(self: *@This()) anyerror!*Ast {
-    return self.return_stmt();
-}
 fn return_stmt(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
     var span: types.Span = .{
@@ -970,14 +1017,11 @@ fn type_cons(self: *@This()) !*Ast {
     return try self.primary();
 }
 
-
-fn primary(self: *@This()) anyerror!*Ast {
-    self.lexer.skip_whitespace();
+fn parse_path(self: *@This()) !?*Ast {
     var span: types.Span = .{
         .start = self.lexer.index,
-        .end = self.lexer.index,
+        .end = self.lexer.index
     };
-
     if (self.lexer.consume_if_eq(&[_]types.Tag{.ident})) |fid| {
         span.merge(fid.span);
         var parts = std.ArrayList(AstTypes.Ident).init(self.gpa);
@@ -993,9 +1037,24 @@ fn primary(self: *@This()) anyerror!*Ast {
         const path: AstTypes.Path = .{
             .parts = try parts.toOwnedSlice(),
         };
-        const out: Ast = Ast.create(.{ .path = path}, span);
+        const out = Ast.create(.{ .path = path}, span);
         return try mem.createWith(self.gpa, out);
-
+    }
+    return null;
+}
+fn primary(self: *@This()) anyerror!*Ast {
+    self.lexer.skip_whitespace();
+    var span: types.Span = .{
+        .start = self.lexer.index,
+        .end = self.lexer.index,
+    };
+    if (self.lexer.is_next_token(.ident)) {
+        if(try self.parse_path()) |val| {
+            return val;
+        }
+        span.merge(.{ .start = span.start, .end = self.lexer.index});
+        try self.session.emit(.Error, span, "Malformed path");
+        return error.MalformedPath;
     }
     if (self.lexer.consume_if_eq(&[_]types.Tag{.float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
         span.merge(lit.span);

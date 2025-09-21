@@ -144,6 +144,7 @@ pub const Tag = enum {
     keyword_priv, //priv (may be removed)
     keyword_pub, //pub
     keyword_export, //export
+    keyword_import, //import
     keyword_let, //let
     keyword_mut, //mut
     keyword_return, //return
@@ -151,7 +152,6 @@ pub const Tag = enum {
     keyword_struct, //struct
     keyword_enum, //enum
     keyword_test, //test (may be removed)
-    keyword_union, //union (may be removed)
     keyword_use, //use
     keyword_mod, //mod
     keyword_comp, //comp (may be changed to 'comptime')
@@ -162,17 +162,13 @@ pub const Tag = enum {
     keyword_const, //const
     keyword_unsafe, //unsafe
     keyword_impl, //impl
-    keyword_move, //move
-    keyword_self, //self (may be converted to a simple identifier)
-    keyword_trait, //trait (may be renamed)
     keyword_when, //when (may be removed)
     keyword_Self, //Self
     keyword_where, //where
     keyword_macro, //macro
-    keyword_new, //new (may be removed)
     keyword_do, //do
-    keyword_try, //try
     keyword_pure, //pure
+    keyword_yield,
     keyword_true, //true
     keyword_false, //false
 };

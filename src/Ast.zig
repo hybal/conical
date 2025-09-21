@@ -620,6 +620,15 @@ pub const FnDecl = struct {
     }
 };
 
+
+pub const ModuleDecl = struct {
+    path: *Ast,
+};
+
+pub const Import = struct {
+    path: *Ast,
+};
+
 pub const ParamList = struct {
     left: *Ast,
     params: []*Ast,
@@ -691,5 +700,7 @@ pub const AstNode = union(enum) {
     access_operator: AccessOperator,
     cast: Cast, 
     path: Path,
+    module_decl: ModuleDecl,
+    import: Import,
     _,
 };
