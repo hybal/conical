@@ -135,7 +135,7 @@ pub const Tag = enum {
     keyword_while, //while 
     keyword_for, //for
     keyword_in, //in
-    keyword_match, //match
+    keyword_match, //match 
     keyword_fn, //fn
     keyword_async, //async (may be removed)
     keyword_await, //await (may be removed)
@@ -198,8 +198,8 @@ pub const CompUnit = struct {
     file: []const u8, //the relative path of the file 
     out_file: []const u8, //the filename of the output file
     source: []const u8, //the file source
-    ast: []*Ast.Ast, //the ast
-    symbol_table: SymbolTable, //the symbol table (currently would only contain the global definitions)
+    hir: []Hir.Hir, //the ast
+    symbol_table: *SymbolTable, //the symbol table 
     type_table: *TypeTbl,  //the type table (maps typeids to types)
 };
 

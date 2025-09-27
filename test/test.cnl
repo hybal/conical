@@ -2,9 +2,11 @@
 extern fn print();
 extern fn puts(value): []u8 -> i32;
 pub type Test = struct {
-    a: i32,
+    a:: i32,
     b: i32
 };
+
+
 pub fn main() -> i32 {
     let a = 4;
     let v = "Hello, World!\0";

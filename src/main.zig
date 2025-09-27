@@ -226,7 +226,7 @@ pub fn main() !u8 {
     };
 
     var sema_context = sema.init_context(hir_context.sym_tab, hir_context.hir_table, &type_map, source, gpa, &session);
-    _ = sema.analyze(&sema_context, hir) catch |err| {
+    sema.analyze(&sema_context, hir) catch |err| {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
@@ -245,8 +245,8 @@ pub fn main() !u8 {
         .file = args[1],
         .source = source,
         .out_file = out_file,
-        .ast = trees,
-        .symbol_table = sema_context.symtree.items[0],
+        .hir = hir,
+        .symbol_table = &sema_context.symtree.items[0],
         .type_table = sema_context.type_map
     };
     _ = comp_unit;
