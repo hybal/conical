@@ -1034,8 +1034,10 @@ fn parse_path(self: *@This()) !?*Ast {
                 try self.session.emit(.Error, tok.span, "Expected identifier after `::`");
             }
         }
+        const parts_slice = try parts.toOwnedSlice();
         const path: AstTypes.Path = .{
-            .parts = try parts.toOwnedSlice(),
+            .parts = parts_slice,
+            .base = parts_slice[parts_slice.len - 1]
         };
         const out = Ast.create(.{ .path = path}, span);
         return try mem.createWith(self.gpa, out);

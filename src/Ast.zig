@@ -278,6 +278,7 @@ pub const Ident = struct {
 
 pub const Path = struct {
     parts: []Ident,
+    base: Ident,
 
     pub fn equals(self: *const @This(), other: *const @This()) bool {
         if (self.parts.len != other.parts.len) {
@@ -292,9 +293,6 @@ pub const Path = struct {
         return true;
     }
 
-    pub fn get_base(self: *const @This()) Ident {
-        return self.parts[self.parts.len - 1];
-    }
 
     pub fn get_string(self: *const @This(), gpa: std.mem.Allocator) ![]const u8 {
         var out = std.ArrayList(u8).init(gpa);

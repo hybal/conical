@@ -246,7 +246,8 @@ pub fn main() !u8 {
         .source = source,
         .out_file = out_file,
         .hir = hir,
-        .symbol_table = &sema_context.symtree.items[0],
+        .hir_info = &hir_context.hir_table,
+        .symbol_table = try hir_context.sym_tab.toOwnedSlice(),
         .type_table = sema_context.type_map
     };
     _ = comp_unit;

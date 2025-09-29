@@ -400,7 +400,7 @@ pub const TopLevelExpr = union(enum) {
 };
 
 
-//This should always be trivially copiable other than the node.
+//This should always be trivial to shallow copy
 pub const Hir = struct {
     node: HirNode,
     id: HirId,

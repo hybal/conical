@@ -5,7 +5,8 @@ const Hir = @import("Hir.zig");
 pub const DefId = u64;
 
 pub const Symbol = struct {
-    name: []const u8,
+    //name: []const u8,
+    path: Ast.Path,
     tyid: ?Ast.TypeId,
     node: *Ast.Ast,
     span: Span,
@@ -60,6 +61,7 @@ pub const Module = struct {
         return null;
     }
 };
+
 
 
 //These are all of the supported tokens
@@ -199,7 +201,8 @@ pub const CompUnit = struct {
     out_file: []const u8, //the filename of the output file
     source: []const u8, //the file source
     hir: []Hir.Hir, //the ast
-    symbol_table: *SymbolTable, //the symbol table 
+    hir_info: *Hir.HirInfoTable,
+    symbol_table: []SymbolTable, //the symbol table 
     type_table: *TypeTbl,  //the type table (maps typeids to types)
 };
 

@@ -23,6 +23,7 @@ llvm_context: struct {
 in_assignment: bool,
 target_size: u8,
 at_global: bool = true,
+current_scope: usize = 0,
 
 pub fn init(allocator: std.mem.Allocator, comp_unit: types.CompUnit, session: *diag.Session) @This() {
     return .{
@@ -127,4 +128,25 @@ pub fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
         }
     }
     return base_type;
+}
+
+fn convert_string_to_llvm(self: *@This(), ident: types.DefId) ![*]const u8 {
+    const str = self.comp_unit.symbol_table.
+}
+
+fn emit_global(self: *@This(), trees: []Hir.Hir) !void {
+    for (trees) |hir| {
+        const hir_info = self.comp_unit.hir_info.get(hir.id).?;
+        const hir_ty = self.comp_unit.type_table.get(hir_info.ty.?).?;
+        switch (hir.node) {
+            .top_level => |top_level| {
+                switch (top_level) {
+                    .func => |func| {
+                        const llvm_fnc_ty = try self.createTypeRef(hir_ty);
+                    },
+                }
+            },
+        }
+
+    }
 }
