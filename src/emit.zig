@@ -130,8 +130,14 @@ pub fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
     return base_type;
 }
 
+fn get_symbol(self: *@This(), ident: types.DefId) types.Symbol {
+    return self.comp_unit.symbol_table[self.current_scope].symbol_map.get(ident).?;
+}
+
+
 fn convert_string_to_llvm(self: *@This(), ident: types.DefId) ![*]const u8 {
-    const str = self.comp_unit.symbol_table.
+    const str = self.comp_unit.symbol_table[self.current_scope].symbol_map.get(ident).?;
+    
 }
 
 fn emit_global(self: *@This(), trees: []Hir.Hir) !void {

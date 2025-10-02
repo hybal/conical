@@ -302,6 +302,14 @@ pub const Path = struct {
         }
         return try out.toOwnedSlice();
     }
+
+    pub fn hash(self: *const @This()) !u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        for (self.parts) |part| {
+            hasher.update(part.value);
+        }
+        return hasher.final();
+    }
 };
 
 //represents a function type

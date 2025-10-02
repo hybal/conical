@@ -1,6 +1,7 @@
 const std = @import("std");
 const Ast = @import("Ast.zig");
 const Hir = @import("Hir.zig");
+const diag = @import("diag.zig");
 
 pub const DefId = u64;
 
@@ -61,6 +62,17 @@ pub const Module = struct {
         return null;
     }
 };
+
+
+pub const Context = struct {
+    sym_tab: ?std.ArrayList(SymbolTable),
+    type_tab: ?TypeTbl,
+    source: []const u8,
+    file_path: []const u8,
+    session: diag.Session,
+    //NOTE: eventually compiler flags will go here
+};
+
 
 
 
