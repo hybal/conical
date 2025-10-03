@@ -49,17 +49,25 @@ pub const Span = struct {
 
 };
 
+pub const ModuleId = u64;
+
 pub const Module = struct {
-    symbols: std.HashMap(DefId, Symbol, std.hash_map.AutoContext(DefId), 80),
+    exports: std.HashMap(DefId, Symbol, std.hash_map.AutoContext(DefId), 80),
     path: Ast.Path,
-    source_files: [][]const u8,
-    imports: []Ast.Path,
+    source_file: []const u8,
+    imports: []Path,
     //TODO: add llvm or paths to object files once full compliation is done
     pub fn get_symbol(self: *@This(), defid: DefId) ?Symbol {
         if (self.symbols.get(defid)) |val| {
             return val;
         }
         return null;
+    }
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.path.hash()));
+        return hasher.final();
     }
 };
 
@@ -70,7 +78,20 @@ pub const Context = struct {
     source: []const u8,
     file_path: []const u8,
     session: diag.Session,
+    module: ?Ast.Path,
     //NOTE: eventually compiler flags will go here
+};
+
+pub const Path = struct {
+    module: ModuleId,
+    base: DefId,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.module));
+        hasher.update(std.mem.asBytes(&self.base));
+        return hasher.final();
+    }
 };
 
 

@@ -211,53 +211,39 @@ pub fn main() !u8 {
     defer file.close();
 
     source = try file.readToEndAlloc(gpa, std.math.maxInt(usize));
+
     var session = diag.Session.init(gpa, source);
     var type_map = try types.init_type_map(gpa); 
-    var parser = parse.init_from_source(source, &session, &type_map, gpa);
-//    var context = try sema.init_context(source, &session, &type_map, gpa);
+    var context = types.Context {
+        .session = session,
+        .source = source,
+        .type_tab = type_map,
+        .sym_tab = .init(gpa),
+        .file_path = args[1],
+        .module = null
+    };
+
+    var parser = parse.init(&context, gpa);
     const trees = parser.parse() catch |err| {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
-    var hir_context = try lower_hir.init_context(&session, source, &type_map, gpa);
+    var hir_context = try lower_hir.init(&context, gpa);
     const hir = hir_context.lower(trees) catch |err| {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
 
-    var sema_context = sema.init_context(hir_context.sym_tab, hir_context.hir_table, &type_map, source, gpa, &session);
+    var sema_context = sema.init(&context, hir_context.hir_table, gpa);
     sema.analyze(&sema_context, hir) catch |err| {
         try session.flush(std.io.getStdErr().writer());
         return err;
     };
-   // sema.resolve(&context, trees) catch |err| {
-   //     try session.flush(std.io.getStdErr().writer());
-   //     return err;
-   // };
     try session.flush(std.io.getStdErr().writer());
 
     for (trees) |tree| {
         print_tree(&type_map, tree);
         std.debug.print("\n", .{});
     }
-    const out_file = try std.fmt.allocPrint(gpa, "{s}.o", .{std.fs.path.stem(args[1])});
-    const comp_unit: types.CompUnit = .{
-        .file = args[1],
-        .source = source,
-        .out_file = out_file,
-        .hir = hir,
-        .hir_info = &hir_context.hir_table,
-        .symbol_table = try hir_context.sym_tab.toOwnedSlice(),
-        .type_table = sema_context.type_map
-    };
-    _ = comp_unit;
-   //    const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
-//    var cg = try codegen.init(comp_unit, triple, gpa);
-//    try cg.lower(comp_unit.ast);
-//    var err: [*c]u8 = null;
-//    if (llvm.Analysis.LLVMVerifyModule(@ptrCast(cg.llvm_context.module.?), llvm.Analysis.LLVMAbortProcessAction, &err) != 0) {
-//        std.debug.print("Module verification failed: {s}\n", .{err});
-//    }
-//    try cg.emit();
     return 0;
 }

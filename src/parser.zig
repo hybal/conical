@@ -14,26 +14,27 @@ const types = @import("types.zig");
 //FIX: diagnostic messages need to be better
 gpa: std.mem.Allocator,
 lexer: lex.Lexer,
-session: *diag.Session,
-type_map: *types.TypeTbl,
+context: *types.Context,
+imports: std.ArrayList(AstTypes.Path),
+
 
 /// Initialize the parser from an already existing Lexer isntance
-pub fn init_from_lexer(in: lex.Lexer, session: *diag.Session, type_map: *types.TypeTbl, gpa: std.mem.Allocator) @This() {
+pub fn init_from_lexer(in: lex.Lexer, context: *types.Context, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = in,
         .gpa = gpa,
-        .session = session,
-        .type_map = type_map,
+        .context = context,
+        .imports = .init(gpa),
     };
 }
 
 /// Initialize the parser from source
-pub fn init_from_source(src: []const u8, session: *diag.Session, type_map: *types.TypeTbl, gpa: std.mem.Allocator) @This() {
+pub fn init(context: *types.Context, gpa: std.mem.Allocator) @This() {
     return .{
-        .lexer = lex.Lexer.init(src),
+        .lexer = lex.Lexer.init(context.source),
         .gpa = gpa,
-        .session = session,
-        .type_map = type_map,
+        .imports = .init(gpa),
+        .context = context,
     };
 }
 
@@ -58,7 +59,7 @@ fn expect(self: *@This(), token: types.Tag) !void {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |_| {
         return;
     } else {
-        try self.session.emit(.Error, self.lexer.next_token().span, "Unexepected token");
+        try self.context.session.emit(.Error, self.lexer.next_token().span, "Unexepected token");
         return error.UnexpectedToken;
     }
 }
@@ -68,7 +69,7 @@ fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
     if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |tok| {
         return tok;
     } else {
-        try self.session.emit(.Error, self.lexer.next_token().span, "Unexepected token ret");
+        try self.context.session.emit(.Error, self.lexer.next_token().span, "Unexepected token ret");
         return error.UnexpectedToken;
     }
 }
@@ -104,7 +105,7 @@ fn block(self: *@This()) !*Ast {
                 try exprs.append(exp);
             }
         } else if (!self.lexer.has_next()) {
-            try self.session.emit(.Error, span, "Unclosed curly-bracket");
+            try self.context.session.emit(.Error, span, "Unclosed curly-bracket");
             return error.UnmatchedBracket;
         }
         _ = self.lexer.next_token();
@@ -112,7 +113,7 @@ fn block(self: *@This()) !*Ast {
         const out: Ast = Ast.create(.{ .block = .{ .exprs = try exprs.toOwnedSlice() }}, span);
         return try mem.createWith(self.gpa, out);
     } 
-    try self.session.emit(.Error, span, "Expected a block");
+    try self.context.session.emit(.Error, span, "Expected a block");
     return error.RequiredBlock;
 }
 
@@ -181,7 +182,7 @@ fn parse_type(self: *@This()) !AstTypes.Type {
                     mod = .Slice;
                 }
                 self.expect(.close_square) catch |err| {
-                    try self.session.emit(.Error, span, "Expected a closing square bracket '['");
+                    try self.context.session.emit(.Error, span, "Expected a closing square bracket '['");
                     return err;
                 };
             },
@@ -195,12 +196,12 @@ fn parse_type(self: *@This()) !AstTypes.Type {
             if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |_| { //()
                 if (base_ty.modifiers != null) {
                     span.end = self.lexer.index;
-                    try self.session.emit(.Error, span, "Unit type cannot have modifiers");
+                    try self.context.session.emit(.Error, span, "Unit type cannot have modifiers");
                     return error.UnitCannotHaveMods;
                 }
             } else {
                 //this is eventually where generics will be parsed (e.g. Type($T:i32))
-                try self.session.emit(.Error, span, "Types cannot currently have paranthesis other than unit");
+                try self.context.session.emit(.Error, span, "Types cannot currently have paranthesis other than unit");
                 return error.ParenInTypeExprNotUnit;
             }
         } else if (AstTypes.PrimitiveType.prims.get(ty.span.get_string(self.lexer.buffer))) |val| {
@@ -218,13 +219,13 @@ fn parse_type(self: *@This()) !AstTypes.Type {
             const field_type = try self.parse_type();
             if (!self.lexer.is_next_token(.comma) and !self.lexer.is_next_token(.close_bracket)) {
                 span.merge(.{ .start = span.start, .end = self.lexer.index});
-                try self.session.emit(.Error, span, "Missing comma");
+                try self.context.session.emit(.Error, span, "Missing comma");
                 return error.MissingCommaInStruct;
             }
             _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
             fields.putNoClobber(ident.span.get_string(self.lexer.buffer), field_type.hash()) catch {
                 span.merge(.{ .start = span.start, .end = self.lexer.index});
-                try self.session.emit(.Error, span, "Struct with duplicate fields");
+                try self.context.session.emit(.Error, span, "Struct with duplicate fields");
                 return error.DuplicateFields;
             };
         }
@@ -242,13 +243,13 @@ fn parse_type(self: *@This()) !AstTypes.Type {
             }
             if (!self.lexer.is_next_token(.comma) and !self.lexer.is_next_token(.close_bracket)) {
                 span.merge(.{ .start = span.start, .end = self.lexer.index});
-                try self.session.emit(.Error, span, "Missing comma");
+                try self.context.session.emit(.Error, span, "Missing comma");
                 return error.MissingCommaInEnum;
             }
             _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
             variants.putNoClobber(ident.span.get_string(self.lexer.buffer), var_ty) catch {
                 span.merge(.{ .start = span.start, .end = self.lexer.index});
-                try self.session.emit(.Error, span, "Duplicate enum variant");
+                try self.context.session.emit(.Error, span, "Duplicate enum variant");
                 return error.DuplicateEnumVariant;
             };
         }
@@ -256,7 +257,7 @@ fn parse_type(self: *@This()) !AstTypes.Type {
         base_ty.base_type = .{ .@"enum" = .{ .variants = variants } };
     }
     const tyid = base_ty.hash();
-    _ = try self.type_map.getOrPutValue(tyid, base_ty);
+    _ = try self.context.type_tab.getOrPutValue(tyid, base_ty);
     base_ty.chash = tyid;
     return base_ty;
 }
@@ -280,7 +281,7 @@ fn try_decl_mod(self: *@This()) !?AstTypes.GlobalDeclMod {
             else => unreachable,
         }
         if (try self.try_decl_mod()) |_| {
-            try self.session.emit(.Error, key.span, "Invalid decleration modifier");
+            try self.context.session.emit(.Error, key.span, "Invalid decleration modifier");
             return error.InvalidGlobalMod;
         }
         return out;
@@ -319,7 +320,7 @@ fn fn_decl(self: *@This()) !*Ast {
         span.merge(ident.span);
         self.expect(.open_paren) catch |err| {
             span.merge(.{.start = span.start, .end = self.lexer.index});
-            try self.session.emit(.Error, span, "Expected an open parenthesis");
+            try self.context.session.emit(.Error, span, "Expected an open parenthesis");
             return err;
         };
         while (!self.lexer.is_next_token(.close_paren)) {
@@ -329,11 +330,11 @@ fn fn_decl(self: *@This()) !*Ast {
                 try params.append(.{ .span = tok.span, .value = tok.span.get_string(self.lexer.buffer)});
             } else if (tok.tag == .comma) {
                 if (self.lexer.is_next_token(.close_paren)) {
-                    try self.session.emit(.Error, span, "Parameter list contains an extra comma");
+                    try self.context.session.emit(.Error, span, "Parameter list contains an extra comma");
                     return error.UnfinishedParameterList;
                 }
             } else {
-                try self.session.emit(.Error, span, "Function signature contains an invalid token");
+                try self.context.session.emit(.Error, span, "Function signature contains an invalid token");
                 return error.InvalidTokenInFunctionSignature;
             }
         }
@@ -344,12 +345,12 @@ fn fn_decl(self: *@This()) !*Ast {
                 while (!self.lexer.is_next_token(.close_paren)) {
                     const param_ty = try self.parse_type();
                     const param_tyid = param_ty.hash();
-                    _ = try self.type_map.getOrPutValue(param_tyid, param_ty);
+                    _ = try self.context.type_tab.getOrPutValue(param_tyid, param_ty);
                     try param_types.append(param_tyid);
                     if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {
                         if (self.lexer.is_next_token(.close_paren)) {
                             span.merge(.{.start = span.start, .end = self.lexer.index});
-                            try self.session.emit(.Error, span, "Type parameter list contains an extra comma");
+                            try self.context.session.emit(.Error, span, "Type parameter list contains an extra comma");
                             return error.UnfinishedTypeParamaterList;
                         }
                     }
@@ -361,7 +362,7 @@ fn fn_decl(self: *@This()) !*Ast {
         }
         span.merge(.{.start = span.start, .end = self.lexer.index});
         if (param_types.items.len != params.items.len) {
-            try self.session.emit(.Error, span, try std.fmt.allocPrint(self.gpa, "Type list is shorter than the parameter list. Expected: {}, got: {}", .{params.items.len, param_types.items.len}));
+            try self.context.session.emit(.Error, span, try std.fmt.allocPrint(self.gpa, "Type list is shorter than the parameter list. Expected: {}, got: {}", .{params.items.len, param_types.items.len}));
             return error.MismatchedParamToTypeLen;
         }
         var return_ty: AstTypes.Type = AstTypes.Type.createPrimitive(.Unit, null);
@@ -377,7 +378,7 @@ fn fn_decl(self: *@This()) !*Ast {
             _ = self.lexer.next_token();
         }
         const retid = return_ty.hash();
-        _ = try self.type_map.getOrPutValue(retid, return_ty);
+        _ = try self.context.type_tab.getOrPutValue(retid, return_ty);
         const out: Ast = Ast.create(.{ .fn_decl = .{
             .ident = .{ .span = ident.span, .value = ident.span.get_string(self.lexer.buffer)},
             .params = try params.toOwnedSlice(),
@@ -419,7 +420,7 @@ fn var_decl(self: *@This()) !*Ast {
         var tyid: ?u64 = null;
         if (ty) |tyy| {
             tyid = tyy.hash();
-            _ = try self.type_map.getOrPutValue(tyid.?, tyy);
+            _ = try self.context.type_tab.getOrPutValue(tyid.?, tyy);
         }
         var out: Ast = Ast.create(.{ .var_decl = .{
             .is_mut = key.tag == .keyword_mut,
@@ -431,7 +432,7 @@ fn var_decl(self: *@This()) !*Ast {
             span.merge(tok.span);
             out = Ast.create(.{ .terminated = try mem.createWith(self.gpa, out)}, span);
         } else {
-            try self.session.emit(.Error, span, "Missing Semicolon");
+            try self.context.session.emit(.Error, span, "Missing Semicolon");
             return error.MissingSemicolon;
         }
         return try mem.createWith(self.gpa, out);
@@ -453,7 +454,7 @@ fn type_decl(self: *@This()) !*Ast {
         try self.expect(.semicolon);
         const tyid = ty.hash();
         span.end = self.lexer.index;
-        _ = try self.type_map.getOrPutValue(tyid, ty);
+        _ = try self.context.type_tab.getOrPutValue(tyid, ty);
         const out: Ast = Ast.create(.{ .type_decl = .{
             .ident = .{ 
                 .span = ident.span,
@@ -478,13 +479,14 @@ fn module_decl(self: *@This()) !*Ast {
         const path = try self.parse_path();
         if (path == null) {
             span.merge(.{.start= span.start, .end = self.lexer.index});
-            try self.session.emit(.Error, span, "Malformed module path");
+            try self.context.session.emit(.Error, span, "Malformed module path");
             return error.MalformedModulePath;
         }
         const node: AstTypes.ModuleDecl = .{
             .path = path.?,
         };
         const out = Ast.create(.{.module_decl = node}, span);
+        self.module = path.?.node.path;
         return try mem.createWith(self.gpa, out);
     }
     return self.import_stmt();
@@ -502,13 +504,14 @@ fn import_stmt(self: *@This()) !*Ast {
         const path = try self.parse_path();
         if (path == null) {
             span.merge(.{.start= span.start, .end = self.lexer.index});
-            try self.session.emit(.Error, span, "Malformed import path");
+            try self.context.session.emit(.Error, span, "Malformed import path");
             return error.MalformedModulePath;
         }
         const node: AstTypes.Import = .{
             .path = path.?,
         };
         const out = Ast.create(.{ .import = node }, span);
+        try self.imports.append(path.?.node.path);
         return try mem.createWith(self.gpa, out);
     }
     return self.fn_decl();
@@ -648,7 +651,7 @@ fn ternary(self: *@This()) !*Ast {
         span.merge(true_path.span);
         self.expect(.colon) catch |err| {
             span.start = true_path.span.start;
-            try self.session.emit(.Error, span, "Expected ':'");
+            try self.context.session.emit(.Error, span, "Expected ':'");
             return err;
         };
         const false_path = try self.ternary();
@@ -888,7 +891,7 @@ fn cast(self: *@This()) anyerror!*Ast {
         const ty = try self.parse_type();
         span.merge(.{.start = span.start, .end = self.lexer.index});
         const ty_hash = ty.hash();
-        _ = try self.type_map.getOrPutValue(ty_hash, ty);
+        _ = try self.context.type_tab.getOrPutValue(ty_hash, ty);
         const out: Ast = Ast.create(.{ .cast = .{
             .expr = expr,
             .ty = ty_hash,
@@ -975,9 +978,9 @@ fn type_cons(self: *@This()) !*Ast {
         .end = self.lexer.index
     };
     const saved = self.lexer.index;
-    self.session.freeze();
+    self.context.session.freeze();
     const ty = self.parse_type() catch null;
-    self.session.unfreeze();
+    self.context.session.unfreeze();
     if (ty != null and self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket}) != null) {
         span.merge(.{.start = span.start, .end = self.lexer.index});
         var fields = std.StringHashMap(?*Ast).init(self.gpa);
@@ -990,13 +993,13 @@ fn type_cons(self: *@This()) !*Ast {
             if (!self.lexer.is_next_token(.comma) 
                 and !self.lexer.is_next_token(.close_bracket)) {
                 span.merge(.{.start = span.start, .end = self.lexer.index});
-                try self.session.emit(.Error, span, "Missing comma before struct initializer");
+                try self.context.session.emit(.Error, span, "Missing comma before struct initializer");
                 return error.MissingComma;
             }
             _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
             if (fields.contains(field_name)) {
                 span.merge(.{.start = span.start, .end = self.lexer.index});
-                try self.session.emit(.Error, span, "Duplicate field initialization");
+                try self.context.session.emit(.Error, span, "Duplicate field initialization");
                 return error.DuplicateFieldInit;
             }
             span.merge(.{.start = span.start, .end = self.lexer.index});
@@ -1031,7 +1034,7 @@ fn parse_path(self: *@This()) !?*Ast {
                 span.merge(id.span);
                 try parts.append(.{ .span = id.span, .value = id.span.get_string(self.lexer.buffer)});
             } else {
-                try self.session.emit(.Error, tok.span, "Expected identifier after `::`");
+                try self.context.session.emit(.Error, tok.span, "Expected identifier after `::`");
             }
         }
         const parts_slice = try parts.toOwnedSlice();
@@ -1055,7 +1058,7 @@ fn primary(self: *@This()) anyerror!*Ast {
             return val;
         }
         span.merge(.{ .start = span.start, .end = self.lexer.index});
-        try self.session.emit(.Error, span, "Malformed path");
+        try self.context.session.emit(.Error, span, "Malformed path");
         return error.MalformedPath;
     }
     if (self.lexer.consume_if_eq(&[_]types.Tag{.float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
@@ -1074,7 +1077,7 @@ fn primary(self: *@This()) anyerror!*Ast {
         span.merge(out.span);
         self.expect(.close_paren) catch |err| {
             span.merge(.{.start = span.start, .end = self.lexer.index});
-            try self.session.emit(.Error, span, "Expected a closing parenthesis");
+            try self.context.session.emit(.Error, span, "Expected a closing parenthesis");
             return err;
         };
         return out;
@@ -1086,7 +1089,7 @@ fn primary(self: *@This()) anyerror!*Ast {
         return error.EOF;
     }
     span.merge(.{.start = span.start, .end = self.lexer.index});
-    try self.session.emit(.Error, span, "Invalid Syntax");
+    try self.context.session.emit(.Error, span, "Invalid Syntax");
     return error.InvalidSyntax;
 }
 

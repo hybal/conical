@@ -6,42 +6,35 @@ const mem = @import("mem.zig");
 const diag = @import("diag.zig");
 
 
-symtree: std.ArrayList(types.SymbolTable),
-type_map: *types.TypeTbl,
+context: *types.Context,
 hir_table: Hir.HirInfoTable,
-source: []const u8,
 gpa: std.mem.Allocator,
+
+
 expected_type: ?Ast.TypeId = null,
 function_return_type: ?Ast.TypeId = null,
 function_id_span: ?types.Span = null,
-session: *diag.Session,
 in_loop: bool = false,
 in_assignment: bool = false,
 in_global_scope: bool = true,
 current_scope: usize = 0,
 
-pub fn init_context(symtree: std.ArrayList(types.SymbolTable),
+pub fn init(context: *types.Context,
         hir_table: Hir.HirInfoTable,
-        type_map: *types.TypeTbl,
-        source: []const u8,
         gpa: std.mem.Allocator,
-        session: *diag.Session,
         ) @This() {
     return .{
-        .symtree = symtree,
-        .type_map = type_map,
-        .source = source,
         .gpa = gpa,
-        .session = session,
-        .hir_table = hir_table
+        .hir_table = hir_table,
+        .context = context,
     };
 }
 
 fn get_symbol(self: *@This(), defid: types.DefId) ?*types.Symbol {
     var current: ?usize = self.current_scope;
-    while (current != null): (current = self.symtree.items[current.?].parent) {
-        if (self.symtree.items[current.?].symbol_map.contains(defid)) {
-            return self.symtree.items[current.?].symbol_map.getPtr(defid);
+    while (current != null): (current = self.context.sym_tab.items[current.?].parent) {
+        if (self.context.sym_tab.items[current.?].symbol_map.contains(defid)) {
+            return self.context.sym_tab.items[current.?].symbol_map.getPtr(defid);
         }
     }
     return null;
@@ -110,7 +103,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                 },
                 .terminated => |term| {
                     const tyid = try self.type_check(term.*);
-                    const ty = self.type_map.get(tyid).?;
+                    const ty = self.context.type_tab.get(tyid).?;
                     if (ty.is_never()) {
                         out_type = tyid;
                     }
@@ -158,7 +151,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                             if (self.get_symbol(id)) |sym| {
                                 ty = sym.tyid.?;
                             } else {
-                                try self.session.emit(.Error, hir_info.span, "Unknown Identifier");
+                                try self.context.session.emit(.Error, hir_info.span, "Unknown Identifier");
                                 return error.UnknownIdentifier;
                             }
                         },
@@ -180,11 +173,11 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                 },
                 .unary_expr => |expr| {
                     const tyid = try self.type_check(expr.expr);
-                    var ty = self.type_map.get(tyid).?;
+                    var ty = self.context.type_tab.get(tyid).?;
                     switch (expr.op) {
                         .BinNot => {
                             if (ty.base_type != .primitive or ty.base_type.primitive.is_int()) {
-                                try self.session.emit(.Error, hir_info.span, 
+                                try self.context.session.emit(.Error, hir_info.span, 
                                     "Operator `~` requires an integer");
                                 return error.BinNotNotInt;
                             }
@@ -192,7 +185,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         .DeRef => {
                             if (ty.modifiers == null or 
                                 !(ty.modifiers.?[0] == .Ref or ty.modifiers.?[0] == .RefMut)) {
-                                try self.session.emit(.Error, hir_info.span,
+                                try self.context.session.emit(.Error, hir_info.span,
                                     "Dereference of non-reference type");
                                 return error.DeRefNotRef;
                             }
@@ -207,7 +200,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         },
                         .Not => {
                             if (ty.base_type != .primitive or ty.base_type.primitive != .Bool) {
-                                try self.session.emit(.Error, hir_info.span, 
+                                try self.context.session.emit(.Error, hir_info.span, 
                                     "The `!` operator requires a boolean");
                                 return error.ExpectedBool;
                             }
@@ -219,7 +212,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         }
                     }
                     const ty_hash = ty.hash();
-                    //_ = try self.type_map.getOrPutValue(ty_hash, ty);
+                    //_ = try self.context.type_tab.getOrPutValue(ty_hash, ty);
                     out_type = ty_hash;
                 },
                 .binary_expr => |expr| {
@@ -248,61 +241,61 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                 },
                 .cast => |expr| {
                     _ = self.get_cast(expr.tyid, expr.expr) catch {
-                        try self.session.emit(.Error, hir_info.span, 
+                        try self.context.session.emit(.Error, hir_info.span, 
                             "Invalid Cast");
                         return error.InvalidCast;
                     };
                     out_type = expr.tyid;
                 },
                 .enum_cons => |cons| {
-                    const ty = self.type_map.get(cons.ty).?;
+                    const ty = self.context.type_tab.get(cons.ty).?;
                     const variants = ty.base_type.@"enum".variants;
                     if (variants.get(cons.field)) |val| {
                         if (val) |tyid| {
                             if (cons.value == null) {
-                                try self.session.emit(.Error, hir_info.span, 
+                                try self.context.session.emit(.Error, hir_info.span, 
                                     "Enum variant requires value");
                                 return error.EnumMissingValue;
                             }
                             out_type = try self.type_check_expect(cons.value.?, tyid);
                         } else {
                             if (cons.value != null) {
-                                try self.session.emit(.Error, hir_info.span,
+                                try self.context.session.emit(.Error, hir_info.span,
                                     "Enum variant does not have associated value");
                                 return error.EnumExtraValue;
                             }
                         }
                     } else {
-                        try self.session.emit(.Error, hir_info.span,
+                        try self.context.session.emit(.Error, hir_info.span,
                             "Unknown enum variant");
                         return error.UnknownEnumVariant;
                     }
                 },
                 .struct_cons => |cons| {
-                    const ty = self.type_map.get(cons.ty).?;
+                    const ty = self.context.type_tab.get(cons.ty).?;
                     const fields = ty.base_type.strct.fields;
                     var iter = fields.iterator();
                     var count: usize = 0;
                     while (iter.next()) |entr| {
                         count += 1;
                         if (!cons.fields.contains(entr.key_ptr.*)) {
-                            try self.session.emit(.Error, hir_info.span,
+                            try self.context.session.emit(.Error, hir_info.span,
                                 "Missing struct field");
                             return error.MissingStructField;
                         }
                         _ = try self.type_check_expect(cons.fields.get(entr.key_ptr.*).?, entr.value_ptr.*);
                     }
                     if (cons.fields.count() > count) {
-                        try self.session.emit(.Error, hir_info.span,
+                        try self.context.session.emit(.Error, hir_info.span,
                             "Too many struct fields");
                         return error.TooManyStructFields;
                     }
                 },
                 .fn_call => |call| {
                     const fn_tyid = try self.type_check(call.expr);
-                    const ty = self.type_map.get(fn_tyid).?;
+                    const ty = self.context.type_tab.get(fn_tyid).?;
                     if (ty.base_type != .func) {
-                        try self.session.emit(.Error, hir_info.span,
+                        try self.context.session.emit(.Error, hir_info.span,
                             "Attempt to call expression that is not a function");
                         return error.NonFunctionCall;
                     }
@@ -310,19 +303,19 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                     const return_ty = ty.base_type.func.ret;
 
                     if (call.arguments.len < ty.base_type.func.args.len) {
-                        try self.session.emit(.Error, hir_info.span, 
+                        try self.context.session.emit(.Error, hir_info.span, 
                             "Too few arguments to function");
                         return error.TooFewArguments;
                     }
                     for (call.arguments, 0..) |exp, i| {
                         const expr_ty = try self.type_check(exp);
                         if (i >= ty.base_type.func.args.len) {
-                            try self.session.emit(.Error, hir_info.span,
+                            try self.context.session.emit(.Error, hir_info.span,
                                 "Too many arguments passed to function");
                             return error.TooManyArguments;
                         }
                         if (expr_ty != ty.base_type.func.args[i]) {
-                            try self.session.emit(.Error, hir_info.span,
+                            try self.context.session.emit(.Error, hir_info.span,
                                 "Type mismatch in function argument");
                             return error.TypeMismatch;
                         }
@@ -344,8 +337,8 @@ fn get_cast(self: *@This(), expected_ty: Ast.TypeId, tree: Hir.Hir) !?Hir.Cast {
     if (hir_info.ty == expected_ty) {
         return null;
     }
-    const ty1 = self.type_map.get(expected_ty).?;
-    const ty2 = self.type_map.get(hir_info.ty.?).?;
+    const ty1 = self.context.type_tab.get(expected_ty).?;
+    const ty2 = self.context.type_tab.get(hir_info.ty.?).?;
     const out: Hir.Cast = .{
         .expr = tree,
         .tyid = expected_ty
@@ -402,19 +395,19 @@ fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId
     if (expected_type == actual_type) {
         return true;
     }
-    const expected = self.type_map.get(expected_type).?;
-    const actual = self.type_map.get(actual_type).?;
+    const expected = self.context.type_tab.get(expected_type).?;
+    const actual = self.context.type_tab.get(actual_type).?;
     if (expected.is_never() or actual.is_never()) {
         return true;
     }
     const adjustment = try self.get_adjustment(expected_type, actual_type);
     if (adjustment == null) {
-        try self.session.emit(.Error, span, 
+        try self.context.session.emit(.Error, span, 
             try std.fmt.allocPrint(self.gpa, "Type Mismatch, expected type: `{s}`, got: `{s}`",
-                .{try self.type_map.get(expected_type).?
-                    .get_string(self.type_map, self.gpa, self.source),
-                  try self.type_map.get(actual_type).?
-                    .get_string(self.type_map, self.gpa, self.source)}));
+                .{try self.context.type_tab.get(expected_type).?
+                    .get_string(self.context.type_tab, self.gpa, self.context.source),
+                  try self.context.type_tab.get(actual_type).?
+                    .get_string(self.context.type_tab, self.gpa, self.context.source)}));
         return error.TypeMismatch;
     }
     return false;
@@ -422,8 +415,8 @@ fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId
 }
 
 fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId) !?[]Hir.AdjustmentStep {
-    const expected = self.type_map.get(expected_type).?;
-    const actual = self.type_map.get(actual_type).?;
+    const expected = self.context.type_tab.get(expected_type).?;
+    const actual = self.context.type_tab.get(actual_type).?;
     var adjustments: std.ArrayList(Hir.AdjustmentStep) = .init(self.gpa);
     if (actual.modifiers != null and actual.modifiers.?.len > 0) {
         const actual_mods = actual.modifiers.?;

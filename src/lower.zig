@@ -7,41 +7,38 @@ const mem = @import("mem.zig");
 
 
 allocator: std.mem.Allocator,
-sym_tab: std.ArrayList(types.SymbolTable),
 def_table: std.StringHashMap(types.DefId),
 hir_table: Hir.HirInfoTable,
-type_tbl: *types.TypeTbl,
-session: *diag.Session,
+context: *types.Context,
 in_function: bool = false,
 in_assignment: bool = false,
 at_global_scope: bool = true,
 //expected_type: ?Ast.TypeId = null,
 current_scope: usize = 0,
-source: []const u8,
 
 
 fn enter_new_scope(self: *@This()) !void {
     var children: std.ArrayList(usize) = undefined;
-    const current_children = self.sym_tab.items[self.current_scope].children;
+    const current_children = self.context.sym_tab.items[self.current_scope].children;
     if (current_children) |ccsn| {
         children = .fromOwnedSlice(self.allocator, ccsn);
     } else {
         children = .init(self.allocator);
     }
-    const child_index = self.sym_tab.items.len;
+    const child_index = self.context.sym_tab.items.len;
     try children.append(child_index);
-    self.sym_tab.items[self.current_scope].children = try children.toOwnedSlice();
+    self.context.sym_tab.items[self.current_scope].children = try children.toOwnedSlice();
     const symtab = types.SymbolTable {
         .symbol_map = .init(self.allocator),
         .parent = self.current_scope,
         .children = null,
     };
-    try self.sym_tab.append(symtab);
+    try self.context.sym_tab.append(symtab);
     self.current_scope = child_index;
 }
 
 fn leave_scope(self: *@This()) void {
-    if (self.sym_tab.items[self.current_scope].parent) |parent| {
+    if (self.context.sym_tab.items[self.current_scope].parent) |parent| {
         self.current_scope = parent;
     }
 }
@@ -50,23 +47,23 @@ fn leave_scope(self: *@This()) void {
 fn add_symbol(self: *@This(), name: []const u8, symbol: types.Symbol) !void {
     const defid = std.hash.Fnv1a_64.hash(name);
     _ = try self.def_table.getOrPutValue(name, defid);
-    if (self.sym_tab.items[self.current_scope].symbol_map.contains(defid)) {
+    if (self.context.sym_tab.items[self.current_scope].symbol_map.contains(defid)) {
         return error.SymbolShadow;
     }
-    try self.sym_tab.items[self.current_scope].symbol_map.put(defid, symbol);
+    try self.context.sym_tab.items[self.current_scope].symbol_map.put(defid, symbol);
 }
 
 fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
     const defid = self.def_table.get(name);
     if (defid) |dfid| {
-        var current_scope = self.sym_tab.items[self.current_scope];
+        var current_scope = self.context.sym_tab.items[self.current_scope];
         var exit = false;
         while (!exit) {
             if (current_scope.symbol_map.get(dfid)) |outsym| {
                 return outsym;
             }
             if (current_scope.parent) |parent| {
-                current_scope = self.sym_tab.items[parent];
+                current_scope = self.context.sym_tab.items[parent];
             } else {
                 exit = true;
             }
@@ -77,21 +74,19 @@ fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
 }
 
 
-pub fn init_context(session: *diag.Session, source: []const u8, type_tbl: *types.TypeTbl, allocator: std.mem.Allocator) !@This() {
+pub fn init(context: *types.Context, allocator: std.mem.Allocator) !@This() {
     var sym_tab: std.ArrayList(types.SymbolTable) = .init(allocator);
     try sym_tab.append(.{
         .symbol_map = .init(allocator),
         .children = null,
         .parent = null,
     });
+    context.sym_tab = sym_tab;
     const self: @This() = .{
         .allocator = allocator,
-        .sym_tab = sym_tab,
-        .type_tbl = type_tbl,
         .def_table = .init(allocator),
-        .session = session,
-        .source = source,
         .hir_table = .init(allocator),
+        .context = context,
     };
     return self;
 }
@@ -111,9 +106,9 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
     for (trees) |ast| {
         switch (ast.node) {
             .var_decl => |decl| {
-                self.add_symbol(decl.ident.span.get_string(self.source), .{
+                self.add_symbol(decl.ident.span.get_string(self.context.source), .{
                     .tyid = decl.ty,
-                    .name = decl.ident.value,
+                    .path = null,
                     .node = ast,
                     .scope = .Global,
                     .span = decl.ident.span,
@@ -122,7 +117,7 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                 };
             },
             .fn_decl => |decl| {
-                const fnctypeid = try decl.hash(self.type_tbl, self.allocator);
+                const fnctypeid = try decl.hash(self.context.type_tab, self.allocator);
                 self.add_symbol(decl.ident.value, .{
                     .tyid = fnctypeid,
                     .name = decl.ident.value,
@@ -146,7 +141,7 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
             },
             else => |v| {
                 _ = v;
-                std.debug.print("Unimplemented: {s}\n", .{ast.span.get_string(self.source)});
+                std.debug.print("Unimplemented: {s}\n", .{ast.span.get_string(self.context.source)});
                 unreachable;
             }
         }
@@ -167,8 +162,8 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                     return error.VariableShadowsPreviousDecleration;
                 };
             } 
-            if (decl.initialize) |init| {
-                try self.resolve_local_symbols(init);
+            if (decl.initialize) |var_init| {
+                try self.resolve_local_symbols(var_init);
             }
         },
         .fn_decl => |decl| {
@@ -176,7 +171,7 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                 self.add_symbol(decl.ident.value, .{
                     .name = decl.ident.value,
                     .node = ast,
-                    .tyid = try decl.hash(self.type_tbl, self.allocator),
+                    .tyid = try decl.hash(self.context.type_tab, self.allocator),
                     .span = decl.ident.span,
                 }) catch {
                     return error.FunctionShadowsPreviousDecleration;
@@ -258,8 +253,8 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         .terminated => |expr| try self.resolve_local_symbols(expr),
         .terminal => |expr| {
             if (expr.tag == .ident) {
-                if (self.get_symbol(expr.span.get_string(self.source)) == null) {
-                    try self.session.emit(.Error, expr.span, "Unknown Identifier");
+                if (self.get_symbol(expr.span.get_string(self.context.source)) == null) {
+                    try self.context.session.emit(.Error, expr.span, "Unknown Identifier");
                     return error.UnknownIdentifier;
                 }
             }
@@ -274,7 +269,7 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         .access_operator => |expr| {
             try self.resolve_local_symbols(expr.left);
             if (self.get_symbol(expr.right.value) == null) {
-                try self.session.emit(.Error, expr.right.span, "Unknown Indentifier");
+                try self.context.session.emit(.Error, expr.right.span, "Unknown Indentifier");
                 return error.UnknownIdentifier;
             }
         },
@@ -283,10 +278,10 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
             try self.resolve_local_symbols(expr.block);
         },
         .type_cons => |cons| {
-            const ty = self.type_tbl.get(cons.ty).?;
+            const ty = self.context.type_tab.get(cons.ty).?;
             if (ty.base_type == .user) {
                 if (self.get_symbol(ty.base_type.user.value) == null) {
-                    try self.session.emit(.Error, ty.base_type.user.span, "Unknown Identifier");
+                    try self.context.session.emit(.Error, ty.base_type.user.span, "Unknown Identifier");
                     return error.UnknownIdentifier;
                 }
             }
@@ -305,12 +300,12 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
     }
 }
 fn parse_int_literal(self: *@This(), span: types.Span) !u128 {
-    const literal_string = span.get_string(self.source);
+    const literal_string = span.get_string(self.context.source);
     return std.fmt.parseInt(u128, literal_string, 0);
 }
 
 fn parse_float_literal(self: *@This(), span: types.Span) !f64 {
-    const literal_string = span.get_string(self.source);
+    const literal_string = span.get_string(self.context.source);
     return std.fmt.parseFloat(f64, literal_string);
 }
 fn parse_escape(str: []const u8) !i32 {
@@ -399,7 +394,7 @@ fn parse_char_literal(self: *@This(), span: types.Span) !i32 {
     var local_span: types.Span = .{.start = span.start, .end = span.end};
     local_span.start += 1;
     local_span.end -= 1;
-    const char_string = local_span.get_string(self.source);
+    const char_string = local_span.get_string(self.context.source);
     if (char_string[0] == '\\') {
         return parse_escape(char_string[0..]);
     }
@@ -414,7 +409,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
             var terminal: Hir.Terminal = Hir.Terminal.unit;
             switch (expr.tag) {
                 .ident => {
-                    const id = expr.span.get_string(self.source);
+                    const id = expr.span.get_string(self.context.source);
                     const defid = self.def_table.get(id).?;
                     terminal = .{ .path = defid };
 
@@ -441,13 +436,13 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .string_literal => {
                         //NOTE: will probably have to adjust for quotes
                         terminal = .{ .string_literal = 
-                                try self.unescape_string(expr.span.get_string(self.source))
+                                try self.unescape_string(expr.span.get_string(self.context.source))
                         };
                     },
                     .raw_string_literal => {
                         //NOTE: will probably have to adjust for quotes
                         terminal = .{
-                            .string_literal = expr.span.get_string(self.source),
+                            .string_literal = expr.span.get_string(self.context.source),
                         };
                     },
                     .keyword_true, .keyword_false => {
@@ -701,17 +696,17 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 out_node = .{ .inline_expr = .{ .fn_call = try mem.createWith(self.allocator, out)}};
             },
             .type_cons => |cons| {
-                var ty = self.type_tbl.get(cons.ty).?;
+                var ty = self.context.type_tab.get(cons.ty).?;
                 if (ty.base_type == .user) {
-                    ty = self.type_tbl.get(self.get_symbol(ty.base_type.user.value).?.tyid.?).?;
+                    ty = self.context.type_tab.get(self.get_symbol(ty.base_type.user.value).?.tyid.?).?;
                 }
                 if (ty.base_type == .@"enum") {
                     if (cons.fields.count() > 1) {
-                        try self.session.emit(.Error, ast.span, "Too many values for enum literal");
+                        try self.context.session.emit(.Error, ast.span, "Too many values for enum literal");
                         return error.EnumLiteral;
                     }
                     if (cons.fields.count() == 0) {
-                        try self.session.emit(.Error, ast.span, "Enum literal requires at least one field");
+                        try self.context.session.emit(.Error, ast.span, "Enum literal requires at least one field");
                         return error.EnumLiteral;
                     }
                     var iter = cons.fields.iterator();
@@ -726,7 +721,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     }};
                 } else if (ty.base_type == .strct) {
                     if (cons.fields.count() != ty.base_type.strct.fields.count()) {
-                        try self.session.emit(.Error, ast.span, "Missing or too many struct fields");
+                        try self.context.session.emit(.Error, ast.span, "Missing or too many struct fields");
                         return error.StructLiteral;
                     }
 
@@ -736,7 +731,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                         const field_init = try self.lower_single(val.value_ptr.*.?);
                         try fields.put(val.key_ptr.*, field_init);
                     }
-                    _ = try self.type_tbl.getOrPutValue(ty.hash(), ty);
+                    _ = try self.context.type_tab.getOrPutValue(ty.hash(), ty);
                     const struct_cons = Hir.StructCons {
                         .fields = fields,
                         .ty = ty.hash()
@@ -746,7 +741,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                         .struct_cons = try mem.createWith(self.allocator, struct_cons)
                     }};
                 } else {
-                    try self.session.emit(.Error, ast.span, "Not a compound type");
+                    try self.context.session.emit(.Error, ast.span, "Not a compound type");
                     return error.NonCompoundTypeCons;
                 }
             },
