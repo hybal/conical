@@ -278,7 +278,6 @@ pub const Ident = struct {
 
 pub const Path = struct {
     parts: []Ident,
-    path: Ident,
 
 //    pub fn equals(self: *const @This(), other: *const @This()) bool {
 //        if (self.parts.len != other.parts.len) {

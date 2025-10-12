@@ -83,7 +83,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         const saved_function_return_type = self.function_return_type;
                         self.function_return_type = func.return_type;
                         const saved_function_id_span = self.function_id_span;
-                        self.function_id_span = self.get_symbol(func.id).?.span;
+                        self.function_id_span = self.get_symbol(func.id).?.name.span;
                         _ = try self.type_check(body);
                         self.function_return_type = saved_function_return_type;
                         self.current_scope = saved_scope;
@@ -405,9 +405,9 @@ fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId
         try self.context.session.emit(.Error, span, 
             try std.fmt.allocPrint(self.gpa, "Type Mismatch, expected type: `{s}`, got: `{s}`",
                 .{try self.context.type_tab.get(expected_type).?
-                    .get_string(self.context.type_tab, self.gpa, self.context.source),
+                    .get_string(&self.context.type_tab, self.gpa, self.context.source),
                   try self.context.type_tab.get(actual_type).?
-                    .get_string(self.context.type_tab, self.gpa, self.context.source)}));
+                    .get_string(&self.context.type_tab, self.gpa, self.context.source)}));
         return error.TypeMismatch;
     }
     return false;

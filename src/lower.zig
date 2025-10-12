@@ -108,22 +108,20 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
             .var_decl => |decl| {
                 self.add_symbol(decl.ident.span.get_string(self.context.source), .{
                     .tyid = decl.ty,
-                    .path = null,
+                    .name = decl.ident,
                     .node = ast,
                     .scope = .Global,
-                    .span = decl.ident.span,
                 }) catch {
                     return error.VariableShadowsPreviousDecleration;
                 };
             },
             .fn_decl => |decl| {
-                const fnctypeid = try decl.hash(self.context.type_tab, self.allocator);
+                const fnctypeid = try decl.hash(&self.context.type_tab, self.allocator);
                 self.add_symbol(decl.ident.value, .{
                     .tyid = fnctypeid,
-                    .name = decl.ident.value,
+                    .name = decl.ident,
                     .node = ast,
                     .scope = .Global,
-                    .span = decl.ident.span,
                 }) catch {
                     return error.FunctionShadowsPreviousDecleration;
                 };
@@ -131,10 +129,9 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
             .type_decl => |decl| {
                 self.add_symbol(decl.ident.value, .{
                     .tyid = decl.ty,
-                    .name = decl.ident.value,
+                    .name = decl.ident,
                     .node = ast,
                     .scope = .Global,
-                    .span = decl.ident.span,
                 }) catch {
                     return error.TypeShadowsPreviousDecleration;
                 };
@@ -154,10 +151,9 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         .var_decl => |decl| {
             if (!self.at_global_scope) {
                 self.add_symbol(decl.ident.value, .{
-                    .name = decl.ident.value,
+                    .name = decl.ident,
                     .node = ast,
                     .tyid = decl.ty,
-                    .span = decl.ident.span,
                 }) catch {
                     return error.VariableShadowsPreviousDecleration;
                 };
@@ -169,10 +165,9 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         .fn_decl => |decl| {
             if (!self.at_global_scope) {
                 self.add_symbol(decl.ident.value, .{
-                    .name = decl.ident.value,
+                    .name = decl.ident,
                     .node = ast,
-                    .tyid = try decl.hash(self.context.type_tab, self.allocator),
-                    .span = decl.ident.span,
+                    .tyid = try decl.hash(&self.context.type_tab, self.allocator),
                 }) catch {
                     return error.FunctionShadowsPreviousDecleration;
                 };
@@ -186,11 +181,10 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                 ast.node.fn_decl.body.?.scope_id = self.current_scope;
                 for (decl.params, 0..) |param_id, i| {
                     self.add_symbol(param_id.value, .{
-                        .name = param_id.value,
+                        .name = param_id,
                         .node = ast,
                         .tyid = decl.param_types[i],
                         .scope = .LocalEscapes,
-                        .span = param_id.span,
                     }) catch |err| {
                         switch (err) {
                             error.SymbolShadow => {},
@@ -209,10 +203,9 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         .type_decl => |decl| {
             if (!self.at_global_scope) {
                 self.add_symbol(decl.ident.value, .{
-                    .name = decl.ident.value,
+                    .name = decl.ident,
                     .node = ast,
                     .tyid = decl.ty,
-                    .span = decl.ident.span,
                 }) catch {
                     return error.TypeShadowsPreviousDecleration;
                 };
@@ -409,9 +402,10 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
             var terminal: Hir.Terminal = Hir.Terminal.unit;
             switch (expr.tag) {
                 .ident => {
-                    const id = expr.span.get_string(self.context.source);
-                    const defid = self.def_table.get(id).?;
-                    terminal = .{ .path = defid };
+                    unreachable;
+//                    const id = expr.span.get_string(self.context.source);
+//                    const defid = self.def_table.get(id).?;
+//                    terminal = .{ .path = defid };
 
                 },
                 .int_literal => {
@@ -453,6 +447,12 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     else => unreachable
             }
             out_node = .{ .inline_expr = .{ .terminal = try mem.createWith(self.allocator, terminal)}};
+        },
+        .path => |pth| {
+            const out: Hir.Terminal = .{
+                .path = pth.
+            };
+            out_node = .{ .inline_expr = .{ .terminal = }};
         },
         .unary_expr => |expr| {
             const expr_node = try self.lower_single(expr.expr);

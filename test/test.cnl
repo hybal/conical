@@ -2,7 +2,7 @@
 extern fn print();
 extern fn puts(value): []u8 -> i32;
 pub type Test = struct {
-    a:: i32,
+    a: i32,
     b: i32
 };
 

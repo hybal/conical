@@ -7,10 +7,9 @@ pub const DefId = u64;
 
 pub const Symbol = struct {
     //name: []const u8,
-    path: Ast.Path,
+    name: Ast.Ident,
     tyid: ?Ast.TypeId,
     node: *Ast.Ast,
-    span: Span,
     qualifier: enum {
         Public,
         Private,
@@ -55,7 +54,7 @@ pub const Module = struct {
     exports: std.HashMap(DefId, Symbol, std.hash_map.AutoContext(DefId), 80),
     path: Ast.Path,
     source_file: []const u8,
-    imports: []Path,
+    imports: []ModuleId,
     //TODO: add llvm or paths to object files once full compliation is done
     pub fn get_symbol(self: *@This(), defid: DefId) ?Symbol {
         if (self.symbols.get(defid)) |val| {
@@ -71,10 +70,27 @@ pub const Module = struct {
     }
 };
 
+pub const ModuleStore = struct {
+    store: std.AutoHashMap(ModuleId, Module),
+    lock: std.Thread.RwLock.Impl,
+
+    pub fn get(self: *@This(), modid: ModuleId) ?Module {
+        self.lock.lockShared();
+        const out = self.store.get(modid);
+        self.lock.unlockShared();
+        return out;
+    }
+
+    pub fn put(self: *@This(), modid: ModuleId, mod: Module) !void {
+        self.lock.lock();
+        try self.store.put(modid, mod);
+        self.lock.unlock();
+    }
+};
 
 pub const Context = struct {
-    sym_tab: ?std.ArrayList(SymbolTable),
-    type_tab: ?TypeTbl,
+    sym_tab: std.ArrayList(SymbolTable),
+    type_tab: TypeTbl,
     source: []const u8,
     file_path: []const u8,
     session: diag.Session,
@@ -84,7 +100,7 @@ pub const Context = struct {
 
 pub const Path = struct {
     module: ModuleId,
-    base: DefId,
+    base: Ast.Ident,
 
     pub fn hash(self: *const @This()) u64 {
         var hasher = std.hash.Fnv1a_64.init();

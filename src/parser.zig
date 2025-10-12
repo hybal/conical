@@ -486,7 +486,7 @@ fn module_decl(self: *@This()) !*Ast {
             .path = path.?,
         };
         const out = Ast.create(.{.module_decl = node}, span);
-        self.module = path.?.node.path;
+        self.context.module = path.?.node.path;
         return try mem.createWith(self.gpa, out);
     }
     return self.import_stmt();
@@ -1040,7 +1040,6 @@ fn parse_path(self: *@This()) !?*Ast {
         const parts_slice = try parts.toOwnedSlice();
         const path: AstTypes.Path = .{
             .parts = parts_slice,
-            .base = parts_slice[parts_slice.len - 1]
         };
         const out = Ast.create(.{ .path = path}, span);
         return try mem.createWith(self.gpa, out);
