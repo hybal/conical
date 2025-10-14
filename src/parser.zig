@@ -486,7 +486,6 @@ fn module_decl(self: *@This()) !*Ast {
             .path = path.?,
         };
         const out = Ast.create(.{.module_decl = node}, span);
-        self.context.module = path.?.node.path;
         return try mem.createWith(self.gpa, out);
     }
     return self.import_stmt();

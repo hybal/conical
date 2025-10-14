@@ -94,7 +94,8 @@ pub const Context = struct {
     source: []const u8,
     file_path: []const u8,
     session: diag.Session,
-    module: ?Ast.Path,
+    module: ?ModuleId,
+    module_store: *ModuleStore,
     //NOTE: eventually compiler flags will go here
 };
 

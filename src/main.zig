@@ -214,13 +214,18 @@ pub fn main() !u8 {
 
     var session = diag.Session.init(gpa, source);
     var type_map = try types.init_type_map(gpa); 
+    var module_store = types.ModuleStore {
+        .store = .init(gpa),
+        .lock = .{}
+    };
     var context = types.Context {
         .session = session,
         .source = source,
         .type_tab = type_map,
         .sym_tab = .init(gpa),
         .file_path = args[1],
-        .module = null
+        .module = null,
+        .module_store = &module_store,
     };
 
     var parser = parse.init(&context, gpa);
