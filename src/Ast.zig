@@ -279,42 +279,36 @@ pub const Ident = struct {
 pub const Path = struct {
     parts: []Ident,
 
-//    pub fn equals(self: *const @This(), other: *const @This()) bool {
-//        if (self.parts.len != other.parts.len) {
-//            return false;
-//        }
-//        for (self.parts, 0..) |part, i| {
-//            if (!part.equals(other.parts[i])) {
-//                return false;
-//            }
-//        }
-//        return true;
-//    }
-//
-//
-//    pub fn get_string(self: *const @This(), gpa: std.mem.Allocator) ![]const u8 {
-//        var out = std.ArrayList(u8).init(gpa);
-//        for (self.parts) |part| {
-//            try out.appendSlice(part.value);
-//            try out.appendSlice("::");
-//        }
-//        return try out.toOwnedSlice();
-//    }
-//
-//    pub fn hash(self: *const @This()) !u64 {
-//        var hasher = std.hash.Fnv1a_64.init();
-//        for (self.parts) |part| {
-//            hasher.update(part.value);
-//        }
-//        return hasher.final();
-//    }
-//
-//    pub fn from_path(allocator: std.mem.Allocator, major: @This(), base: Ident) !@This() {
-//        var out = std.ArrayList(Ident).init(allocator);
-//        try out.appendSlice(major.parts);
-//        try out.append(base);
-//        return try out.toOwnedSlice();
-//    }
+    pub fn equals(self: *const @This(), other: *const @This()) bool {
+        if (self.parts.len != other.parts.len) {
+            return false;
+        }
+        for (self.parts, 0..) |part, i| {
+            if (!part.equals(other.parts[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    pub fn get_string(self: *const @This(), gpa: std.mem.Allocator) ![]const u8 {
+        var out = std.ArrayList(u8).init(gpa);
+        for (self.parts) |part| {
+            try out.appendSlice(part.value);
+            try out.appendSlice("::");
+        }
+        return try out.toOwnedSlice();
+    }
+
+    pub fn hash(self: *const @This()) !u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        for (self.parts) |part| {
+            hasher.update(part.value);
+        }
+        return hasher.final();
+    }
+
 };
 
 //represents a function type

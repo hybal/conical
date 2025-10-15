@@ -54,7 +54,7 @@ pub const Module = struct {
     exports: std.HashMap(DefId, Symbol, std.hash_map.AutoContext(DefId), 80),
     path: Ast.Path,
     source_file: []const u8,
-    imports: []ModuleId,
+    imports: std.ArrayList(ModuleId),
     //TODO: add llvm or paths to object files once full compliation is done
     pub fn get_symbol(self: *@This(), defid: DefId) ?Symbol {
         if (self.symbols.get(defid)) |val| {

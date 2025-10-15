@@ -452,8 +452,6 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
             }
             out_node = .{ .inline_expr = .{ .terminal = try mem.createWith(self.allocator, terminal)}};
         },
-        .path => |_| {
-        },
         .unary_expr => |expr| {
             const expr_node = try self.lower_single(expr.expr);
             var op: Hir.UnaryOp = undefined;

@@ -1,4 +1,4 @@
-
+mod main;
 extern fn print();
 extern fn puts(value): []u8 -> i32;
 pub type Test = struct {

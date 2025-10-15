@@ -212,14 +212,13 @@ pub fn main() !u8 {
 
     source = try file.readToEndAlloc(gpa, std.math.maxInt(usize));
 
-    var session = diag.Session.init(gpa, source);
     var type_map = try types.init_type_map(gpa); 
     var module_store = types.ModuleStore {
         .store = .init(gpa),
         .lock = .{}
     };
     var context = types.Context {
-        .session = session,
+        .session = diag.Session.init(gpa, source),
         .source = source,
         .type_tab = type_map,
         .sym_tab = .init(gpa),
@@ -230,21 +229,21 @@ pub fn main() !u8 {
 
     var parser = parse.init(&context, gpa);
     const trees = parser.parse() catch |err| {
-        try session.flush(std.io.getStdErr().writer());
+        try context.session.flush(std.io.getStdErr().writer());
         return err;
     };
     var hir_context = try lower_hir.init(&context, gpa);
     const hir = hir_context.lower(trees) catch |err| {
-        try session.flush(std.io.getStdErr().writer());
+        try context.session.flush(std.io.getStdErr().writer());
         return err;
     };
 
     var sema_context = sema.init(&context, hir_context.hir_table, gpa);
     sema.analyze(&sema_context, hir) catch |err| {
-        try session.flush(std.io.getStdErr().writer());
+        try context.session.flush(std.io.getStdErr().writer());
         return err;
     };
-    try session.flush(std.io.getStdErr().writer());
+    try context.session.flush(std.io.getStdErr().writer());
 
     for (trees) |tree| {
         print_tree(&type_map, tree);

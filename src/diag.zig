@@ -57,20 +57,20 @@ pub const Session = struct {
     //FIXME: this is completely broken
     pub fn flush(self: *@This(), writer: anytype) !void {
         for (self.diags.items) |diag| {
-            const src_line = self.get_line(diag.span);
+            //const src_line = self.get_line(diag.span);
             const line, const col = self.get_loc(diag.span);
-            const caret_line, const print_line = try self.get_caret_line(src_line, diag.span);
+            //const caret_line, const print_line = try self.get_caret_line(src_line, diag.span);
             try writer.print(
-                "{s}{s} [{};{}]: {s}\x1b[0m\n    {s}\n    {s}{s}\x1b[0m\n",
+                "{s}{s} [{};{}]: {s}\x1b[0m\n    \n    \x1b[0m\n",
                 .{
                     diag.severity.get_color(),
                     @tagName(diag.severity),
                     line,
                     col,
                     diag.message,
-                    print_line,
-                    diag.severity.get_color(),
-                    caret_line,
+                    //print_line,
+                    //diag.severity.get_color(),
+                    //caret_line,
                 });
                     
         }

@@ -16,6 +16,7 @@ gpa: std.mem.Allocator,
 lexer: lex.Lexer,
 context: *types.Context,
 imports: std.ArrayList(AstTypes.Path),
+has_module: bool = false,
 
 
 /// Initialize the parser from an already existing Lexer isntance
@@ -74,6 +75,7 @@ fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
     }
 }
 
+//this is the first thing to be ran
 fn stmt(self: *@This()) anyerror!*Ast {
     return self.module_decl();
 }
@@ -475,6 +477,11 @@ fn module_decl(self: *@This()) !*Ast {
         .end = self.lexer.index,
     };
     if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_mod})) |key| {
+        if (self.has_module) {
+            span.merge(.{ .start = span.start, .end = self.lexer.index});
+            try self.context.session.emit(.Error, span, "There can only be one module per file");
+            return error.ModuleError;
+        }
         span.merge(key.span);
         const path = try self.parse_path();
         if (path == null) {
@@ -482,13 +489,24 @@ fn module_decl(self: *@This()) !*Ast {
             try self.context.session.emit(.Error, span, "Malformed module path");
             return error.MalformedModulePath;
         }
-        const node: AstTypes.ModuleDecl = .{
-            .path = path.?,
+        try self.expect(.semicolon);
+        const mod = types.Module {
+            .exports = .init(self.gpa),
+            .imports = .init(self.gpa),
+            .path = path.?.node.path,
+            .source_file = self.context.file_path,
         };
-        const out = Ast.create(.{.module_decl = node}, span);
-        return try mem.createWith(self.gpa, out);
+        const modid = mod.hash();
+        try self.context.module_store.put(modid, mod);
+        self.context.module = modid;
+        self.has_module = true;
     }
-    return self.import_stmt();
+    if (self.has_module) {
+        return self.import_stmt();
+    }
+    span.merge(.{.start= span.start, .end = self.lexer.index});
+    try self.context.session.emit(.Error, span, "Expected Module Decleration");
+    return error.ExpectedModule;
 }
 
 fn import_stmt(self: *@This()) !*Ast {
