@@ -72,6 +72,7 @@ pub const Module = struct {
 
 pub const ModuleStore = struct {
     store: std.AutoHashMap(ModuleId, Module),
+    trie: std.
     lock: std.Thread.RwLock.Impl,
 
     pub fn get(self: *@This(), modid: ModuleId) ?Module {
