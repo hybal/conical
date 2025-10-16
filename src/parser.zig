@@ -1045,6 +1045,7 @@ fn parse_path(self: *@This()) !?*Ast {
     if (self.lexer.consume_if_eq(&[_]types.Tag{.ident})) |fid| {
         span.merge(fid.span);
         var parts = std.ArrayList(AstTypes.Ident).init(self.gpa);
+        try parts.append(.{ .span = fid.span, .value = fid.span.get_string(self.lexer.buffer)});
         while (self.lexer.consume_if_eq(&[_]types.Tag{.colon2})) |tok| {
             span.merge(tok.span);
             if (self.lexer.consume_if_eq(&[_]types.Tag{.ident})) |id| {

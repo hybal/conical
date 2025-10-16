@@ -88,18 +88,18 @@ pub const Ident = struct {
     }
 };
 
-pub const Path = struct {
-    parts: []Ident,
-
-    pub fn hash(self: *const @This()) u64 {
-        var hasher = std.hash.Fnv1a_64.init();
-        for (self.parts) |part| {
-            hasher.update(part.value);
-            hasher.update(std.mem.asBytes(&part.location));
-        }
-        return hasher.final();
-    }
-};
+//pub const Path = struct {
+//    parts: []Ident,
+//
+//    pub fn hash(self: *const @This()) u64 {
+//        var hasher = std.hash.Fnv1a_64.init();
+//        for (self.parts) |part| {
+//            hasher.update(part.value);
+//            hasher.update(std.mem.asBytes(&part.location));
+//        }
+//        return hasher.final();
+//    }
+//};
 
 pub const Terminal = union(enum) {
     string_literal: []const u8, 

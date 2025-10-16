@@ -273,6 +273,12 @@ pub const Ident = struct {
         return true;
     }
 
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(self.value);
+        return hasher.final();
+    }
+
 };
 
 

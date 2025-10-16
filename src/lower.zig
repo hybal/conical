@@ -287,7 +287,7 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
 
         },
         .path => {
-
+           
         },
         else => {
             std.debug.print("Unhandled case: {s}\n", .{@tagName(ast.node)});
@@ -753,6 +753,20 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 out_node = .{ .inline_expr = .{
                     .terminal = try mem.createWith(self.allocator, terminal)
                 }};
+            },
+            .path => |pth| {
+                //TODO: add module resolution
+                if (pth.parts.len == 0) {
+                    std.debug.print("Parts is zero\n", .{});
+                }
+                const path = types.Path {
+                    .base = pth.parts[pth.parts.len - 1],
+                    .module = self.context.module.?,
+                };
+                const out = Hir.Terminal{
+                    .path = path.hash(),
+                };
+                out_node = .{ .inline_expr = .{ .terminal = try mem.createWith(self.allocator, out) } };
             },
             .if_stmt => |stmt| {
                 const branch: Hir.Branch = .{ 
