@@ -8,7 +8,7 @@ const sema = @import("sema.zig");
 const types = @import("types.zig");
 const diag = @import("diag.zig");
 const lower_hir = @import("lower.zig");
-
+const emit = @import("emit.zig");
 
 var source: []const u8 = "let a = 1;";
 
@@ -215,6 +215,10 @@ pub fn main() !u8 {
     var type_map = try types.init_type_map(gpa); 
     var module_store = types.ModuleStore {
         .store = .init(gpa),
+        .trie = .{
+            .children = .init(gpa),
+            .value = null,
+        },
         .lock = .{}
     };
     var context = types.Context {
@@ -249,5 +253,7 @@ pub fn main() !u8 {
         print_tree(&type_map, tree);
         std.debug.print("\n", .{});
     }
+
+
     return 0;
 }

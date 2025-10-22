@@ -9,7 +9,6 @@ pub const Symbol = struct {
     //name: []const u8,
     name: Ast.Ident,
     tyid: ?Ast.TypeId,
-    node: *Ast.Ast,
     qualifier: enum {
         Public,
         Private,
@@ -17,12 +16,15 @@ pub const Symbol = struct {
         Extern,
         Export,
     } = .Private,
-    scope: enum {
-        Local,
-        LocalEscapes,
-        Global,
-        Static,
-    } = .Local,
+    scope: SymbolScope = .Local,
+    path: Path,
+};
+
+pub const SymbolScope = enum {
+    Local,
+    LocalEscapes,
+    Global,
+    Static,
 };
 
 pub const SymbolTable = struct {
@@ -70,9 +72,15 @@ pub const Module = struct {
     }
 };
 
+
+pub const ModuleTrie = struct {
+    children: std.StringHashMap(ModuleTrie),
+    value: ?ModuleId, 
+};
+
 pub const ModuleStore = struct {
     store: std.AutoHashMap(ModuleId, Module),
-    trie: std.
+    trie: ModuleTrie,
     lock: std.Thread.RwLock.Impl,
 
     pub fn get(self: *@This(), modid: ModuleId) ?Module {

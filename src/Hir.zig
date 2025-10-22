@@ -244,7 +244,7 @@ pub const StructCons = struct {
 
 pub const Block = struct {
     body: []Hir,
-
+    scope: usize,
     pub fn hash(self: *const @This()) u64 {
         var hasher = std.hash.Fnv1a_64.init();
         for (self.body) |stmt| {

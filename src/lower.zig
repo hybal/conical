@@ -44,17 +44,26 @@ fn leave_scope(self: *@This()) void {
 }
 
 
-fn add_symbol(self: *@This(), symbol: types.Symbol) !void {
+fn add_symbol(self: *@This(), symbol: 
+    struct {tyid: ?Ast.TypeId, name: Ast.Ident, scope: types.SymbolScope = .Local}
+    ) !void {
     const path = types.Path {
         .base = symbol.name,
         .module = self.context.module.?,
     };
     const defid = path.hash();
-    _ = try self.def_table.getOrPutValue(symbol.name.value, defid);
+    const sym = types.Symbol {
+        .name = symbol.name,
+        .tyid = symbol.tyid,
+        .path = path,
+        .scope = symbol.scope,
+    };
     if (self.context.sym_tab.items[self.current_scope].symbol_map.contains(defid)) {
         return error.SymbolShadow;
     }
-    try self.context.sym_tab.items[self.current_scope].symbol_map.put(defid, symbol);
+    _ = try self.def_table.getOrPutValue(symbol.name.value, defid);
+    try self.context.sym_tab.items[self.current_scope].symbol_map.put(defid, sym);
+    std.debug.print("Added symbol: {s} at scope {}\n", .{ symbol.name.value, self.current_scope });
 }
 
 fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
@@ -113,7 +122,6 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                 self.add_symbol(.{
                     .tyid = decl.ty,
                     .name = decl.ident,
-                    .node = ast,
                     .scope = .Global,
                 }) catch {
                     return error.VariableShadowsPreviousDecleration;
@@ -124,7 +132,6 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                 self.add_symbol(.{
                     .tyid = fnctypeid,
                     .name = decl.ident,
-                    .node = ast,
                     .scope = .Global,
                 }) catch {
                     return error.FunctionShadowsPreviousDecleration;
@@ -134,7 +141,6 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                 self.add_symbol(.{
                     .tyid = decl.ty,
                     .name = decl.ident,
-                    .node = ast,
                     .scope = .Global,
                 }) catch {
                     return error.TypeShadowsPreviousDecleration;
@@ -154,13 +160,12 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
     switch (ast.node) {
         .var_decl => |decl| {
             if (!self.at_global_scope) {
-                self.add_symbol(.{
+                try self.add_symbol(.{
                     .name = decl.ident,
-                    .node = ast,
                     .tyid = decl.ty,
-                }) catch {
-                    return error.VariableShadowsPreviousDecleration;
-                };
+                }); 
+                std.debug.print("Current scope: {}\n", .{self.current_scope});
+                std.debug.assert(self.def_table.get(decl.ident.value) != null);
             } 
             if (decl.initialize) |var_init| {
                 try self.resolve_local_symbols(var_init);
@@ -170,7 +175,6 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
             if (!self.at_global_scope) {
                 self.add_symbol(.{
                     .name = decl.ident,
-                    .node = ast,
                     .tyid = try decl.hash(&self.context.type_tab, self.allocator),
                 }) catch {
                     return error.FunctionShadowsPreviousDecleration;
@@ -186,7 +190,6 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                 for (decl.params, 0..) |param_id, i| {
                     self.add_symbol(.{
                         .name = param_id,
-                        .node = ast,
                         .tyid = decl.param_types[i],
                         .scope = .LocalEscapes,
                     }) catch |err| {
@@ -208,7 +211,6 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
             if (!self.at_global_scope) {
                 self.add_symbol(.{
                     .name = decl.ident,
-                    .node = ast,
                     .tyid = decl.ty,
                 }) catch {
                     return error.TypeShadowsPreviousDecleration;
@@ -250,10 +252,7 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         .terminated => |expr| try self.resolve_local_symbols(expr),
         .terminal => |expr| {
             if (expr.tag == .ident) {
-                if (self.get_symbol(expr.span.get_string(self.context.source)) == null) {
-                    try self.context.session.emit(.Error, expr.span, "Unknown Identifier");
-                    return error.UnknownIdentifier;
-                }
+                unreachable;
             }
         },
         .if_stmt => |expr| {
@@ -286,8 +285,12 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         .unit => {
 
         },
-        .path => {
-           
+        .path => |path| {
+            const last = path.parts[path.parts.len - 1];
+            if (self.get_symbol(last.value) == null) {
+                try self.context.session.emit(.Error, last.span, "Unkown Identifier");
+                return error.UnkownIdentifier;
+            }
         },
         else => {
             std.debug.print("Unhandled case: {s}\n", .{@tagName(ast.node)});
@@ -604,9 +607,13 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 } else {
                     try out_block.append(hir);
                 }
+                const blck = Hir.Block {
+                    .body = try out_block.toOwnedSlice(),
+                    .scope = self.current_scope,
+                };
                 out_node = .{
                     .inline_expr = .{ 
-                        .block = try mem.createWith(self.allocator, Hir.Block{ .body = try out_block.toOwnedSlice()}),
+                        .block = try mem.createWith(self.allocator, blck),
                     }
                 };
             },
