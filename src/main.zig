@@ -254,6 +254,9 @@ pub fn main() !u8 {
         std.debug.print("\n", .{});
     }
 
+    var emit_context = try emit.init(&context, &hir_context.hir_table, "x86_64-pc-linux-gnu", gpa);
+    try emit_context.emit(hir);
+
 
     return 0;
 }

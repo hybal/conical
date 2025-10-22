@@ -11,7 +11,7 @@ llvm_context: struct {
     builder: llvm.Core.LLVMBuilderRef,
     context: llvm.Core.LLVMContextRef,
     target_machine: llvm.TargetMachine.LLVMTargetMachineRef,
-    target_date: llvm.Target.LLVMTargetDataRef,
+    target_data: llvm.Target.LLVMTargetDataRef,
     data_layout: llvm.TargetMachine.LLVMTargetDataRef,
     module: llvm.Core.LLVMModuleRef,
     current_function: llvm.Core.LLVMValueRef = null,
@@ -69,7 +69,7 @@ pub fn init(context: *types.Context, hir_info: *Hir.HirInfoTable, triple: [*]con
     return .{
         .llvm_context = .{
             .builder = builder,
-            .context = context,
+            .context = llvmcontext,
             .target_machine = target_machine,
             .target_data = target_data,
             .data_layout = data_layout,
@@ -77,8 +77,10 @@ pub fn init(context: *types.Context, hir_info: *Hir.HirInfoTable, triple: [*]con
             .pm = pm,
             .target_size = @intCast(llvm.Target.LLVMPointerSize(target_data) * 8),
         },
+        .context = context,
         .allocator = allocator,
         .hir_info_table = hir_info,
+        .llvm_id_table = .init(allocator),
     };
 }
 
@@ -89,7 +91,7 @@ pub fn emit(self: *@This(), hir: []Hir.Hir) !void {
     _ = llvm.TargetMachine.LLVMTargetMachineEmitToFile(
         self.llvm_context.target_machine, 
         @ptrCast(self.llvm_context.module), 
-        @ptrCast(try self.allocator.dupeZ(u8, self.comp_unit.out_file)), 
+        @ptrCast(try self.allocator.dupeZ(u8, std.fs.path.basename(self.context.file_path))), 
         llvm.TargetMachine.LLVMObjectFile, 
         &err
     );
@@ -119,7 +121,7 @@ fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
             var iter = strct.fields.valueIterator();
             var arr = std.ArrayList(llvm.Core.LLVMTypeRef).init(self.allocator);
             while (iter.next()) |next| {
-                const llvm_type = try self.createTypeRef(self.comp_unit.type_table.get(next.*).?);
+                const llvm_type = try self.createTypeRef(self.context.type_tab.get(next.*).?);
                 try arr.append(llvm_type);
             }
             const slc = try arr.toOwnedSlice();
@@ -130,7 +132,7 @@ fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
             var iter = enm.variants.valueIterator();
             while (iter.next()) |next| {
                 if (next.*) |nxt| {
-                    const nxt_ty = self.comp_unit.type_table.get(nxt).?;
+                    const nxt_ty = self.context.type_tab.get(nxt).?;
                     const llvm_ty = try self.createTypeRef(nxt_ty);
                     const size = llvm.Target.LLVMABISizeOfType(self.llvm_context.target_data, @ptrCast(llvm_ty));
                     if (size > max_size) max_size = size;
@@ -162,11 +164,11 @@ fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
         .func => |fnc| {
             var fnc_args = std.ArrayList(llvm.Core.LLVMTypeRef).init(self.allocator);
             for (fnc.args) |argid| {
-                const arg = self.comp_unit.type_table.get(argid).?;
+                const arg = self.context.type_tab.get(argid).?;
                 try fnc_args.append(try self.createTypeRef(arg));
             }
             const fnc_args_slice = try fnc_args.toOwnedSlice();
-            const ret_ty = try self.createTypeRef(self.comp_unit.type_table.get(fnc.ret).?);
+            const ret_ty = try self.createTypeRef(self.context.type_tab.get(fnc.ret).?);
             base_type = llvm.Core.LLVMFunctionType(ret_ty, @ptrCast(fnc_args_slice), @intCast(fnc_args_slice.len), 0);
         },
         else => unreachable,
@@ -197,7 +199,7 @@ fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
 fn lower_global(self: *@This(), hir: []Hir.Hir) !void {
     for (hir) |node| {
         const hir_info = self.hir_info_table.get(node.id).?;
-        const ty = self.context.type_tab(hir_info.ty.?).?;
+        const ty = self.context.type_tab.get(hir_info.ty.?).?;
         const llvm_ty = try self.createTypeRef(ty);
         _ = llvm_ty;
         switch (node.node) {
