@@ -212,7 +212,7 @@ pub fn main() !u8 {
 
     source = try file.readToEndAlloc(gpa, std.math.maxInt(usize));
 
-    var type_map = try types.init_type_map(gpa); 
+    const type_map = try types.init_type_map(gpa); 
     var module_store = types.ModuleStore {
         .store = .init(gpa),
         .trie = .{
@@ -250,7 +250,7 @@ pub fn main() !u8 {
     try context.session.flush(std.io.getStdErr().writer());
 
     for (trees) |tree| {
-        print_tree(&type_map, tree);
+        print_tree(&context.type_tab, tree);
         std.debug.print("\n", .{});
     }
 

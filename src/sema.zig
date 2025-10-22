@@ -31,10 +31,16 @@ pub fn init(context: *types.Context,
 }
 
 fn get_symbol(self: *@This(), defid: types.DefId) ?*types.Symbol {
-    var current: ?usize = self.current_scope;
-    while (current != null): (current = self.context.sym_tab.items[current.?].parent) {
-        if (self.context.sym_tab.items[current.?].symbol_map.contains(defid)) {
-            return self.context.sym_tab.items[current.?].symbol_map.getPtr(defid);
+    var current_scope = self.context.sym_tab.items[self.current_scope];
+    var exit = false;
+    while (!exit) {
+        if (current_scope.symbol_map.getPtr(defid)) |outsym| {
+            return outsym;
+        }
+        if (current_scope.parent) |parent| {
+            current_scope = self.context.sym_tab.items[parent];
+        } else {
+            exit = true;
         }
     }
     return null;
@@ -145,7 +151,21 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                             ty = Ast.Type.createPrimitive(get_float_type(f), null).hash();
                         },
                         .integer_literal => |i| {
-                            ty = Ast.Type.createPrimitive(get_int_type(i, false), null).hash();
+                            const int_type = get_int_type(i, false);
+                            if (self.expected_type) |expected_typeid| {
+                                const expected_type = self.context.type_tab.get(expected_typeid).?;
+                                if (expected_type.base_type == .primitive and
+                                    expected_type.base_type.primitive != int_type) {
+                                    if (expected_type.is_int()) {
+                                        ty = expected_typeid;
+                                    }
+                                } else {
+                                    try self.context.session.emit(.Error, hir_info.span, "Type mismatch");
+                                    return error.TypeMismatch;
+                                }
+                            } else {
+                                ty = Ast.Type.createPrimitive(get_int_type(i, false), null).hash();
+                            }
                         },
                         .path => |id| {
                             if (self.get_symbol(id)) |sym| {
@@ -308,13 +328,21 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         return error.TooFewArguments;
                     }
                     for (call.arguments, 0..) |exp, i| {
-                        const expr_ty = try self.type_check(exp);
+                        const expr_ty = try self.type_check_expect(exp, ty.base_type.func.args[i]);
                         if (i >= ty.base_type.func.args.len) {
                             try self.context.session.emit(.Error, hir_info.span,
                                 "Too many arguments passed to function");
                             return error.TooManyArguments;
                         }
                         if (expr_ty != ty.base_type.func.args[i]) {
+                            std.debug.print("Expected type: {s}\n", .{
+                                try self.context.type_tab.get(ty.base_type.func.args[i]).?
+                                    .get_string(&self.context.type_tab, self.gpa, self.context.source),
+                            });
+                            std.debug.print("Got type: {s}\n", .{
+                                try self.context.type_tab.get(expr_ty).?.get_string(&self.context.type_tab, self.gpa, self.context.source)
+                            });
+
                             try self.context.session.emit(.Error, hir_info.span,
                                 "Type mismatch in function argument");
                             return error.TypeMismatch;
@@ -406,8 +434,8 @@ fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId
             try std.fmt.allocPrint(self.gpa, "Type Mismatch, expected type: `{s}`, got: `{s}`",
                 .{try self.context.type_tab.get(expected_type).?
                     .get_string(&self.context.type_tab, self.gpa, self.context.source),
-                  try self.context.type_tab.get(actual_type).?
-                    .get_string(&self.context.type_tab, self.gpa, self.context.source)}));
+                    try self.context.type_tab.get(actual_type).?
+                        .get_string(&self.context.type_tab, self.gpa, self.context.source)}));
         return error.TypeMismatch;
     }
     return false;
@@ -487,17 +515,17 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
     if (expected.is_signed_int() 
         and actual.is_int()
         and expected.base_type.primitive.get_bits(64)
-           >= actual.base_type.primitive.get_bits(64)) {
+        >= actual.base_type.primitive.get_bits(64)) {
         try adjustments.append(.{ .NumericCast = expected_type });
     } else if (expected.is_unsigned_int()
         and actual.is_unsigned_int()
         and expected.base_type.primitive.get_bits(64)
-           >= actual.base_type.primitive.get_bits(64)) {
+        >= actual.base_type.primitive.get_bits(64)) {
         try adjustments.append(.{ .NumericCast = expected_type });
     } else if (expected.is_float()
         and (actual.is_int() or actual.is_float())
         and expected.base_type.primitive.get_bits(64)
-            >= actual.base_type.primitive.get_bits(64)) {
+        >= actual.base_type.primitive.get_bits(64)) {
         try adjustments.append(.{.NumericCast = expected_type});
     } else {
         return null;

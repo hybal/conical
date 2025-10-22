@@ -766,12 +766,9 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 if (pth.parts.len == 0) {
                     std.debug.print("Parts is zero\n", .{});
                 }
-                const path = types.Path {
-                    .base = pth.parts[pth.parts.len - 1],
-                    .module = self.context.module.?,
-                };
+                const pathid = self.get_symbol(pth.parts[pth.parts.len - 1].value).?.path.hash();
                 const out = Hir.Terminal{
-                    .path = path.hash(),
+                    .path = pathid,
                 };
                 out_node = .{ .inline_expr = .{ .terminal = try mem.createWith(self.allocator, out) } };
             },
