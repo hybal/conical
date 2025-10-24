@@ -300,9 +300,13 @@ pub const Path = struct {
 
     pub fn get_string(self: *const @This(), gpa: std.mem.Allocator) ![]const u8 {
         var out = std.ArrayList(u8).init(gpa);
-        for (self.parts) |part| {
-            try out.appendSlice(part.value);
-            try out.appendSlice("::");
+        if (self.parts.len == 1) {
+            try out.appendSlice(self.parts[0].value);
+        } else {
+            for (self.parts) |part| {
+                try out.appendSlice(part.value);
+                try out.appendSlice("::");
+            }
         }
         return try out.toOwnedSlice();
     }

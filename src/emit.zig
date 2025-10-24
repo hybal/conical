@@ -192,14 +192,18 @@ fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
             }
         },
         .func => |fnc| {
-            var fnc_args = std.ArrayList(llvm.Core.LLVMTypeRef).init(self.allocator);
+            var fnc_args = try std.ArrayList(llvm.Core.LLVMTypeRef).initCapacity(self.allocator, fnc.args.len);
             for (fnc.args) |argid| {
                 const arg = self.context.type_tab.get(argid).?;
                 try fnc_args.append(try self.createTypeRef(arg));
             }
             const fnc_args_slice = try fnc_args.toOwnedSlice();
             const ret_ty = try self.createTypeRef(self.context.type_tab.get(fnc.ret).?);
-            base_type = llvm.Core.LLVMFunctionType(ret_ty, @ptrCast(fnc_args_slice), @intCast(fnc_args_slice.len), 0);
+            base_type = llvm.Core.LLVMFunctionType(
+                ret_ty, 
+                fnc_args_slice.ptr, 
+                @intCast(fnc_args_slice.len), 
+            0);
         },
         else => unreachable,
     }
@@ -311,17 +315,15 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
 
                 },
                 .binding => |bind| {
-                    const var_ty = self.context.type_tab.get(hir_info.ty.?).?;
-                    const llvm_var_ty = try self.createTypeRef(var_ty);
-                    const val_ref = try self.lower_local(bind.expr);
                     if (bind.is_mutable) {
                         const name = try self.gen_name("tmp");
                         const value_ref = llvm.Core.LLVMBuildAlloca(
                             self.llvm_context.builder,
-                            llvm_var_ty,
+                            llvm_ty,
                             name,
                         );
                         try self.add_llvm_symbol(bind.id, value_ref);
+                        const val_ref = try self.lower_local(bind.expr);
                         const store = llvm.Core.LLVMBuildStore(
                             self.llvm_context.builder,
                             val_ref,
@@ -329,12 +331,15 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                         );
                         return store;
                     }
-                    std.debug.print("DEBUG BINDING: {}\n", .{bind.id});
+                    const val_ref = try self.lower_local(bind.expr);
                     try self.add_llvm_symbol(bind.id, val_ref);
                     return val_ref;
 
                 },
-                else => return null,
+                .terminated => |expr| {
+                    return try self.lower_local(expr.*);
+                },
+                else => unreachable,
             }
         },
         .inline_expr => {
@@ -363,7 +368,6 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                         .path => |val| {
                             const sym = self.get_symbol(val).?;
                             _ = sym;
-                            std.debug.print("DEBUG PATH: {}\n", .{val});
                             return self.get_llvm_symbol(val);
                         },
                         else => |unknown| {

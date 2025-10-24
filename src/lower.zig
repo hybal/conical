@@ -63,7 +63,6 @@ fn add_symbol(self: *@This(), symbol:
     }
     _ = try self.def_table.getOrPutValue(symbol.name.value, defid);
     try self.context.sym_tab.items[self.current_scope].symbol_map.put(defid, sym);
-    std.debug.print("Added symbol: {s} at scope {}\n", .{ symbol.name.value, self.current_scope });
 }
 
 fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
@@ -164,8 +163,6 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
                     .name = decl.ident,
                     .tyid = decl.ty,
                 }); 
-                std.debug.print("Current scope: {}\n", .{self.current_scope});
-                std.debug.assert(self.def_table.get(decl.ident.value) != null);
             } 
             if (decl.initialize) |var_init| {
                 try self.resolve_local_symbols(var_init);

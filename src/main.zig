@@ -56,50 +56,50 @@ pub fn print_type(type_map: *types.TypeTbl, tyid: ast.TypeId) void {
         },
     }
 }
-fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
+fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) !void {
     if (node == null) return;
     switch (node.?.node) {
         .terminal => |term| {
             std.debug.print("{s} ", .{term.span.get_string(source)});
         },
         .param_list => |ls| {
-            print_tree(type_map, ls.left);
+            try print_tree(type_map, ls.left);
             std.debug.print("(", .{});
             for (ls.params) |param| {
-                print_tree(type_map, param);
+                try print_tree(type_map, param);
                 std.debug.print(",", .{});
             }
             std.debug.print(")", .{});
         },
         .cast => |expr| {
-            print_tree(type_map, expr.expr);
+            try print_tree(type_map, expr.expr);
             std.debug.print("as ", .{});
             print_type(type_map, expr.ty);
         },
         .binary_expr => |expr| {
-            print_tree(type_map, expr.left);
+            try print_tree(type_map, expr.left);
             std.debug.print("{s} ", .{expr.op.span.get_string(source)});
-            print_tree(type_map, expr.right);
+            try print_tree(type_map, expr.right);
         },
         .unary_expr => |expr| {
             std.debug.print("{s} ", .{expr.op.span.get_string(source)});
-            print_tree(type_map, expr.expr);
+            try print_tree(type_map, expr.expr);
         },
         .block => |blk| {
             std.debug.print("{{\n", .{});
             for (blk.exprs) |expr| {
                 std.debug.print("    ", .{});
-                print_tree(type_map, expr);
+                try print_tree(type_map, expr);
                 std.debug.print("\n", .{});
             }
             std.debug.print("}}\n", .{});
         },
         .ternary => |expr| {
-            print_tree(type_map, expr.condition);
+            try print_tree(type_map, expr.condition);
             std.debug.print(" ? ", .{});
-            print_tree(type_map, expr.true_path);
+            try print_tree(type_map, expr.true_path);
             std.debug.print(" : ", .{});
-            print_tree(type_map, expr.false_path);
+            try print_tree(type_map, expr.false_path);
         },
         .var_decl => |decl| {
             std.debug.print("{s} ", .{if (decl.is_mut) "mut" else "let"});
@@ -110,28 +110,28 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             }
             if (decl.initialize) |init| {
                 std.debug.print("= ", .{});
-                print_tree(type_map, init);
+                try print_tree(type_map, init);
                 std.debug.print(";\n", .{});
             }
         },
         .assignment => |expr| {
-            print_tree(type_map, expr.lvalue);
+            try print_tree(type_map, expr.lvalue);
             std.debug.print(" {s} ", .{expr.op.span.get_string(source)});
-            print_tree(type_map, expr.expr);
+            try print_tree(type_map, expr.expr);
         },
         .if_stmt => |stmt| {
             std.debug.print("if ", .{});
-            print_tree(type_map, stmt.condition);
-            print_tree(type_map, stmt.block);
+            try print_tree(type_map, stmt.condition);
+            try print_tree(type_map, stmt.block);
             if (stmt.else_block) |eblk| {
                 std.debug.print("else ", .{});
-                print_tree(type_map, eblk);
+                try print_tree(type_map, eblk);
             }
         },
         .while_loop => |loop| {
             std.debug.print("while ", .{});
-            print_tree(type_map, loop.condition);
-            print_tree(type_map, loop.block);
+            try print_tree(type_map, loop.condition);
+            try print_tree(type_map, loop.block);
         },
         .fn_decl => |fnc| {
             std.debug.print("fn ", .{});
@@ -147,17 +147,17 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             }
             std.debug.print(") -> ", .{});
             print_type(type_map, fnc.return_ty);
-            print_tree(type_map, fnc.body);
+            try print_tree(type_map, fnc.body);
         },
         .terminated => |expr| {
-            print_tree(type_map, expr);
+            try print_tree(type_map, expr);
             std.debug.print("; ", .{});
         },
         .fn_call => |expr| {
-            print_tree(type_map, expr.left);
+            try print_tree(type_map, expr.left);
             std.debug.print("(", .{});
             for (expr.params) |arg| {
-                print_tree(type_map, arg);
+                try print_tree(type_map, arg);
                 std.debug.print(", ", .{});
             }
             std.debug.print(")", .{});
@@ -173,21 +173,24 @@ fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) void {
             var iter = val.fields.iterator();
             while (iter.next()) |entry| {
                 std.debug.print("{s}: ", .{entry.key_ptr.*});
-                print_tree(type_map, entry.value_ptr.*);
+                try print_tree(type_map, entry.value_ptr.*);
                 std.debug.print(", ", .{});
             }
             std.debug.print(" }}", .{});
         },
         .return_stmt => |stmt| {
             std.debug.print("return ", .{});
-            print_tree(type_map,stmt);
+            try print_tree(type_map,stmt);
         },
         .access_operator => |exp| {
-            print_tree(type_map, exp.left);
+            try print_tree(type_map, exp.left);
             std.debug.print(".{s}", .{exp.right.value});
         },
         .unit => {
             std.debug.print("()", .{});
+        },
+        .path => |path| {
+            std.debug.print("{s}", .{try path.get_string(std.heap.page_allocator)});
         },
         else => |thing| std.debug.print("unknown: {any}\n", .{thing}),
     }
@@ -250,7 +253,7 @@ pub fn main() !u8 {
     try context.session.flush(std.io.getStdErr().writer());
 
     for (trees) |tree| {
-        print_tree(&context.type_tab, tree);
+        try print_tree(&context.type_tab, tree);
         std.debug.print("\n", .{});
     }
 
