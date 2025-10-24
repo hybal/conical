@@ -104,6 +104,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         const saved_type_expect = self.expected_type;
                         self.expected_type = null;
                         hir_info.ty = try self.type_check(bind.expr);
+                        self.get_symbol(bind.id).?.tyid = hir_info.ty;
                         self.expected_type = saved_type_expect;
                     }
                 },
