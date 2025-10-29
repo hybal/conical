@@ -70,21 +70,33 @@ fn add_symbol(self: *@This(), symbol:
 }
 
 fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
-    const defid = self.def_table.get(self.current_scope).?.get(name);
-    if (defid) |dfid| {
-        var current_scope = self.context.sym_tab.items[self.current_scope];
-        var exit = false;
-        while (!exit) {
-            if (current_scope.symbol_map.get(dfid)) |outsym| {
-                return outsym;
-            }
-            if (current_scope.parent) |parent| {
-                current_scope = self.context.sym_tab.items[parent];
+    var current_scope = self.context.sym_tab.items[self.current_scope];
+    var current_scope_id = self.current_scope;
+    var exit = false;
+    while (!exit) {
+        var dfid: usize = undefined;
+        if (self.def_table.get(current_scope_id)) |def_table| {
+            if (def_table.get(name)) |def| {
+                dfid = def;
             } else {
-                exit = true;
+                if (current_scope.parent) |parent| {
+                    current_scope = self.context.sym_tab.items[parent];
+                    current_scope_id = parent;
+                } else {
+                    exit = true;
+                }
+                continue;
             }
         }
-        return null;
+        if (current_scope.symbol_map.get(dfid)) |outsym| {
+            return outsym;
+        }
+        if (current_scope.parent) |parent| {
+            current_scope = self.context.sym_tab.items[parent];
+            current_scope_id = parent;
+        } else {
+            exit = true;
+        }
     }
     return null;
 }

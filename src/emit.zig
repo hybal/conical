@@ -66,7 +66,7 @@ pub fn init(context: *types.Context, hir_info: *Hir.HirInfoTable, triple: [*]con
         llvm.TargetMachine.LLVMCodeModelDefault,
     );
 
-    const llvmcontext = llvm.Core.LLVMGetGlobalContext();
+    const llvmcontext = llvm.Core.LLVMContextCreate();
     const builder = llvm.Core.LLVMCreateBuilderInContext(llvmcontext);
     const data_layout = llvm.TargetMachine.LLVMCreateTargetDataLayout(target_machine);
     const layout_str = llvm.TargetMachine.LLVMCopyStringRepOfTargetData(data_layout);
@@ -113,25 +113,23 @@ fn get_symbol(self: *@This(), defid: types.DefId) ?types.Symbol {
 
 pub fn emit(self: *@This(), hir: []Hir.Hir) !void {
     try self.lower_global(hir);
-    self.at_global = false;
     for (hir) |node| {
         _ = try self.lower_local(node);
     }
 
     llvm.Core.LLVMDumpModule(self.llvm_context.module);
-    //var err: [*c]u8 = (try self.allocator.alloc(u8, 5000)).ptr;
-    //const target_machine = self.llvm_context.target_machine;
-    //const module = self.llvm_context.module;
+    var err: [*c]u8 = (try self.allocator.alloc(u8, 5000)).ptr;
+    const target_machine = self.llvm_context.target_machine;
+    const module = self.llvm_context.module;
     //const file_name = try to_zstring(std.fs.path.basename(self.context.file_path), self.allocator);
-    //const object_file = llvm.TargetMachine.LLVMObjectFile;
-    //_ = llvm.TargetMachine.LLVMTargetMachineEmitToFile(
-    //    target_machine, 
-    //    @ptrCast(module), 
-    //    file_name,
-    //    object_file, 
-    //    &err
-    //);
-    //std.debug.print("DEBUG: {s}\n", .{err});
+    const object_file = llvm.TargetMachine.LLVMObjectFile;
+    _ = llvm.TargetMachine.LLVMTargetMachineEmitToFile(
+        target_machine, 
+        @ptrCast(module), 
+        "test.o",
+        object_file, 
+        &err
+    );
 }
 
 fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
@@ -139,7 +137,7 @@ fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
     switch (ty.base_type) {
         .primitive => |prim| {
             switch (prim) {
-                .I8, .U8, .Rune=>  base_type = llvm.Core.LLVMInt8TypeInContext(self.llvm_context.context),
+                .I8, .U8, .Rune =>  base_type = llvm.Core.LLVMInt8TypeInContext(self.llvm_context.context),
                 .I16, .U16 => base_type = llvm.Core.LLVMInt16TypeInContext(self.llvm_context.context),
                 .I32, .U32=> base_type = llvm.Core.LLVMInt32TypeInContext(self.llvm_context.context),
                 .I64, .U64 => base_type = llvm.Core.LLVMInt64TypeInContext(self.llvm_context.context),
@@ -252,6 +250,7 @@ fn lower_global(self: *@This(), hir: []Hir.Hir) !void {
                     .func => |decl| {
                         const ident = self.get_symbol(decl.id).?.name;
                         const name = try to_zstring(ident.value, self.allocator);
+                        std.debug.print("DEBUG: Function name: {s}\n", .{ name});
                         const fnc_ty = self.context.type_tab.get(decl.ty).?;
                         const llvm_fnc_ty = try self.createTypeRef(fnc_ty);
                         const llvm_func_ref = llvm.Core.LLVMAddFunction(
@@ -263,6 +262,12 @@ fn lower_global(self: *@This(), hir: []Hir.Hir) !void {
                             llvm.Core.LLVMSetLinkage(
                                 llvm_func_ref,
                                 llvm.Core.LLVMExternalLinkage,
+                            );
+                        }
+                        if (decl.is_public) {
+                            llvm.Core.LLVMSetLinkage(
+                                llvm_func_ref,
+                                llvm.Core.LLVMExternalLinkage
                             );
                         }
                         try self.add_llvm_symbol(decl.id, llvm_func_ref);
@@ -324,7 +329,7 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                         const entry = llvm.Core.LLVMAppendBasicBlockInContext(
                             self.llvm_context.context,
                             llvm_id,
-                            "entry"
+                            try self.gen_name("entry"),
                         );
                         llvm.Core.LLVMPositionBuilderAtEnd(
                             self.llvm_context.builder,
@@ -334,7 +339,7 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                         self.current_scope_id = saved_scope;
                         return out;
                     }
-                    return null;
+                    return llvm_id;
 
                 },
                 .binding => |bind| {
@@ -487,11 +492,14 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                 },
                 .block => |expr| {
                     const prev_scope_id = self.current_scope_id;
+                    const prev_at_global = self.at_global;
+                    self.at_global = false;
                     self.current_scope_id = expr.scope;
                     for (expr.body) |body_node| {
                         _ = try self.lower_local(body_node);
                     }
                     self.current_scope_id = prev_scope_id;
+                    self.at_global = prev_at_global;
                     return null;
                 },
                 .fn_call => |call| {

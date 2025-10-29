@@ -297,6 +297,7 @@ fn try_decl_mod(self: *@This()) !?AstTypes.GlobalDeclMod {
 // NOTE: This may be changed to the more common inline style
 // fn_decl = decl_mod? fn_mod? "fn" ident "(" param* ")" (":" "(" (type ",") | type ")" )? ("->" type)? block?
 fn fn_decl(self: *@This()) !*Ast {
+    std.debug.print("fn_decl\n", .{});
     self.lexer.skip_whitespace();
     var decl_mod: ?AstTypes.GlobalDeclMod = null;
     var fn_mod: ?AstTypes.FnModifier = null;
@@ -347,6 +348,7 @@ fn fn_decl(self: *@This()) !*Ast {
                 while (!self.lexer.is_next_token(.close_paren)) {
                     const param_ty = try self.parse_type();
                     const param_tyid = param_ty.hash();
+                    std.debug.print("DEBUG: ptyid: {}\n", .{param_tyid});
                     _ = try self.context.type_tab.getOrPutValue(param_tyid, param_ty);
                     try param_types.append(param_tyid);
                     if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {
