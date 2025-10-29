@@ -61,17 +61,16 @@ fn add_symbol(self: *@This(), symbol:
     if (self.context.sym_tab.items[self.current_scope].symbol_map.contains(defid)) {
         return error.SymbolShadow;
     }
-    std.debug.print("DEBUG: new symbol: {s}, old symbol: {?s}\n",
-        .{
-            symbol.name.value,
-            self.def_table.getKey(symbol.name.value)
-        });
-    try self.def_table.putNoClobber(symbol.name.value, defid);
+
+    if (!self.def_table.contains(self.current_scope)) {
+        try self.def_table.put(self.current_scope, .init(self.allocator));
+    }
+    try self.def_table.getPtr(self.current_scope).?.put(symbol.name.value, defid);
     try self.context.sym_tab.items[self.current_scope].symbol_map.put(defid, sym);
 }
 
 fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
-    const defid = self.def_table.get(name);
+    const defid = self.def_table.get(self.current_scope).?.get(name);
     if (defid) |dfid| {
         var current_scope = self.context.sym_tab.items[self.current_scope];
         var exit = false;
@@ -88,6 +87,10 @@ fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
         return null;
     }
     return null;
+}
+
+fn get_defid(self: *@This(), name: []const u8) ?types.DefId {
+    return self.def_table.get(self.current_scope).?.get(name);
 }
 
 
@@ -290,7 +293,9 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
         .path => |path| {
             const last = path.parts[path.parts.len - 1];
             if (self.get_symbol(last.value) == null) {
-                try self.context.session.emit(.Error, last.span, "Unkown Identifier");
+                const err_msg = try std.fmt.allocPrint(self.allocator,
+                    "Unknown Identifier: {s}", .{last.value});
+                try self.context.session.emit(.Error, last.span, err_msg);
                 return error.UnkownIdentifier;
             }
         },
@@ -665,7 +670,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 fnc_ty.chash = fnc_ty_hash;
                 try self.context.type_tab.put(fnc_ty_hash, fnc_ty);
                 const fnc: Hir.Fn = .{
-                    .id = self.def_table.get(decl.ident.value).?,
+                    .id = self.get_defid(decl.ident.value).?,
                     .body = body,
                     .return_type = decl.return_ty,
                     .ty = fnc_ty_hash,
@@ -679,7 +684,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
             },
             .type_decl => |decl| {
                 const tydecl = Hir.TypeDecl {
-                    .id = self.def_table.get(decl.ident.value).?,
+                    .id = self.get_defid(decl.ident.value).?,
                     .is_extern = false,
                     .is_pub = false,
                     .tyid = decl.ty
@@ -688,7 +693,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
             },
             .var_decl => |decl| {
                 const out: Hir.Binding = .{
-                    .id = self.def_table.get(decl.ident.value).?,
+                    .id = self.get_defid(decl.ident.value).?,
                     .ty = decl.ty,
                     .is_mutable = decl.is_mut,
                     .expr = try self.lower_single(decl.initialize.?),

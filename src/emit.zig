@@ -266,6 +266,16 @@ fn lower_global(self: *@This(), hir: []Hir.Hir) !void {
                             );
                         }
                         try self.add_llvm_symbol(decl.id, llvm_func_ref);
+                        for (decl.parameters, 0..) |param, i| {
+                            const path = types.Path {
+                                .base = .{ .value = param.id.value, .span = param.id.location },
+                                .module = self.context.module.?,
+                            };
+                            try self.add_llvm_symbol(
+                                path.hash(),
+                                llvm.Core.LLVMGetParam(llvm_func_ref, @intCast(i))
+                            );
+                        }
                     },
                     else => return,
                 }
