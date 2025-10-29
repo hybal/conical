@@ -27,6 +27,7 @@ pub const SymbolScope = enum {
     Static,
 };
 
+//NOTE: in future versions symbols should be single integers where it is a combination of the scopeid and the hash of the symbol, that way it can be a flat table instead of a tree
 pub const SymbolTable = struct {
     symbol_map: std.HashMap(DefId, Symbol, std.hash_map.AutoContext(DefId), 80),
     parent: ?usize,

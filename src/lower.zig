@@ -7,7 +7,7 @@ const mem = @import("mem.zig");
 
 
 allocator: std.mem.Allocator,
-def_table: std.StringHashMap(types.DefId),
+def_table: std.AutoHashMap(usize, std.StringHashMap(types.DefId)),
 hir_table: Hir.HirInfoTable,
 context: *types.Context,
 in_function: bool = false,
@@ -61,7 +61,12 @@ fn add_symbol(self: *@This(), symbol:
     if (self.context.sym_tab.items[self.current_scope].symbol_map.contains(defid)) {
         return error.SymbolShadow;
     }
-    _ = try self.def_table.getOrPutValue(symbol.name.value, defid);
+    std.debug.print("DEBUG: new symbol: {s}, old symbol: {?s}\n",
+        .{
+            symbol.name.value,
+            self.def_table.getKey(symbol.name.value)
+        });
+    try self.def_table.putNoClobber(symbol.name.value, defid);
     try self.context.sym_tab.items[self.current_scope].symbol_map.put(defid, sym);
 }
 
@@ -645,11 +650,25 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                         }
                     }
                 }
+                var fnc_ty: Ast.Type = .{
+                    .base_type = .{
+                        .func = .{
+                            .args = decl.param_types,
+                            .ret = decl.return_ty,
+                        }
+                    },
+                    .modifiers = null,
+                    .chash = null,
+                };
 
+                const fnc_ty_hash = fnc_ty.hash();
+                fnc_ty.chash = fnc_ty_hash;
+                try self.context.type_tab.put(fnc_ty_hash, fnc_ty);
                 const fnc: Hir.Fn = .{
                     .id = self.def_table.get(decl.ident.value).?,
                     .body = body,
                     .return_type = decl.return_ty,
+                    .ty = fnc_ty_hash,
                     .parameters = @ptrCast(try params.toOwnedSlice()),
                     .is_public = is_public,
                     .is_extern = is_extern,

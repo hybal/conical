@@ -268,6 +268,7 @@ pub const Fn = struct {
     id: DefId,
     parameters: []struct { id: Ident, ty: Ast.TypeId },
     return_type: Ast.TypeId,
+    ty: Ast.TypeId,
     is_public: bool,
     is_extern: bool,
     is_export: bool,

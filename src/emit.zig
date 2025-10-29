@@ -57,7 +57,7 @@ pub fn init(context: *types.Context, hir_info: *Hir.HirInfoTable, triple: [*]con
         return error.LLVMTargetFailed;
     }
     const target_machine = llvm.TargetMachine.LLVMCreateTargetMachine(
-        target.?,
+        target,
         triple,
         "generic",
         "",
@@ -66,15 +66,17 @@ pub fn init(context: *types.Context, hir_info: *Hir.HirInfoTable, triple: [*]con
         llvm.TargetMachine.LLVMCodeModelDefault,
     );
 
-    const llvmcontext = llvm.Core.LLVMContextCreate();
+    const llvmcontext = llvm.Core.LLVMGetGlobalContext();
     const builder = llvm.Core.LLVMCreateBuilderInContext(llvmcontext);
     const data_layout = llvm.TargetMachine.LLVMCreateTargetDataLayout(target_machine);
     const layout_str = llvm.TargetMachine.LLVMCopyStringRepOfTargetData(data_layout);
-    defer llvm.Core.LLVMDisposeMessage(layout_str);
+    //defer llvm.Core.LLVMDisposeMessage(layout_str);
     const module = llvm.Core.LLVMModuleCreateWithNameInContext("main", llvmcontext);
     const target_data = llvm.Target.LLVMCreateTargetData(layout_str);
     const pm = llvm.Core.LLVMCreateFunctionPassManagerForModule(module);
     llvm.Core.LLVMSetTarget(module, triple);
+    llvm.Core.LLVMSetDataLayout(module, layout_str);
+    llvm.Core.LLVMDisposeMessage(layout_str);
     return .{
         .llvm_context = .{
             .builder = builder,
@@ -117,14 +119,19 @@ pub fn emit(self: *@This(), hir: []Hir.Hir) !void {
     }
 
     llvm.Core.LLVMDumpModule(self.llvm_context.module);
-    var err: [*c]u8 = null;
-    _ = llvm.TargetMachine.LLVMTargetMachineEmitToFile(
-        self.llvm_context.target_machine, 
-        @ptrCast(self.llvm_context.module), 
-        try to_zstring(std.fs.path.basename(self.context.file_path), self.allocator),
-        llvm.TargetMachine.LLVMObjectFile, 
-        &err
-    );
+    //var err: [*c]u8 = (try self.allocator.alloc(u8, 5000)).ptr;
+    //const target_machine = self.llvm_context.target_machine;
+    //const module = self.llvm_context.module;
+    //const file_name = try to_zstring(std.fs.path.basename(self.context.file_path), self.allocator);
+    //const object_file = llvm.TargetMachine.LLVMObjectFile;
+    //_ = llvm.TargetMachine.LLVMTargetMachineEmitToFile(
+    //    target_machine, 
+    //    @ptrCast(module), 
+    //    file_name,
+    //    object_file, 
+    //    &err
+    //);
+    //std.debug.print("DEBUG: {s}\n", .{err});
 }
 
 fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
@@ -238,16 +245,19 @@ fn lower_global(self: *@This(), hir: []Hir.Hir) !void {
         const hir_info = self.hir_info_table.get(node.id).?;
         const ty = self.context.type_tab.get(hir_info.ty.?).?;
         const llvm_ty = try self.createTypeRef(ty);
+        _ = llvm_ty;
         switch (node.node) {
             .top_level => {
                 switch (node.node.top_level) {
                     .func => |decl| {
                         const ident = self.get_symbol(decl.id).?.name;
                         const name = try to_zstring(ident.value, self.allocator);
+                        const fnc_ty = self.context.type_tab.get(decl.ty).?;
+                        const llvm_fnc_ty = try self.createTypeRef(fnc_ty);
                         const llvm_func_ref = llvm.Core.LLVMAddFunction(
                             self.llvm_context.module,
                             name,
-                            llvm_ty,
+                            llvm_fnc_ty,
                         );
                         if (decl.is_extern) {
                             llvm.Core.LLVMSetLinkage(
@@ -278,10 +288,13 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                     if (!self.at_global) {
                         const ident = self.get_symbol(func.id).?.name;
                         const name = try to_zstring(ident.value, self.allocator);
+                        const fnc_ty = self.context.type_tab.get(func.ty).?;
+                        const llvm_fnc_ty = try self.createTypeRef(fnc_ty);
+
                         const llvm_func_ref = llvm.Core.LLVMAddFunction(
                             self.llvm_context.module,
                             name,
-                            llvm_ty,
+                            llvm_fnc_ty,
                         );
                         if (func.is_extern) {
                             llvm.Core.LLVMSetLinkage(
@@ -338,6 +351,10 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                 },
                 .terminated => |expr| {
                     return try self.lower_local(expr.*);
+                },
+                .return_stmt => |stmt| {
+                    const ret_expr = try self.lower_local(stmt.expr);
+                    return llvm.Core.LLVMBuildRet(self.llvm_context.builder, ret_expr);
                 },
                 else => unreachable,
             }
