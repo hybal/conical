@@ -297,7 +297,6 @@ fn try_decl_mod(self: *@This()) !?AstTypes.GlobalDeclMod {
 // NOTE: This may be changed to the more common inline style
 // fn_decl = decl_mod? fn_mod? "fn" ident "(" param* ")" (":" "(" (type ",") | type ")" )? ("->" type)? block?
 fn fn_decl(self: *@This()) !*Ast {
-    std.debug.print("fn_decl\n", .{});
     self.lexer.skip_whitespace();
     var decl_mod: ?AstTypes.GlobalDeclMod = null;
     var fn_mod: ?AstTypes.FnModifier = null;

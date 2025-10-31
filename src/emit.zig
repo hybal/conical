@@ -204,6 +204,7 @@ fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
             }
             const fnc_args_slice = try fnc_args.toOwnedSlice();
             const ret_ty = try self.createTypeRef(self.context.type_tab.get(fnc.ret).?);
+            std.debug.print("DEBUG A: {s}\n", .{ try fnc.get_string(&self.context.type_tab, self.allocator, self.context.source) });
             base_type = llvm.Core.LLVMFunctionType(
                 ret_ty, 
                 fnc_args_slice.ptr, 
@@ -510,15 +511,17 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                     var args = try std.ArrayList(llvm.Core.LLVMValueRef)
                         .initCapacity(self.allocator, call.arguments.len);
                     for (call.arguments) |arg| {
+                        std.debug.print("DEBUG: added argument\n", .{});
                         try args.append(try self.lower_local(arg));
                     }
-                    const name = try self.gen_name("tmp");
+                    const name = try self.gen_name("tcll");
+
                     const llvm_call = llvm.Core.LLVMBuildCall2(
                         self.llvm_context.builder,
                         llvm_fn_type,
                         fn_value,
                         (try args.toOwnedSlice()).ptr,
-                        @intCast(args.items.len),
+                        @intCast(args.items.len + 1),
                         name
                     );
                     return llvm_call;

@@ -727,8 +727,9 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 for (expr.params) |param| {
                     try args.append(try self.lower_single(param));
                 }
+                const left = try self.lower_single(expr.left);
                 const out: Hir.FnCall = .{
-                    .expr = try self.lower_single(expr.left),
+                    .expr = left,
                     .arguments = try args.toOwnedSlice(),
                 };
                 out_node = .{ .inline_expr = .{ .fn_call = try mem.createWith(self.allocator, out)}};

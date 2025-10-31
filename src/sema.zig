@@ -139,17 +139,18 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
         .inline_expr => |node| {
             switch (node) {
                 .terminal => |term| {
-                    var ty: Ast.TypeId = Ast.Type.createPrimitive(.Unit, null).hash();
+                    var ty: Ast.Type = Ast.Type.createPrimitive(.Unit, null);
+                    var tyid: ?Ast.TypeId = null;
                     switch (term.*) {
-                        .bool_literal => ty = Ast.Type.createPrimitive(.Bool, null).hash(),
+                        .bool_literal => ty = Ast.Type.createPrimitive(.Bool, null),
                         .char_literal => |v| {
                             ty = switch (v) {
-                                0...255 => Ast.Type.createPrimitive(.U8, null).hash(),
-                                else => Ast.Type.createPrimitive(.I32, null).hash(),
+                                0...255 => Ast.Type.createPrimitive(.U8, null),
+                                else => Ast.Type.createPrimitive(.I32, null),
                             };
                         },
                         .float_literal => |f| {
-                            ty = Ast.Type.createPrimitive(get_float_type(f), null).hash();
+                            ty = Ast.Type.createPrimitive(get_float_type(f), null);
                         },
                         .integer_literal => |i| {
                             const int_type = get_int_type(i, false);
@@ -158,19 +159,19 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                                 if (expected_type.base_type == .primitive and
                                     expected_type.base_type.primitive != int_type) {
                                     if (expected_type.is_int()) {
-                                        ty = expected_typeid;
+                                        tyid = expected_typeid;
                                     }
                                 } else {
                                     try self.context.session.emit(.Error, hir_info.span, "Type mismatch");
                                     return error.TypeMismatch;
                                 }
                             } else {
-                                ty = Ast.Type.createPrimitive(get_int_type(i, false), null).hash();
+                                ty = Ast.Type.createPrimitive(get_int_type(i, false), null);
                             }
                         },
                         .path => |id| {
                             if (self.get_symbol(id)) |sym| {
-                                ty = sym.tyid.?;
+                                tyid = sym.tyid.?;
                             } else {
                                 try self.context.session.emit(.Error, hir_info.span, "Unknown Identifier");
                                 return error.UnknownIdentifier;
@@ -178,8 +179,8 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         },
                         .string_literal => {
                             var mods = std.ArrayList(Ast.TypeModifier).init(self.gpa);
-                            try mods.append(.Slice);
-                            ty = Ast.Type.createPrimitive(.U8, try mods.toOwnedSlice()).hash();
+                            try mods.append(.Ref);
+                            ty = Ast.Type.createPrimitive(.U8, try mods.toOwnedSlice());
                         },
                         .unit => {},
                         .type_literal => {
@@ -187,10 +188,14 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                             unreachable;
                         },
                     }
-                    if (self.expected_type) |exty| {
-                        _ = try self.type_equal(exty, ty, hir_info.span);
+                    if (tyid == null) {
+                        tyid = ty.hash();
+                        _ = try self.context.type_tab.getOrPutValue(tyid.?, ty);
                     }
-                    out_type = ty;
+                    if (self.expected_type) |exty| {
+                        _ = try self.type_equal(exty, tyid.?, hir_info.span);
+                    }
+                    out_type = tyid.?;
                 },
                 .unary_expr => |expr| {
                     const tyid = try self.type_check(expr.expr);
@@ -453,7 +458,7 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
             const expected_mods = expected.modifiers.?;
             var i: usize = actual_mods.len - 1;
             var j: usize = expected_mods.len - 1;
-            while (i >= 0 and j >= 0) {
+            while (i >= 0 and j > 0) {
                 const actual_mod = actual_mods[i];
                 const expected_mod = expected_mods[j];
                 if (actual_mod.equals(expected_mod)) {
