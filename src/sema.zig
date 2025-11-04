@@ -340,19 +340,8 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                                 "Too many arguments passed to function");
                             return error.TooManyArguments;
                         }
-                        if (expr_ty != ty.base_type.func.args[i]) {
-                            std.debug.print("Expected type: {s}\n", .{
-                                try self.context.type_tab.get(ty.base_type.func.args[i]).?
-                                    .get_string(&self.context.type_tab, self.gpa, self.context.source),
-                            });
-                            std.debug.print("Got type: {s}\n", .{
-                                try self.context.type_tab.get(expr_ty).?.get_string(&self.context.type_tab, self.gpa, self.context.source)
-                            });
+                        _ = try self.type_equal(ty.base_type.func.args[i], expr_ty, self.hir_table.get(exp.id).?.span);
 
-                            try self.context.session.emit(.Error, hir_info.span,
-                                "Type mismatch in function argument");
-                            return error.TypeMismatch;
-                        }
                     }
                     out_type = return_ty;
                 },
