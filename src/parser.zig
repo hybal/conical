@@ -347,7 +347,6 @@ fn fn_decl(self: *@This()) !*Ast {
                 while (!self.lexer.is_next_token(.close_paren)) {
                     const param_ty = try self.parse_type();
                     const param_tyid = param_ty.hash();
-                    std.debug.print("DEBUG: ptyid: {}\n", .{param_tyid});
                     _ = try self.context.type_tab.getOrPutValue(param_tyid, param_ty);
                     try param_types.append(param_tyid);
                     if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {

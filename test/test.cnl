@@ -1,5 +1,5 @@
 mod main;
-//extern fn print();
+extern fn print();
 extern fn puts(value): &u8 -> i32;
 fn add(a, b): (i32, i32) -> i32 {
     return a + b;
@@ -8,13 +8,10 @@ fn add(a, b): (i32, i32) -> i32 {
 //    a: i32,
 //    b: i32
 //};
-//fn add(a, b): (i32, i32) -> i32 {
-//    a + b
-//}
 pub fn main() -> i32 {
     let a: i32 = 1;
-    puts("Hello, World");
     let out = add(a, a);
+    puts("Hi");
     return out;
 }
 

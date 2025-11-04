@@ -16,7 +16,7 @@ pub const AdjustmentStep = union(enum) {
 
 pub const HirInfo = struct {
     ty: ?Ast.TypeId,
-    adjustments: ?std.ArrayList(AdjustmentStep),
+    adjustments: ?[]AdjustmentStep,
     span: types.Span,
     scope_id: usize,
 };

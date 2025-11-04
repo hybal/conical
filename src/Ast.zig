@@ -475,6 +475,13 @@ pub const Type = struct {
         return self.base_type == .primitive and self.base_type.primitive == .Never;
     }
 
+    pub fn get_size(self: *const @This(), platform_size: u8) usize {
+        if (self.base_type == .primitive) {
+            return self.base_type.primitive.get_bits(platform_size);
+        }
+        return 8;
+    }
+
 };
 
 //a struct ast node

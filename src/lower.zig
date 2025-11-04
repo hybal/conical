@@ -455,8 +455,12 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     },
                     .string_literal => {
                         //NOTE: will probably have to adjust for quotes
+                        const val = try self.unescape_string(expr.span.get_string(self.context.source));
+                        const range_start: usize = if (val.len == 0) 0 else 1;
+                        const range_end: usize = if(val.len == 0) 0 else val.len - 1;
+
                         terminal = .{ .string_literal = 
-                                try self.unescape_string(expr.span.get_string(self.context.source))
+                            val[range_start..range_end]
                         };
                     },
                     .raw_string_literal => {
@@ -826,7 +830,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
     const id = out_node.?.hash();
     _ = try self.hir_table.getOrPutValue(id, .{
         .scope_id = self.current_scope,
-        .adjustments = .init(self.allocator),
+        .adjustments = null,
         .span = ast.span,
         .ty = null
     });

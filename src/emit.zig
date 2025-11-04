@@ -204,7 +204,6 @@ fn createTypeRef(self: *@This(), ty: Ast.Type,) !llvm.Core.LLVMTypeRef {
             }
             const fnc_args_slice = try fnc_args.toOwnedSlice();
             const ret_ty = try self.createTypeRef(self.context.type_tab.get(fnc.ret).?);
-            std.debug.print("DEBUG A: {s}\n", .{ try fnc.get_string(&self.context.type_tab, self.allocator, self.context.source) });
             base_type = llvm.Core.LLVMFunctionType(
                 ret_ty, 
                 fnc_args_slice.ptr, 
@@ -251,7 +250,6 @@ fn lower_global(self: *@This(), hir: []Hir.Hir) !void {
                     .func => |decl| {
                         const ident = self.get_symbol(decl.id).?.name;
                         const name = try to_zstring(ident.value, self.allocator);
-                        std.debug.print("DEBUG: Function name: {s}\n", .{ name});
                         const fnc_ty = self.context.type_tab.get(decl.ty).?;
                         const llvm_fnc_ty = try self.createTypeRef(fnc_ty);
                         const llvm_func_ref = llvm.Core.LLVMAddFunction(
@@ -296,6 +294,7 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
     const hir_info = self.hir_info_table.get(node.id).?;
     const ty = self.context.type_tab.get(hir_info.ty.?).?;
     const llvm_ty = try self.createTypeRef(ty);
+    var out_ref: llvm.Core.LLVMValueRef = undefined;
     switch (node.node) {
         .top_level => {
             switch (node.node.top_level) {
@@ -338,9 +337,10 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                         );
                         const out = try self.lower_local(body);
                         self.current_scope_id = saved_scope;
-                        return out;
+                        out_ref =  out;
+                    } else {
+                        out_ref = llvm_id;
                     }
-                    return llvm_id;
 
                 },
                 .binding => |bind| {
@@ -358,19 +358,20 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                             val_ref,
                             value_ref
                         );
-                        return store;
+                        out_ref = store;
+                    } else {
+                        const val_ref = try self.lower_local(bind.expr);
+                        try self.add_llvm_symbol(bind.id, val_ref);
+                        out_ref = val_ref;
                     }
-                    const val_ref = try self.lower_local(bind.expr);
-                    try self.add_llvm_symbol(bind.id, val_ref);
-                    return val_ref;
 
                 },
                 .terminated => |expr| {
-                    return try self.lower_local(expr.*);
+                    out_ref = try self.lower_local(expr.*);
                 },
                 .return_stmt => |stmt| {
                     const ret_expr = try self.lower_local(stmt.expr);
-                    return llvm.Core.LLVMBuildRet(self.llvm_context.builder, ret_expr);
+                    out_ref = llvm.Core.LLVMBuildRet(self.llvm_context.builder, ret_expr);
                 },
                 else => unreachable,
             }
@@ -380,28 +381,28 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                 .terminal => |term| {
                     switch (term.*) {
                         .integer_literal => |val| {
-                            return llvm.Core.LLVMConstInt(llvm_ty, @intCast(val), 0);
+                            out_ref = llvm.Core.LLVMConstInt(llvm_ty, @intCast(val), 0);
                         },
                         .float_literal => |val| {
-                            return llvm.Core.LLVMConstReal(llvm_ty, val);
+                            out_ref = llvm.Core.LLVMConstReal(llvm_ty, val);
                         },
                         .char_literal => |val| {
-                            return llvm.Core.LLVMConstInt(llvm_ty, @intCast(val), 0);
+                            out_ref = llvm.Core.LLVMConstInt(llvm_ty, @intCast(val), 0);
                         },
                         .string_literal => |val| {
-                            return llvm.Core.LLVMBuildGlobalStringPtr(
+                            out_ref = llvm.Core.LLVMBuildGlobalStringPtr(
                                 self.llvm_context.builder,
                                 try to_zstring(val, self.allocator),
                                 try self.gen_name("gblstr"),
                             );
                         },
                         .bool_literal => |val| {
-                            return llvm.Core.LLVMConstInt(llvm_ty, if (val) 1 else 0, 0);
+                            out_ref = llvm.Core.LLVMConstInt(llvm_ty, if (val) 1 else 0, 0);
                         },
                         .path => |val| {
                             const sym = self.get_symbol(val).?;
                             _ = sym;
-                            return self.get_llvm_symbol(val);
+                            out_ref = self.get_llvm_symbol(val);
                         },
                         else => |unknown| {
                             std.debug.print("Unhandled switch case: {s}\n", .{ @tagName(unknown) });
@@ -413,33 +414,33 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                     const lhs = try self.lower_local(expr.lhs);
                     const rhs = try self.lower_local(expr.rhs);
                     switch (expr.op) {
-                        .Add => return llvm.Core.LLVMBuildAdd(
+                        .Add => out_ref = llvm.Core.LLVMBuildAdd(
                             self.llvm_context.builder, 
                             lhs, 
                             rhs, 
                             @ptrCast(try self.gen_name("tmp"))
                         ),
-                        .Sub => return llvm.Core.LLVMBuildSub(
+                        .Sub => out_ref =  llvm.Core.LLVMBuildSub(
                             self.llvm_context.builder, 
                             lhs, 
                             rhs, 
                             @ptrCast(try self.gen_name("tmp"))
                         ),
-                        .Mul => return llvm.Core.LLVMBuildMul(
+                        .Mul => out_ref = llvm.Core.LLVMBuildMul(
                             self.llvm_context.builder, 
                             lhs, 
                             rhs, @ptrCast(try self.gen_name("tmp"))
                         ),
                         .Div => {
                             if (ty.is_signed_int()) {
-                                return llvm.Core.LLVMBuildSDiv(
+                                out_ref = llvm.Core.LLVMBuildSDiv(
                                     self.llvm_context.builder, 
                                     lhs, 
                                     rhs, 
                                     @ptrCast(try self.gen_name("tmp"))
                                 );
                             } else if (ty.is_unsigned_int()) {
-                                return llvm.Core.LLVMBuildUDiv(
+                                out_ref = llvm.Core.LLVMBuildUDiv(
                                     self.llvm_context.builder, 
                                     lhs, 
                                     rhs, 
@@ -449,13 +450,13 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                         },
                         .Mod => {
                             if (ty.is_signed_int()) {
-                                return llvm.Core.LLVMBuildSRem(
+                                out_ref = llvm.Core.LLVMBuildSRem(
                                     self.llvm_context.builder, 
                                     lhs, 
                                     rhs, @ptrCast(try self.gen_name("tmp"))
                                 );
                             } else if (ty.is_unsigned_int()) {
-                                return llvm.Core.LLVMBuildURem(
+                                out_ref = llvm.Core.LLVMBuildURem(
                                     self.llvm_context.builder,
                                     lhs,
                                     rhs,
@@ -470,7 +471,7 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                 .unary_expr => |expr| {
                     const ex = try self.lower_local(expr.expr);
                     const zero = llvm.Core.LLVMConstInt(llvm_ty, 0, 0);
-                    return switch (expr.op) {
+                    out_ref = switch (expr.op) {
                         .Minus => llvm.Core.LLVMBuildNeg(
                             self.llvm_context.builder,
                             ex,
@@ -501,7 +502,7 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                     }
                     self.current_scope_id = prev_scope_id;
                     self.at_global = prev_at_global;
-                    return null;
+                    out_ref = null;
                 },
                 .fn_call => |call| {
                     const fn_value = try self.lower_local(call.expr);
@@ -511,20 +512,20 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                     var args = try std.ArrayList(llvm.Core.LLVMValueRef)
                         .initCapacity(self.allocator, call.arguments.len);
                     for (call.arguments) |arg| {
-                        std.debug.print("DEBUG: added argument\n", .{});
                         try args.append(try self.lower_local(arg));
                     }
                     const name = try self.gen_name("tcll");
-
+                    const args_slice = try args.toOwnedSlice();
+                    
                     const llvm_call = llvm.Core.LLVMBuildCall2(
                         self.llvm_context.builder,
                         llvm_fn_type,
                         fn_value,
-                        (try args.toOwnedSlice()).ptr,
-                        @intCast(args.items.len + 1),
+                        args_slice.ptr,
+                        @intCast(args_slice.len),
                         name
                     );
-                    return llvm_call;
+                    out_ref = llvm_call;
                 },
                 .cast => |cast| {
                     _ = cast;
@@ -539,8 +540,79 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
             }
         },
     }
-    return null;
+    if (try self.apply_adjustments(node, out_ref)) |new_ref| {
+        out_ref = new_ref;
+    }
+    return out_ref;
 
 }
 
 
+fn apply_adjustments(self: *@This(), node: Hir.Hir, value: llvm.Core.LLVMValueRef) !?llvm.Core.LLVMValueRef {
+    const hir_info = self.hir_info_table.get(node.id).?;
+    if (hir_info.adjustments == null or hir_info.adjustments.?.len == 0) return null;
+    var out_value = value;
+    for (hir_info.adjustments.?) |adjustment| {
+        switch (adjustment) {
+            .NumericCast => |cast| {
+                const new_llvm = try self.createTypeRef(self.context.type_tab.get(cast).?);
+                const opcode = self.get_numeric_cast(hir_info.ty.?, cast);
+                out_value = llvm.Core.LLVMBuildCast(
+                    self.llvm_context.builder,
+                    opcode,
+                    value,
+                    new_llvm,
+                    try self.gen_name("cast"),
+                );
+            },
+            else => unreachable,
+        }
+    }
+    return out_value;
+}
+
+fn get_numeric_cast(self: *@This(), src: Ast.TypeId, dest: Ast.TypeId) llvm.Core.LLVMOpcode {
+    const src_ty = self.context.type_tab.get(src).?;
+    const dest_ty = self.context.type_tab.get(dest).?;
+    const src_size = src_ty.get_size(self.llvm_context.target_size);
+    const dest_size = dest_ty.get_size(self.llvm_context.target_size);
+    if (src_ty.is_int() and dest_ty.is_int()) {
+        if (src_ty.is_signed_int() != dest_ty.is_signed_int()
+            and src_size == dest_size) {
+            return llvm.Core.LLVMBitCast;
+        }
+        if (src_size < dest_size) {
+            if (src_ty.is_signed_int()) {
+                return llvm.Core.LLVMSExt;
+            }
+            return llvm.Core.LLVMZExt;
+        }
+        if (src_size > dest_size) {
+            return llvm.Core.LLVMTrunc;
+        }
+    }
+    if (src_ty.is_int() and dest_ty.is_float()) {
+        if (src_ty.is_signed_int()) {
+            return llvm.Core.LLVMSIToFP;
+        }
+        return llvm.Core.LLVMUIToFP;
+    }
+
+    if (src_ty.is_float() and dest_ty.is_int()) {
+        if (dest_ty.is_signed_int()) {
+            return llvm.Core.LLVMFPToSI;
+        }
+        return llvm.Core.LLVMFPToUI;
+    }
+
+    if (src_ty.is_float() and dest_ty.is_float()) {
+        if (src_size < dest_size) {
+            return llvm.Core.LLVMFPExt;
+        }
+        if (src_size > dest_size) {
+            return llvm.Core.LLVMFPTrunc;
+        }
+    }
+    unreachable;
+
+}

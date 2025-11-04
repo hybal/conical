@@ -118,7 +118,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                 //may in the future be converted into an inline expr
                 .return_stmt => |stmt| {
                     const val = try self.type_check_expect(stmt.expr, self.function_return_type.?);
-                    _ = try self.type_equal(self.function_return_type.?, val, self.hir_table.get(stmt.expr.id).?.span);
+                    _ = try self.type_equal(stmt.expr, self.function_return_type.?, val, self.hir_table.get(stmt.expr.id).?.span);
                     out_type = Ast.Type.createPrimitive(.Never, null).hash();
                 },
                 .branch => |branch| {
@@ -193,7 +193,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         _ = try self.context.type_tab.getOrPutValue(tyid.?, ty);
                     }
                     if (self.expected_type) |exty| {
-                        _ = try self.type_equal(exty, tyid.?, hir_info.span);
+                        _ = try self.type_equal(tree, exty, tyid.?, hir_info.span);
                     }
                     out_type = tyid.?;
                 },
@@ -252,11 +252,11 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                     for (expr.body, 0..) |ln, i| {
                         if (i < expr.body.len - 1) {
                             const ty = try self.type_check(ln);
-                            _ = try self.type_equal(Ast.Type.createPrimitive(.Unit, null).hash(), ty, self.hir_table.get(ln.id).?.span);
+                            _ = try self.type_equal(ln, Ast.Type.createPrimitive(.Unit, null).hash(), ty, self.hir_table.get(ln.id).?.span);
                         } else {
                             const ty = try self.type_check(ln);
                             if (self.function_return_type) |ret| {
-                                _ = try self.type_equal(ret, ty, self.function_id_span.?);
+                                _ = try self.type_equal(ln, ret, ty, self.function_id_span.?);
                             }
                             out_type = ty;
 
@@ -340,7 +340,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                                 "Too many arguments passed to function");
                             return error.TooManyArguments;
                         }
-                        _ = try self.type_equal(ty.base_type.func.args[i], expr_ty, self.hir_table.get(exp.id).?.span);
+                        _ = try self.type_equal(exp, ty.base_type.func.args[i], expr_ty, self.hir_table.get(exp.id).?.span);
 
                     }
                     out_type = return_ty;
@@ -414,7 +414,7 @@ fn get_float_type(value: f64) Ast.PrimitiveType {
     return if (@as(f64, conv) == value) .F32 else .F64;
 }
 
-fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId, span: types.Span) !bool {
+fn type_equal(self: *@This(), node: Hir.Hir, expected_type: Ast.TypeId, actual_type: Ast.TypeId, span: types.Span) !bool {
     if (expected_type == actual_type) {
         return true;
     }
@@ -433,6 +433,8 @@ fn type_equal(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.TypeId
                         .get_string(&self.context.type_tab, self.gpa, self.context.source)}));
         return error.TypeMismatch;
     }
+    var hir_info = self.hir_table.getPtr(node.id).?;
+    hir_info.adjustments = adjustment;
     return false;
 
 }
