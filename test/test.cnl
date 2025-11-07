@@ -4,13 +4,14 @@ extern fn puts(value): &u8 -> i32;
 fn add(a, b): (i32, i32) -> i32 {
     return a + b;
 }
-//pub type Test = struct {
-//    a: i32,
-//    b: i32
-//};
+pub type Test = struct {
+    a: i32,
+    b: i32
+};
 
 pub fn main() -> i32 {
     let a: i32 = 1;
+    let b: Test = Test { .a = 1, .b = 2 };
     let out = add(a, a);
     puts("Hi");
     return out;

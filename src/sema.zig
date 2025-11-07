@@ -266,6 +266,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                     self.current_scope = saved_scope;
                 },
                 .cast => |expr| {
+                    _ = try self.type_check(expr.expr);
                     _ = self.get_cast(expr.tyid, expr.expr) catch {
                         try self.context.session.emit(.Error, hir_info.span, 
                             "Invalid Cast");

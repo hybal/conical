@@ -541,7 +541,31 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                     out_ref = llvm_call;
                 },
                 .cast => |cast| {
-                    _ = cast;
+                    var expr_value = try self.lower_local(cast.expr);
+                    const cast_info = self.hir_info_table.get(cast.expr.id).?;
+                    const old_ty = self.context.type_tab.get(cast.tyid).?;
+                    const new_ty = self.context.type_tab.get(cast_info.ty.?).?;
+                    var opcode: c_uint = llvm.Core.LLVMBitCast;
+                    if (old_ty.modifiers != null and old_ty.modifiers.?.len > 0
+                        and old_ty.modifiers.?[0] == .Ref 
+                        and (new_ty.modifiers == null or new_ty.modifiers.?.len == 0) 
+                        and new_ty.is_int()) {
+                            opcode = llvm.Core.LLVMPtrToInt;
+                    } else {
+                        if ( (old_ty.is_int() or old_ty.is_float()) and ( new_ty.is_int() or new_ty.is_float())) {
+                            opcode = self.get_castcode(cast.tyid, cast_info.ty.?);
+                        }
+                    }
+                    const new_llvm = try self.createTypeRef(new_ty);
+                    expr_value = llvm.Core.LLVMBuildCast(
+                        self.llvm_context.builder,
+                        opcode,
+                        expr_value,
+                        new_llvm,
+                        try self.gen_name("cast"),
+                    );
+                    out_ref = expr_value;
+
                 },
                 .enum_cons => |expr| {
                     _ = expr;
@@ -571,7 +595,7 @@ fn apply_adjustments(self: *@This(), node: Hir.Hir, value: llvm.Core.LLVMValueRe
         switch (adjustment) {
             .NumericCast => |cast| {
                 const new_llvm = try self.createTypeRef(self.context.type_tab.get(cast).?);
-                const opcode = self.get_numeric_cast(hir_info.ty.?, cast);
+                const opcode = self.get_castcode(hir_info.ty.?, cast);
                 out_value = llvm.Core.LLVMBuildCast(
                     self.llvm_context.builder,
                     opcode,
@@ -606,7 +630,7 @@ fn apply_adjustments(self: *@This(), node: Hir.Hir, value: llvm.Core.LLVMValueRe
     return out_value;
 }
 
-fn get_numeric_cast(self: *@This(), src: Ast.TypeId, dest: Ast.TypeId) llvm.Core.LLVMOpcode {
+fn get_castcode(self: *@This(), src: Ast.TypeId, dest: Ast.TypeId) llvm.Core.LLVMOpcode {
     const src_ty = self.context.type_tab.get(src).?;
     const dest_ty = self.context.type_tab.get(dest).?;
     const src_size = src_ty.get_size(self.llvm_context.target_size);
@@ -648,6 +672,5 @@ fn get_numeric_cast(self: *@This(), src: Ast.TypeId, dest: Ast.TypeId) llvm.Core
             return llvm.Core.LLVMFPTrunc;
         }
     }
-    unreachable;
-
+    return llvm.Core.LLVMBitCast;
 }
