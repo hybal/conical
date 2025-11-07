@@ -7,11 +7,29 @@ pub const HirId = u64;
 
 pub const AdjustmentStep = union(enum) {
     AutoDeref,
-    AutoRef,
     RefMutDiscard,
     MutDiscard,
     NumericCast: Ast.TypeId,
     PointerCast: Ast.TypeId,
+
+    pub fn get_string(self: *const @This(), context: *types.Context, gpa: std.mem.Allocator) ![]const u8 {
+        switch (self.*) {
+            .AutoDeref, .RefMutDiscard, .MutDiscard => {
+                return @tagName(self.*);
+            },
+            .NumericCast, .PointerCast => |val| {
+                const ty = context.type_tab.get(val).?;
+                const out_string = std.fmt.allocPrint(
+                    gpa,
+                    "{s}({s})",
+                    .{
+                        @tagName(self.*),
+                        try ty.get_string(&context.type_tab, gpa, context.source),
+                    });
+                return out_string;
+            }
+        }
+    }
 };
 
 pub const HirInfo = struct {

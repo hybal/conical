@@ -465,9 +465,6 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
                 } else if (actual_mod == .Ref and expected_mod != .Ref) {
                     i -= 1;
                     try adjustments.append(.AutoDeref);
-                } else if (expected_mod == .Ref and actual_mod != .Ref) {
-                    j -= 1;
-                    try adjustments.append(.AutoRef);
                 } else {
                     return null;
                 }
@@ -490,12 +487,12 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
             }
         }
     } else {
-        if (expected.modifiers != null and expected.modifiers.?.len > 0) {
-            const expected_mods = expected.modifiers.?;
-            var i: usize = expected_mods.len - 1;
-            while (i >= 0) {
-                const expected_mod = expected_mods[i];
-                if (expected_mod == .Ref) {
+        if (actual.modifiers != null and actual.modifiers.?.len > 0) {
+            const actual_mods = actual.modifiers.?;
+            var i: usize = actual_mods.len;
+            while (i > 0) {
+                const actual_mod = actual_mods[i - 1];
+                if (actual_mod == .Ref) {
                     try adjustments.append(.AutoDeref);
                 } else {
                     return null;
@@ -507,6 +504,9 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
     const expected_base = expected.base_type;
     const actual_base = actual.base_type;
     if (expected_base.equals(&actual_base)) {
+        if (adjustments.items.len == 0) {
+            return null;
+        }
         return try adjustments.toOwnedSlice();
     }
     if (expected.is_signed_int() 
@@ -527,5 +527,17 @@ fn get_adjustment(self: *@This(), expected_type: Ast.TypeId, actual_type: Ast.Ty
     } else {
         return null;
     }
+    if (adjustments.items.len == 0) {
+        return null;
+    }
+    std.debug.print("Adjust({s}/{s}): ", .{
+        try expected.get_string(&self.context.type_tab, self.gpa, self.context.source),
+        try actual.get_string(&self.context.type_tab, self.gpa, self.context.source),
+
+    });
+    for (adjustments.items) |it| {
+        std.debug.print("{s}, ", .{try it.get_string(self.context, self.gpa)});
+    }
+    std.debug.print("\n", .{});
     return try adjustments.toOwnedSlice();
 }

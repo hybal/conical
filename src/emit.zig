@@ -373,7 +373,18 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                     const ret_expr = try self.lower_local(stmt.expr);
                     out_ref = llvm.Core.LLVMBuildRet(self.llvm_context.builder, ret_expr);
                 },
-                else => unreachable,
+                .assignment => |stmt| {
+                    _ = stmt;
+                },
+                .branch => |stmt| {
+                    _ = stmt;
+                },
+                .loop => |stmt| {
+                    _ = stmt;
+                },
+                .type_decl => |decl| {
+                    _ = decl;
+                },
             }
         },
         .inline_expr => {
@@ -489,7 +500,9 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                             zero,
                             @ptrCast(try self.gen_name("tmp"))
                         ),
-                        else => unreachable
+                        .Ref => ex,
+                        else => unreachable,
+
                     };
                 },
                 .block => |expr| {
@@ -550,6 +563,8 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
 
 fn apply_adjustments(self: *@This(), node: Hir.Hir, value: llvm.Core.LLVMValueRef) !?llvm.Core.LLVMValueRef {
     const hir_info = self.hir_info_table.get(node.id).?;
+    const hir_ty = self.context.type_tab.get(hir_info.ty.?).?;
+    const hir_llvm_ty = try self.createTypeRef(hir_ty);
     if (hir_info.adjustments == null or hir_info.adjustments.?.len == 0) return null;
     var out_value = value;
     for (hir_info.adjustments.?) |adjustment| {
@@ -562,10 +577,30 @@ fn apply_adjustments(self: *@This(), node: Hir.Hir, value: llvm.Core.LLVMValueRe
                     opcode,
                     value,
                     new_llvm,
-                    try self.gen_name("cast"),
+                    try self.gen_name("numcst"),
                 );
             },
-            else => unreachable,
+            .AutoDeref => {
+                out_value = llvm.Core.LLVMBuildLoad2(
+                    self.llvm_context.builder,
+                    hir_llvm_ty,
+                    value,
+                    try self.gen_name("audrf")
+                );
+
+            },
+            .PointerCast => |tyid| {
+                const new_llvm = try self.createTypeRef(self.context.type_tab.get(tyid).?);
+                out_value = llvm.Core.LLVMBuildCast(
+                    self.llvm_context.builder,
+                    llvm.Core.LLVMBitCast,
+                    value,
+                    new_llvm,
+                    try self.gen_name("ptrcst"),
+                );
+            },
+            .MutDiscard => {},
+            .RefMutDiscard => {},
         }
     }
     return out_value;
