@@ -49,7 +49,7 @@ fn get_symbol(self: *@This(), defid: types.DefId) ?*types.Symbol {
 fn type_check_expect(self: *@This(), tree: Hir.Hir, ty: Ast.TypeId) !Ast.TypeId {
     const previous_expected_type = self.expected_type;
     self.expected_type = ty;
-    const out =try self.type_check(tree);
+    const out = try self.type_check(tree);
     self.expected_type = previous_expected_type;
     return out;
 }
@@ -98,12 +98,19 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                 },
                 .type_decl => |_| {},
                 .binding => |bind| {
-                    if (hir_info.ty) |tyid| {
-                        _ = try self.type_check_expect(bind.expr, tyid);
+                    if (bind.ty) |tyid| {
+                        const typid = try self.type_check_expect(bind.expr, tyid);
+                        if (hir_info.ty == null) {
+                            hir_info.ty = typid;
+                        }
                     } else {
                         const saved_type_expect = self.expected_type;
                         self.expected_type = null;
-                        hir_info.ty = try self.type_check(bind.expr);
+                        const tyid = try self.type_check(bind.expr);
+                        bind.ty = tyid;
+                        if (hir_info.ty == null) {
+                            hir_info.ty = tyid;
+                        }
                         self.get_symbol(bind.id).?.tyid = hir_info.ty;
                         self.expected_type = saved_type_expect;
                     }

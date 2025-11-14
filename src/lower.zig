@@ -15,6 +15,8 @@ in_assignment: bool = false,
 at_global_scope: bool = true,
 //expected_type: ?Ast.TypeId = null,
 current_scope: usize = 0,
+// Map of A -> B where A is the id right after the cleanup and B is the node to be destroyed
+escaped_ids: std.AutoHashMap(Hir.HirId, Hir.HirId),
 
 
 fn enter_new_scope(self: *@This()) !void {
@@ -118,6 +120,7 @@ pub fn init(context: *types.Context, allocator: std.mem.Allocator) !@This() {
         .allocator = allocator,
         .def_table = .init(allocator),
         .hir_table = .init(allocator),
+        .escaped_ids = .init(allocator),
         .context = context,
     };
     return self;
@@ -166,8 +169,7 @@ fn resolve_global_symbols(self: *@This(), trees: []*Ast.Ast) !void {
                 };
             },
             else => |v| {
-                _ = v;
-                std.debug.print("Unimplemented: {s}\n", .{ast.span.get_string(self.context.source)});
+                std.debug.print("Unimplemented: {s}\n", .{@tagName(v)});
                 unreachable;
             }
         }
@@ -420,6 +422,7 @@ fn parse_char_literal(self: *@This(), span: types.Span) !i32 {
     return char_string[0];
 
 }
+
 
 fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
     var out_node: ?Hir.HirNode = null;
@@ -842,4 +845,24 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
 
 }
 
+fn propogate_scopes(self: *@This(), start_node: Hir.Hir, escape_info: Hir.EscapeInfo) !void {
+    const hir_info = self.hir_table.get(start_node).?;
+    switch (start_node.node) {
+        .top_level => {
+            switch (start_node.node.top_level) {
+                .func => |func| {
 
+                },
+                .binding => |bind| {
+
+                }
+            }
+        },
+        .inline_expr => {
+            switch (start_node.node.inline_expr) {
+
+            }
+        }
+    }
+
+}

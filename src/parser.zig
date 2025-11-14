@@ -396,7 +396,7 @@ fn fn_decl(self: *@This()) !*Ast {
 }
 
 // parses a variable decleration
-// var_decl = ("let" | "mut") (":" type)? ("=" expression)? ";"?
+// var_decl = ("let" | "mut") (":" type)? ("=" expression)? ";"
 fn var_decl(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
     var span: types.Span = .{
@@ -576,6 +576,7 @@ fn ifstmt(self: *@This()) !*Ast {
     return try self.while_loop();
 }
 
+//TODO: move this (wrong precedence)
 fn while_loop(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
     var span: types.Span = .{
@@ -598,6 +599,7 @@ fn while_loop(self: *@This()) !*Ast {
     return try self.assignment();
 }
 
+//TODO: move this (wrong precedence)
 fn assignment(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
     var span: types.Span = .{

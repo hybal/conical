@@ -259,7 +259,12 @@ pub fn main() !u8 {
 
     const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
 
-    var emit_context = try emit.init(&context, &hir_context.hir_table, triple, gpa);
+    var emit_context = try emit.init(
+        &context, 
+        &hir_context.hir_table, 
+        triple, 
+        &hir_context.escaped_ids,
+        gpa);
     try emit_context.emit(hir);
 
 

@@ -32,11 +32,19 @@ pub const AdjustmentStep = union(enum) {
     }
 };
 
+pub const EscapeInfo = enum {
+    Local,
+    Escapes,
+    Static
+};
+
 pub const HirInfo = struct {
     ty: ?Ast.TypeId,
     adjustments: ?[]AdjustmentStep,
     span: types.Span,
     scope_id: usize,
+    owner: ?HirId = null,
+    escape: EscapeInfo = .Local,
 };
 
 pub const HirInfoTable = std.AutoHashMap(HirId, HirInfo);
