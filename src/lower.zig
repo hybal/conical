@@ -845,24 +845,3 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
 
 }
 
-fn propogate_scopes(self: *@This(), start_node: Hir.Hir, escape_info: Hir.EscapeInfo) !void {
-    const hir_info = self.hir_table.get(start_node).?;
-    switch (start_node.node) {
-        .top_level => {
-            switch (start_node.node.top_level) {
-                .func => |func| {
-
-                },
-                .binding => |bind| {
-
-                }
-            }
-        },
-        .inline_expr => {
-            switch (start_node.node.inline_expr) {
-
-            }
-        }
-    }
-
-}

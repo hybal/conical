@@ -17,6 +17,7 @@ pub const Symbol = struct {
         Export,
     } = .Private,
     scope: SymbolScope = .Local,
+    escapes: Hir.EscapeInfo = .Local,
     path: Path,
 };
 

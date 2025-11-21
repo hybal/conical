@@ -1,0 +1,43 @@
+mod scope_test;
+
+fn main() {
+
+}
+
+//CHECK: c' == .Parent
+//CHECK: val' == .Parent
+//CHECK: t' == .Local
+fn a(val: i32) {
+    mut c = 24;
+    c += 1;
+    let t = 123;
+    return c + val;
+}
+
+//CHECK: c' == .Parent
+//CHECK: d' == .Parent
+fn b(val: i32) {
+    let c = a(val);
+    let d = c;
+    return d;
+}
+
+//CHECK: d' == .Parent
+//CHECK: e' == .Local
+//CHECK: f' == .Local
+fn c(val: i32) {
+    let d = 1;
+    let e = &d;
+    let f = e;
+    return val + d;
+}
+
+//CHECK: val' == .Parent
+//CHECK: k' == .Local
+//CHECK: 43' == .Parent
+//CHECK: 5' == .Parent
+fn d(val: &mut i32) {
+    *val = 43;
+    let k = *val;
+    return 5;
+}
