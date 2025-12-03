@@ -9,6 +9,7 @@ const types = @import("types.zig");
 const diag = @import("diag.zig");
 const lower_hir = @import("lower.zig");
 const emit = @import("emit.zig");
+//const escapeanalysis = @import("escapeanalysis.zig");
 
 var source: []const u8 = "let a = 1;";
 
