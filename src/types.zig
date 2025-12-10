@@ -19,7 +19,6 @@ pub const Symbol = struct {
     scope: SymbolScope = .Local,
     escapes: Hir.EscapeInfo = .Local,
     path: Path,
-    hirid: Hir.HirId,
 };
 
 pub const SymbolScope = enum {
