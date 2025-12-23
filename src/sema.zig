@@ -353,6 +353,9 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                     }
                     out_type = return_ty;
                 },
+                .access_expr => |expr | {
+                    _ = expr;
+                },
                 //else => |v|{
                 //    std.debug.print("Unhandled case: {any}\n", .{v});
                 //    unreachable;

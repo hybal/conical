@@ -76,6 +76,18 @@ pub const BinaryOp = enum {
     }
 };
 
+pub const Access = struct {
+    left: Hir,
+    right: Ident,
+
+    pub fn hash(self: *const @This()) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(std.mem.asBytes(&self.left.hash()));
+        hasher.update(std.mem.asBytes(&self.right.hash()));
+        return hasher.final();
+    }
+};
+
 pub const UnaryOp = enum {
     Not,
     BinNot,
@@ -382,6 +394,7 @@ pub const InlineExpr = union(enum) {
     block: *Block,
     enum_cons: *EnumCons,
     struct_cons: *StructCons,
+    access_expr: *Access,
 
     pub fn hash(self: *const @This()) u64 {
         var hasher = std.hash.Fnv1a_64.init();
@@ -395,6 +408,7 @@ pub const InlineExpr = union(enum) {
             .block => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
             .enum_cons => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
             .struct_cons => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
+            .access_expr => |expr| hasher.update(std.mem.asBytes(&expr.hash())),
         }
         return hasher.final();
     }

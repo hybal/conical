@@ -821,6 +821,18 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 };
                 out_node = .{ .top_level = .{ .branch = try mem.createWith(self.allocator, branch)}};
             },
+            .access_operator => |expr| {
+                const left = try self.lower_single(expr.left);
+                const right = Hir.Ident {
+                    .location = expr.right.span,
+                    .value = expr.right.value,
+                };
+                const out: Hir.Access = .{
+                    .left = left,
+                    .right = right,
+                };
+                out_node = .{ .inline_expr = .{ .access_expr = try mem.createWith(self.allocator, out)}};
+            },
             else => |node| {
                 std.debug.print("Unhandled AST node: {any}\n", .{node});
                 unreachable;

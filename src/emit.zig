@@ -692,6 +692,9 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                 .struct_cons => |expr| {
                     _ = expr;
                 },
+                .access_expr => |expr| {
+                    _ = expr;
+                },
                 //else => unreachable,
             }
         },
