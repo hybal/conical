@@ -324,6 +324,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                             "Too many struct fields");
                         return error.TooManyStructFields;
                     }
+                    out_type = cons.ty;
                 },
                 .fn_call => |call| {
                     const fn_tyid = try self.type_check(call.expr);
@@ -351,10 +352,22 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                         _ = try self.type_equal(exp, ty.base_type.func.args[i], expr_ty, self.hir_table.get(exp.id).?.span);
 
                     }
+                    //FIXME: return type seems to be the full function type
                     out_type = return_ty;
                 },
                 .access_expr => |expr | {
-                    _ = expr;
+                    const saved_expect_ty = self.expected_type;
+                    self.expected_type = null;
+                    const left_tyid = try self.type_check(expr.left);
+                    self.expected_type = saved_expect_ty;
+                    const left_ty = self.context.type_tab.get(left_tyid).?;
+                    std.debug.print("DEBUG A\n", .{});
+                    if (left_ty.base_type == .strct) {
+                        std.debug.print("DEBUG B\n", .{});
+                        if (left_ty.base_type.strct.fields.get(expr.right.value)) |field| {
+                            out_type = field;
+                        }
+                    }
                 },
                 //else => |v|{
                 //    std.debug.print("Unhandled case: {any}\n", .{v});

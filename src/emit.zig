@@ -690,10 +690,51 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                     _ = expr;
                 },
                 .struct_cons => |expr| {
-                    _ = expr;
+                    const strct_ptr = llvm.Core.LLVMBuildAlloca(
+                        self.llvm_context.builder,
+                        llvm_ty,
+                        try self.gen_name("strct")
+                    );
+                    const plat_int_ty = llvm.Core.LLVMIntTypeInContext(
+                        self.llvm_context.context,
+                        @intCast(self.llvm_context.target_size),
+                    );
+
+                    const zero = llvm.Core.LLVMConstInt(
+                        plat_int_ty,
+                        0,
+                        0
+                    );
+                    var iter = ty.base_type.strct.fields.iterator();
+                    var index: usize = 0;
+                    while (iter.next()) |v| {
+                        const idx = llvm.Core.LLVMConstInt(
+                            plat_int_ty,
+                            index,
+                            0
+                        );
+                        const field_value = try self.lower_local(expr.fields.get(v.key_ptr.*).?);
+                        var field: [2]llvm.Core.LLVMValueRef = .{ zero, idx };
+                        const gep = llvm.Core.LLVMBuildGEP2(
+                            self.llvm_context.builder,
+                            llvm_ty,
+                            strct_ptr,
+                            @ptrCast(&field),
+                            2,
+                            try self.gen_name("gep")
+                        );
+                        _ = llvm.Core.LLVMBuildStore(
+                            self.llvm_context.builder,
+                            field_value,
+                            gep
+                        );
+                        index += 1;
+                    }
+                    out_ref = strct_ptr;
                 },
                 .access_expr => |expr| {
-                    _ = expr;
+                    const expr_llvm = try self.lower_local(expr.left);
+                    
                 },
                 //else => unreachable,
             }
