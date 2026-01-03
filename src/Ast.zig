@@ -2,30 +2,31 @@ const std = @import("std");
 const mem = @import("mem.zig");
 const types = @import("types.zig");
 
+
 /// Represents a binary expression of the form: left op right
 pub const BinaryExpr = struct {
     op: types.Token, //the operation
-    left: *Ast, //left hand side of the operation
-    right: *Ast, //right hand side of the operation
+    left: AstNodeId, //left hand side of the operation
+    right: AstNodeId, //right hand side of the operation
 };
 
 /// Represents a unary expression of the form: op expr
 pub const UnaryExpr = struct {
     op: types.Token, //the operation
-    expr: *Ast //the operation its applied to
+    expr: AstNodeId //the operation its applied to
 };
 
 /// Represents a field or method access, has the form: expr . ident
 pub const AccessOperator = struct {
-    left: *Ast,
+    left: AstNodeId,
     right: Ident,
 };
 
 /// Represents an assignment operaton including compound assignment operations like += or *=
 pub const Assignment = struct {
     op: types.Token,
-    lvalue: *Ast,
-    expr: *Ast
+    lvalue: AstNodeId,
+    expr: AstNodeId
 };
 
 /// Represents a builtin primitive type
@@ -529,7 +530,7 @@ pub const Struct = struct {
 
 pub const TypeCons = struct {
     ty: TypeId,
-    fields: std.StringHashMap(?*Ast),
+    fields: std.StringHashMap(?AstNodeId),
 };
 
 pub const TypeDecl = struct {
@@ -597,7 +598,7 @@ pub const VarDecl = struct {
     ident: Ident,
     ty: ?TypeId,
     is_mut: bool,
-    initialize: ?*Ast
+    initialize: ?AstNodeId
 };
 
 pub const GlobalDeclMod = enum {
@@ -620,7 +621,7 @@ pub const FnDecl = struct {
     params: []Ident, 
     param_types: []TypeId,
     return_ty: TypeId,
-    body: ?*Ast,
+    body: ?AstNodeId,
 
     pub fn hash(self: *const @This(), type_tbl: *types.TypeTbl, allocator: std.mem.Allocator) !TypeId {
         var args = std.ArrayList(TypeId).init(allocator);
@@ -644,85 +645,239 @@ pub const FnDecl = struct {
 
 
 pub const ModuleDecl = struct {
-    path: *Ast,
+    path: AstNodeId,
 };
 
 pub const Import = struct {
-    path: *Ast,
+    path: AstNodeId,
+};
+
+pub const ReturnStmt = struct {
+    expr: AstNodeId,
+};
+
+pub const Terminated = struct {
+    expr: AstNodeId,
 };
 
 pub const ParamList = struct {
-    left: *Ast,
-    params: []*Ast,
+    left: AstNodeId,
+    params: []AstNodeId,
     //add generics here
 };
 
-
-
 pub const IfStmt = struct {
-    condition: *Ast,
-    block: *Ast,
-    else_block: ?*Ast
+    condition: AstNodeId,
+    block: AstNodeId,
+    else_block: ?AstNodeId
 };
 
 pub const WhileLoop = struct {
-    condition: *Ast,
-    block: *Ast
+    condition: AstNodeId,
+    block: AstNodeId
 };
 pub const Cast = struct {
-    expr: *Ast,
+    expr: AstNodeId,
     ty: TypeId
 };
 pub const Ternary = struct {
-    condition: *Ast,
-    true_path: *Ast,
-    false_path: *Ast
+    condition: AstNodeId,
+    true_path: AstNodeId,
+    false_path: AstNodeId
 };
 
 pub const Block = struct {
-    exprs: []*Ast
+    exprs: []AstNodeId
 };
 
 pub const TypeId = usize;
 
-pub const Ast = struct {
-    node: AstNode,
-    span: types.Span,
-    tyid: ?TypeId,
-    scope_id: ?usize = null,
-    pub fn create(node: AstNode, span: types.Span) @This() {
-        return .{
-            .node = node,
-            .span = span,
-            .tyid = null,
-        };
-    }
+
+const SpanId = usize;
+const AstNodeId = usize;
+
+pub const AstNode = struct {
+    kind: AstKind,
+    span: SpanId,
+    index: usize,
 };
 
-//NOTE: these really should all be pointers (atm its about 100 bytes) but since its going to get rewritten I don't really care
-pub const AstNode = union(enum) { 
-    binary_expr: BinaryExpr, 
-    unary_expr: UnaryExpr, 
-    terminal: types.Token, 
-    type_literal: Type,
-    unit,
-    assignment: Assignment,  
-    if_stmt: IfStmt,
-    while_loop: WhileLoop,
-    ternary: Ternary,
-    block: Block, 
-    var_decl: VarDecl, 
-    fn_decl: FnDecl, 
-    fn_call: ParamList, 
-    param_list: ParamList,
-    return_stmt: *Ast, 
-    type_decl: TypeDecl,
-    terminated: *Ast,
-    type_cons: TypeCons,
-    access_operator: AccessOperator,
-    cast: Cast, 
-    path: Path,
-    module_decl: ModuleDecl,
-    import: Import,
-    _,
+pub const AstKind = enum {
+    binary_expr,
+    unary_expr,
+    terminal,
+    type_literal,
+    assignment,
+    if_stmt,
+    while_loop,
+    block,
+    var_decl,
+    fn_decl,
+    fn_call,
+    return_stmt,
+    type_decl,
+    terminated,
+    type_cons,
+    access_operator,
+    cast,
+    path,
+    module_decl,
+    import,
+};
+
+pub const AstBuilder = struct {
+    nodes: std.ArrayList(AstNode),
+    spans: std.ArrayList(types.Span),
+    binary_exprs: std.ArrayList(BinaryExpr),
+    unary_exprs: std.ArrayList(UnaryExpr),
+    terminals: std.ArrayList(types.Token),
+    type_literals: std.ArrayList(Type),
+    assignments: std.ArrayList(Assignment),
+    if_stmts: std.ArrayList(IfStmt),
+    while_loops: std.ArrayList(WhileLoop),
+    blocks: std.ArrayList(Block),
+    var_decls: std.ArrayList(VarDecl),
+    fn_decls: std.ArrayList(FnDecl),
+    fn_calls: std.ArrayList(ParamList),
+    return_stmts: std.ArrayList(ReturnStmt),
+    type_decls: std.ArrayList(TypeDecl),
+    terminateds: std.ArrayList(Terminated),
+    type_cons: std.ArrayList(TypeCons),
+    access_operators: std.ArrayList(AccessOperator),
+    casts: std.ArrayList(Cast),
+    paths: std.ArrayList(Path),
+    module_decls: std.ArrayList(ModuleDecl),
+    imports: std.ArrayList(Import),
+
+    pub fn init(allocator: std.mem.Allocator) !AstBuilder {
+        return .{
+            .nodes = .init(allocator),
+            .spans = .init(allocator),
+            .binary_exprs = .init(allocator),
+            .unary_expr = .init(allocator),
+            .terminals = .init(allocator),
+            .type_literals = .init(allocator),
+            .assignments = .init(allocator),
+            .if_stmts = .init(allocator),
+            .while_loops = .init(allocator),
+            .blocks = .init(allocator),
+            .var_decls = .init(allocator),
+            .fn_decls = .init(allocator),
+            .fn_calls = .init(allocator),
+            .return_stmts = .init(allocator),
+            .type_decls = .init(allocator),
+            .terminateds = .init(allocator),
+            .type_cons = .init(allocator),
+            .access_operators = .init(allocator),
+            .casts = .init(allocator),
+            .paths = .init(allocator),
+            .module_decls = .init(allocator),
+            .imports = .init(allocator),
+        };
+    }
+    fn append(comptime T: type, array: std.ArrayList(T), data: T) !usize {
+        try array.append(data);
+        return array.items.len - 1;
+    }
+    pub fn add_node(self: *@This(), 
+        kind: AstKind,
+        span: types.Span,
+        data: anytype) !AstNodeId {
+        const id = switch (kind) {
+            .binary_expr => try self.append(@TypeOf(self.binary_exprs), self.binary_exprs, data),
+            .unary_expr => try self.append(@TypeOf(self.unary_exprs), self.unary_exprs, data),
+            .terminal => try self.append(@TypeOf(self.terminals), self.terminals, data),
+            .type_literal => try self.append(@TypeOf(self.type_literals), self.type_literals, data),
+            .assignment => try self.append(@TypeOf(self.assignments), self.assignments, data),
+            .if_stmt => try self.append(@TypeOf(self.if_stmts), self.if_stmts, data),
+            .while_loop => try self.append(@TypeOf(self.while_loops), self.while_loops, data),
+            .block => try self.append(@TypeOf(self.blocks), self.blocks, data),
+            .var_decl => try self.append(@TypeOf(self.var_decls), self.var_decls, data),
+            .fn_decl => try self.append(@TypeOf(self.fn_decls), self.fn_decls, data),
+            .fn_call => try self.append(@TypeOf(self.fn_calls), self.fn_calls, data),
+            .return_stmt => try self.append(@TypeOf(self.return_stmts), self.return_stmts, data),
+            .type_decl => try self.append(@TypeOf(self.type_decls), self.type_decls, data),
+            .terminated => try self.append(@TypeOf(self.terminateds), self.terminateds, data),
+            .type_cons => try self.append(@TypeOf(self.type_cons), self.type_cons, data),
+            .access_operator => try self.append(@TypeOf(self.access_operators), self.access_operators, data),
+            .cast => try self.append(@TypeOf(self.casts), self.casts, data),
+            .path => try self.append(@TypeOf(self.paths), self.paths, data),
+            .module_decl => try self.append(@TypeOf(self.module_decls), self.module_decls, data),
+            .import => try self.append(@TypeOf(self.imports), self.imports, data),
+        };
+        const spanid = try self.append(@TypeOf(self.spans), self.spans, span);
+        const out = try self.append(AstNode, self.nodes, .{
+            .kind = kind,
+            .spanid = spanid,
+            .index = id,
+        });
+        return out;
+    }
+
+    pub fn build(self: *@This()) !Ast {
+        return .{
+            .nodes = try self.nodes.toOwnedSlice(),
+            .spans = try self.spans.toOwnedSlice(),
+            .binary_exprs = try self.binary_exprs.toOwnedSlice(),
+            .unary_exprs = try self.unary_exprs.toOwnedSlice(),
+            .terminals = try self.terminals.toOwnedSlice(),
+            .type_literals = try self.type_literals.toOwnedSlice(),
+            .assignments = try self.assignments.toOwnedSlice(),
+            .if_stmts = try self.if_stmts.toOwnedSlice(),
+            .while_loops = try self.while_loops.toOwnedSlice(),
+            .blocks = try self.blocks.toOwnedSlice(),
+            .var_decls = try self.var_decls.toOwnedSlice(),
+            .fn_decls = try self.fn_decls.toOwnedSlice(),
+            .fn_calls = try self.fn_calls.toOwnedSlice(),
+            .return_stmts = try self.return_stmts.toOwnedSlice(),
+            .type_decls = try self.type_decls.toOwnedSlice(),
+            .terminateds = try self.terminateds.toOwnedSlice(),
+            .type_cons = try self.type_cons.toOwnedSlice(),
+            .access_operators = try self.access_operators.toOwnedSlice(),
+            .casts = try self.casts.toOwnedSlice(),
+            .paths = try self.paths.toOwnedSlice(),
+            .module_decls = try self.module_decls.toOwnedSlice(),
+            .imports = try self.imports.toOwnedSlice(),
+        };
+    }
+
+};
+
+pub const Ast = struct {
+    nodes: []AstNode,
+    spans: []types.Span,
+    binary_exprs: []BinaryExpr,
+    unary_exprs: []UnaryExpr,
+    terminals: []types.Token,
+    type_literals: []Type,
+    assignments: []Assignment,
+    if_stmts: []IfStmt,
+    while_loops: []WhileLoop,
+    blocks: []Block,
+    var_decls: []VarDecl,
+    fn_decls: []FnDecl,
+    fn_calls: []ParamList,
+    return_stmts: []ReturnStmt,
+    type_decls: []TypeDecl,
+    terminateds: []Terminated,
+    type_cons: []TypeCons,
+    access_operators: []AccessOperator,
+    casts: []Cast,
+    paths: []Path,
+    module_decls: []ModuleDecl,
+    imports: []Import,
+    pub fn get(self: *@This(), id: AstNodeId) anyopaque {
+        const node_index = self.nodes[id].index;
+        const node_kind = self.nodes[id].kind;
+        return switch (node_kind) {
+            .binary_expr => &self.binary_exprs[node_index],
+            .unary_expr => &self.unary_exprs[node_index],
+            .binary_expr => &self.binary_exprs[node_index],
+            .binary_expr => &self.binary_exprs[node_index],
+            .binary_expr => &self.binary_exprs[node_index],
+            .binary_expr => &self.binary_exprs[node_index],
+            .binary_expr => &self.binary_exprs[node_index],
+            .binary_expr => &self.binary_exprs[node_index],
+        };
+    }
 };

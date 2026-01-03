@@ -8,3 +8,4 @@ zig-out/
 *.o
 a.out
 *.log
+result/
