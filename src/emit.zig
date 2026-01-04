@@ -734,6 +734,7 @@ fn lower_local(self: *@This(), node: Hir.Hir) !llvm.Core.LLVMValueRef {
                 },
                 .access_expr => |expr| {
                     const expr_llvm = try self.lower_local(expr.left);
+                    _ = expr_llvm;
                     const left_info = self.hir_info_table.get(expr.left.id).?;
                     const left_ty = self.context.type_tab.get(left_info.ty.?).?;
                     switch (left_ty.base_type) {

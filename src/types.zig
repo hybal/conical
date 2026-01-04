@@ -4,11 +4,12 @@ const Hir = @import("Hir.zig");
 const diag = @import("diag.zig");
 
 pub const DefId = u64;
+pub const TypeId = u64;
 
 pub const Symbol = struct {
     //name: []const u8,
     name: Ast.Ident,
-    tyid: ?Ast.TypeId,
+    tyid: ?TypeId,
     qualifier: enum {
         Public,
         Private,
@@ -101,7 +102,7 @@ pub const ModuleStore = struct {
 
 pub const Context = struct {
     sym_tab: std.ArrayList(SymbolTable),
-    type_tab: TypeTbl,
+    //type_tab: TypeTbl,
     source: []const u8,
     file_path: []const u8,
     session: diag.Session,
@@ -241,30 +242,6 @@ pub const Tag = enum {
 pub const Token = struct {
     span: Span,
     tag: Tag,
-};
-
-
-pub const TypeTbl = std.HashMap(Ast.TypeId, Ast.Type, std.hash_map.AutoContext(Ast.TypeId), 80);
-
-pub fn init_type_map(gpa: std.mem.Allocator) !TypeTbl {
-    var out: TypeTbl = .init(gpa);
-    inline for (@typeInfo(Ast.PrimitiveType).@"enum".fields) |field| {
-        const val = Ast.Type.createPrimitive(@enumFromInt(field.value), null);
-        try out.put(val.hash(), val);
-    }
-    return out;
-}
-
-//currently unused (but should be)
-//represents a compilation unit/module, including all of the relevant information from every stage
-pub const CompUnit = struct {
-    file: []const u8, //the relative path of the file 
-    out_file: []const u8, //the filename of the output file
-    source: []const u8, //the file source
-    hir: []Hir.Hir, //the ast
-    hir_info: *Hir.HirInfoTable,
-    symbol_table: []SymbolTable, //the symbol table 
-    type_table: *TypeTbl,  //the type table (maps typeids to types)
 };
 
 

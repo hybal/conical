@@ -11,194 +11,6 @@ const lower_hir = @import("lower.zig");
 const emit = @import("emit.zig");
 //const escapeanalysis = @import("escapeanalysis.zig");
 
-var source: []const u8 = "let a = 1;";
-
-pub fn print_type(type_map: *types.TypeTbl, tyid: ast.TypeId) void {
-    const ty = type_map.get(tyid).?;
-    if (ty.modifiers) |mods| {
-        for (mods) |mod| {
-            std.debug.print("{s} ", .{mod.get_string(source)});
-        }
-    }
-    switch (ty.base_type) {
-        .primitive => |val| {
-            std.debug.print("{s} ", .{val.get_string()});
-        },
-        .user => |val| {
-            std.debug.print("{s} ", .{val.span.get_string(source)});
-        },
-        .strct => |strct| {
-            std.debug.print("struct {{ ", .{});
-            var iter = strct.fields.iterator();
-            while (iter.next()) |val| {
-                std.debug.print("{s}: ", .{val.key_ptr.*});
-                std.debug.print("{s}; ", .{type_map.get(val.value_ptr.*).?.get_string(type_map, std.heap.page_allocator, source) catch "err"});
-
-            }
-            std.debug.print("}}", .{});
-        },
-        .@"enum" => |enm| {
-            std.debug.print("{s}", .{
-                enm.get_string(std.heap.page_allocator, type_map, source)
-                    catch "err",
-            });
-        },
-        .func => |func| {
-            std.debug.print("(", .{});
-            for (func.args) |arg| {
-                print_type(type_map, arg);
-                std.debug.print(",", .{});
-            }
-            std.debug.print(") -> ", .{});
-            print_type(type_map, func.ret);
-        },
-        .@"type" => |tyyid| {
-            print_type(type_map, tyyid);
-        },
-    }
-}
-fn print_tree(type_map: *types.TypeTbl, node: ?*ast.Ast) !void {
-    if (node == null) return;
-    switch (node.?.node) {
-        .terminal => |term| {
-            std.debug.print("{s} ", .{term.span.get_string(source)});
-        },
-        .param_list => |ls| {
-            try print_tree(type_map, ls.left);
-            std.debug.print("(", .{});
-            for (ls.params) |param| {
-                try print_tree(type_map, param);
-                std.debug.print(",", .{});
-            }
-            std.debug.print(")", .{});
-        },
-        .cast => |expr| {
-            try print_tree(type_map, expr.expr);
-            std.debug.print("as ", .{});
-            print_type(type_map, expr.ty);
-        },
-        .binary_expr => |expr| {
-            try print_tree(type_map, expr.left);
-            std.debug.print("{s} ", .{expr.op.span.get_string(source)});
-            try print_tree(type_map, expr.right);
-        },
-        .unary_expr => |expr| {
-            std.debug.print("{s} ", .{expr.op.span.get_string(source)});
-            try print_tree(type_map, expr.expr);
-        },
-        .block => |blk| {
-            std.debug.print("{{\n", .{});
-            for (blk.exprs) |expr| {
-                std.debug.print("    ", .{});
-                try print_tree(type_map, expr);
-                std.debug.print("\n", .{});
-            }
-            std.debug.print("}}\n", .{});
-        },
-        .ternary => |expr| {
-            try print_tree(type_map, expr.condition);
-            std.debug.print(" ? ", .{});
-            try print_tree(type_map, expr.true_path);
-            std.debug.print(" : ", .{});
-            try print_tree(type_map, expr.false_path);
-        },
-        .var_decl => |decl| {
-            std.debug.print("{s} ", .{if (decl.is_mut) "mut" else "let"});
-            std.debug.print("{s} ", .{decl.ident.span.get_string(source)});
-            if (decl.ty) |ty| {
-                std.debug.print(": ", .{});
-                print_type(type_map, ty);
-            }
-            if (decl.initialize) |init| {
-                std.debug.print("= ", .{});
-                try print_tree(type_map, init);
-                std.debug.print(";\n", .{});
-            }
-        },
-        .assignment => |expr| {
-            try print_tree(type_map, expr.lvalue);
-            std.debug.print(" {s} ", .{expr.op.span.get_string(source)});
-            try print_tree(type_map, expr.expr);
-        },
-        .if_stmt => |stmt| {
-            std.debug.print("if ", .{});
-            try print_tree(type_map, stmt.condition);
-            try print_tree(type_map, stmt.block);
-            if (stmt.else_block) |eblk| {
-                std.debug.print("else ", .{});
-                try print_tree(type_map, eblk);
-            }
-        },
-        .while_loop => |loop| {
-            std.debug.print("while ", .{});
-            try print_tree(type_map, loop.condition);
-            try print_tree(type_map, loop.block);
-        },
-        .fn_decl => |fnc| {
-            std.debug.print("fn ", .{});
-            std.debug.print("{s} ", .{fnc.ident.span.get_string(source)});
-            std.debug.print("(", .{});
-            for (fnc.params) |param| {
-                std.debug.print("{s}, ", .{ param.span.get_string(source) });
-            }
-            std.debug.print("): (", .{});
-            for (fnc.param_types) |ty| {
-                print_type(type_map, ty);
-                std.debug.print(", ", .{});
-            }
-            std.debug.print(") -> ", .{});
-            print_type(type_map, fnc.return_ty);
-            try print_tree(type_map, fnc.body);
-        },
-        .terminated => |expr| {
-            try print_tree(type_map, expr);
-            std.debug.print("; ", .{});
-        },
-        .fn_call => |expr| {
-            try print_tree(type_map, expr.left);
-            std.debug.print("(", .{});
-            for (expr.params) |arg| {
-                try print_tree(type_map, arg);
-                std.debug.print(", ", .{});
-            }
-            std.debug.print(")", .{});
-        },
-        .type_decl => |decl| {
-            std.debug.print("type {s} = ", .{decl.ident.value});
-            print_type(type_map, decl.ty);
-            std.debug.print(";", .{});
-        },
-        .type_cons => |val| {
-            print_type(type_map, val.ty);
-            std.debug.print(" {{ ", .{});
-            var iter = val.fields.iterator();
-            while (iter.next()) |entry| {
-                std.debug.print("{s}: ", .{entry.key_ptr.*});
-                try print_tree(type_map, entry.value_ptr.*);
-                std.debug.print(", ", .{});
-            }
-            std.debug.print(" }}", .{});
-        },
-        .return_stmt => |stmt| {
-            std.debug.print("return ", .{});
-            try print_tree(type_map,stmt);
-        },
-        .access_operator => |exp| {
-            try print_tree(type_map, exp.left);
-            std.debug.print(".{s}", .{exp.right.value});
-        },
-        .unit => {
-            std.debug.print("()", .{});
-        },
-        .path => |path| {
-            std.debug.print("{s}", .{try path.get_string(std.heap.page_allocator)});
-        },
-        else => |thing| std.debug.print("unknown: {any}\n", .{thing}),
-    }
-}
-
-
-
 
 pub fn main() !u8 {
     const page_allocator = std.heap.page_allocator;
@@ -214,9 +26,9 @@ pub fn main() !u8 {
     const file = try std.fs.cwd().openFile(args[1], .{});
     defer file.close();
 
-    source = try file.readToEndAlloc(gpa, std.math.maxInt(usize));
+    const source = try file.readToEndAlloc(gpa, std.math.maxInt(usize));
 
-    const type_map = try types.init_type_map(gpa); 
+    //const type_map = try types.init_type_map(gpa); 
     var module_store = types.ModuleStore {
         .store = .init(gpa),
         .trie = .{
@@ -225,48 +37,49 @@ pub fn main() !u8 {
         },
         .lock = .{}
     };
-    var context = types.Context {
+    const context = types.Context {
         .session = diag.Session.init(gpa, source),
         .source = source,
-        .type_tab = type_map,
+        //.type_tab = type_map,
         .sym_tab = .init(gpa),
         .file_path = args[1],
         .module = null,
         .module_store = &module_store,
     };
+    _ = context;
+    _ = ast.Ast;
+    _ = ast.Ast.get;
+    _ = ast.AstBuilder;
+    _ = ast.AstBuilder.add_node;
+    _ = ast.AstBuilder.build;
+    _ = ast.AstBuilder.init;
+   //var parser = parse.init(&context, gpa);
+   // const trees = parser.parse() catch |err| {
+   //     try context.session.flush(std.io.getStdErr().writer());
+   //     return err;
+   // };
+   // var hir_context = try lower_hir.init(&context, gpa);
+   // const hir = hir_context.lower(trees) catch |err| {
+   //     try context.session.flush(std.io.getStdErr().writer());
+   //     return err;
+   // };
 
-    var parser = parse.init(&context, gpa);
-    const trees = parser.parse() catch |err| {
-        try context.session.flush(std.io.getStdErr().writer());
-        return err;
-    };
-    var hir_context = try lower_hir.init(&context, gpa);
-    const hir = hir_context.lower(trees) catch |err| {
-        try context.session.flush(std.io.getStdErr().writer());
-        return err;
-    };
+   // var sema_context = sema.init(&context, hir_context.hir_table, gpa);
+   // sema.analyze(&sema_context, hir) catch |err| {
+   //     try context.session.flush(std.io.getStdErr().writer());
+   //     return err;
+   // };
+   // try context.session.flush(std.io.getStdErr().writer());
 
-    var sema_context = sema.init(&context, hir_context.hir_table, gpa);
-    sema.analyze(&sema_context, hir) catch |err| {
-        try context.session.flush(std.io.getStdErr().writer());
-        return err;
-    };
-    try context.session.flush(std.io.getStdErr().writer());
+   // const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
 
-    for (trees) |tree| {
-        try print_tree(&context.type_tab, tree);
-        std.debug.print("\n", .{});
-    }
-
-    const triple = llvm.TargetMachine.LLVMGetDefaultTargetTriple();
-
-    var emit_context = try emit.init(
-        &context, 
-        &hir_context.hir_table, 
-        triple, 
-        &hir_context.escaped_ids,
-        gpa);
-    try emit_context.emit(hir);
+   // var emit_context = try emit.init(
+   //     &context, 
+   //     &hir_context.hir_table, 
+   //     triple, 
+   //     &hir_context.escaped_ids,
+   //     gpa);
+   // try emit_context.emit(hir);
 
 
     return 0;
