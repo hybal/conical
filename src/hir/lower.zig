@@ -1,15 +1,14 @@
 const std = @import("std");
-const Ast = @import("Ast.zig");
-const types = @import("types.zig");
+const Ast = @import("parse");
+const common = @import("common");
 const Hir = @import("Hir.zig");
-const diag = @import("diag.zig");
-const mem = @import("mem.zig");
+const diag = @import("diagnostics");
 
 
 allocator: std.mem.Allocator,
-def_table: std.AutoHashMap(usize, std.StringHashMap(types.DefId)),
+def_table: std.AutoHashMap(usize, std.StringHashMap(common.DefId)),
 hir_table: Hir.HirInfoTable,
-context: *types.Context,
+context: *common.Context,
 in_function: bool = false,
 in_assignment: bool = false,
 at_global_scope: bool = true,
@@ -30,7 +29,7 @@ fn enter_new_scope(self: *@This()) !void {
     const child_index = self.context.sym_tab.items.len;
     try children.append(child_index);
     self.context.sym_tab.items[self.current_scope].children = try children.toOwnedSlice();
-    const symtab = types.SymbolTable {
+    const symtab = common.SymbolTable {
         .symbol_map = .init(self.allocator),
         .parent = self.current_scope,
         .children = null,
@@ -47,14 +46,14 @@ fn leave_scope(self: *@This()) void {
 
 
 fn add_symbol(self: *@This(), symbol: 
-    struct {tyid: ?Ast.TypeId, name: Ast.Ident, scope: types.SymbolScope = .Local}
+    struct {tyid: ?Ast.TypeId, name: Ast.Ident, scope: common.SymbolScope = .Local}
     ) !void {
-    const path = types.Path {
+    const path = common.Path {
         .base = symbol.name,
         .module = self.context.module.?,
     };
     const defid = path.hash();
-    const sym = types.Symbol {
+    const sym = common.Symbol {
         .name = symbol.name,
         .tyid = symbol.tyid,
         .path = path,
@@ -71,7 +70,7 @@ fn add_symbol(self: *@This(), symbol:
     try self.context.sym_tab.items[self.current_scope].symbol_map.put(defid, sym);
 }
 
-fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
+fn get_symbol(self: *@This(), name: []const u8) ?common.Symbol {
     var current_scope = self.context.sym_tab.items[self.current_scope];
     var current_scope_id = self.current_scope;
     var exit = false;
@@ -103,13 +102,13 @@ fn get_symbol(self: *@This(), name: []const u8) ?types.Symbol {
     return null;
 }
 
-fn get_defid(self: *@This(), name: []const u8) ?types.DefId {
+fn get_defid(self: *@This(), name: []const u8) ?common.DefId {
     return self.def_table.get(self.current_scope).?.get(name);
 }
 
 
-pub fn init(context: *types.Context, allocator: std.mem.Allocator) !@This() {
-    var sym_tab: std.ArrayList(types.SymbolTable) = .init(allocator);
+pub fn init(context: *common.Context, allocator: std.mem.Allocator) !@This() {
+    var sym_tab: std.ArrayList(common.SymbolTable) = .init(allocator);
     try sym_tab.append(.{
         .symbol_map = .init(allocator),
         .children = null,
@@ -320,12 +319,12 @@ fn resolve_local_symbols(self: *@This(), ast: *Ast.Ast) !void {
 
     }
 }
-fn parse_int_literal(self: *@This(), span: types.Span) !u128 {
+fn parse_int_literal(self: *@This(), span: common.Span) !u128 {
     const literal_string = span.get_string(self.context.source);
     return std.fmt.parseInt(u128, literal_string, 0);
 }
 
-fn parse_float_literal(self: *@This(), span: types.Span) !f64 {
+fn parse_float_literal(self: *@This(), span: common.Span) !f64 {
     const literal_string = span.get_string(self.context.source);
     return std.fmt.parseFloat(f64, literal_string);
 }
@@ -411,8 +410,8 @@ fn unescape_string(self: *@This(), input: []const u8) ![]u8 {
     return list.toOwnedSlice();
 }
 
-fn parse_char_literal(self: *@This(), span: types.Span) !i32 {
-    var local_span: types.Span = .{.start = span.start, .end = span.end};
+fn parse_char_literal(self: *@This(), span: common.Span) !i32 {
+    var local_span: common.Span = .{.start = span.start, .end = span.end};
     local_span.start += 1;
     local_span.end -= 1;
     const char_string = local_span.get_string(self.context.source);
@@ -479,7 +478,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     },
                     else => unreachable
             }
-            out_node = .{ .inline_expr = .{ .terminal = try mem.createWith(self.allocator, terminal)}};
+            out_node = .{ .inline_expr = .{ .terminal = try common.createWith(self.allocator, terminal)}};
         },
         .unary_expr => |expr| {
             const expr_node = try self.lower_single(expr.expr);
@@ -504,7 +503,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 else => unreachable,
             }
             const node: Hir.UnaryExpr = .{ .op = op, .expr = expr_node };
-            out_node = .{ .inline_expr = .{ .unary_expr = try mem.createWith(self.allocator, node)}};
+            out_node = .{ .inline_expr = .{ .unary_expr = try common.createWith(self.allocator, node)}};
         },
         .binary_expr => |expr| {
             const left = try self.lower_single(expr.left);
@@ -565,7 +564,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 else => unreachable,
             }
             out_node = .{ .inline_expr = .{
-                .binary_expr = try mem.createWith(self.allocator, node)
+                .binary_expr = try common.createWith(self.allocator, node)
             }};
         },
         .assignment => |expr| {
@@ -598,11 +597,11 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .op = op
                 };
                 assignment_node.expr = try Hir.Hir.create(.{ .inline_expr = .{ 
-                    .binary_expr = try mem.createWith(self.allocator, desugered_expr)
+                    .binary_expr = try common.createWith(self.allocator, desugered_expr)
                 }}, self.current_scope, ast.span, &self.hir_table);
             }
             out_node = .{ .top_level = .{ 
-                .assignment = try mem.createWith(self.allocator, assignment_node)}};
+                .assignment = try common.createWith(self.allocator, assignment_node)}};
             },
             .cast => |expr| {
                 const left = try self.lower_single(expr.expr);
@@ -611,7 +610,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .tyid = expr.ty
                 };
                 out_node = .{ .inline_expr = .{
-                    .cast = try mem.createWith(self.allocator, out)
+                    .cast = try common.createWith(self.allocator, out)
                 }};
             },
             .block => |expr| {
@@ -628,7 +627,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                         .expr = hir,
                     };
                     try out_block.append(try Hir.Hir.create(.{ .top_level = .{
-                        .return_stmt = try mem.createWith(self.allocator, return_node),
+                        .return_stmt = try common.createWith(self.allocator, return_node),
                     }}, self.current_scope, ast.span, &self.hir_table));
                 } else {
                     try out_block.append(hir);
@@ -639,7 +638,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 };
                 out_node = .{
                     .inline_expr = .{ 
-                        .block = try mem.createWith(self.allocator, blck),
+                        .block = try common.createWith(self.allocator, blck),
                     }
                 };
             },
@@ -699,7 +698,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .is_export = is_export,
                 };
 
-                out_node = .{ .top_level = .{ .func = try mem.createWith(self.allocator, fnc)} };
+                out_node = .{ .top_level = .{ .func = try common.createWith(self.allocator, fnc)} };
             },
             .type_decl => |decl| {
                 const tydecl = Hir.TypeDecl {
@@ -708,7 +707,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .is_pub = false,
                     .tyid = decl.ty
                 };
-                out_node = .{ .top_level = .{ .type_decl = try mem.createWith(self.allocator, tydecl)}};
+                out_node = .{ .top_level = .{ .type_decl = try common.createWith(self.allocator, tydecl)}};
             },
             .var_decl => |decl| {
                 const out: Hir.Binding = .{
@@ -721,13 +720,13 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .is_static = false,
                     .is_export = false,
                 };
-                out_node = .{ .top_level = .{ .binding = try mem.createWith(self.allocator, out)}};
+                out_node = .{ .top_level = .{ .binding = try common.createWith(self.allocator, out)}};
             },
             .return_stmt => |stmt| {
                 const out: Hir.Return = .{ 
                     .expr = try self.lower_single(stmt)
                 };
-                out_node = .{ .top_level = .{ .return_stmt = try mem.createWith(self.allocator, out)}};
+                out_node = .{ .top_level = .{ .return_stmt = try common.createWith(self.allocator, out)}};
             },
             .fn_call => |expr| {
                 var args = try std.ArrayList(Hir.Hir).initCapacity(self.allocator, expr.params.len);
@@ -739,7 +738,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .expr = left,
                     .arguments = try args.toOwnedSlice(),
                 };
-                out_node = .{ .inline_expr = .{ .fn_call = try mem.createWith(self.allocator, out)}};
+                out_node = .{ .inline_expr = .{ .fn_call = try common.createWith(self.allocator, out)}};
             },
             .type_cons => |cons| {
                 var ty = self.context.type_tab.get(cons.ty).?;
@@ -763,7 +762,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                         .value = if (field.value_ptr.*) |value| try self.lower_single(value) else null
                     };
                     out_node = .{ .inline_expr = .{
-                        .enum_cons = try mem.createWith(self.allocator, enum_cons)
+                        .enum_cons = try common.createWith(self.allocator, enum_cons)
                     }};
                 } else if (ty.base_type == .strct) {
                     if (cons.fields.count() != ty.base_type.strct.fields.count()) {
@@ -784,7 +783,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     };
 
                     out_node = .{ .inline_expr = .{
-                        .struct_cons = try mem.createWith(self.allocator, struct_cons)
+                        .struct_cons = try common.createWith(self.allocator, struct_cons)
                     }};
                 } else {
                     try self.context.session.emit(.Error, ast.span, "Not a compound type");
@@ -793,13 +792,13 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
             },
             .terminated => |term| {
                 out_node = .{ .top_level = .{
-                    .terminated = try mem.createWith(self.allocator, try self.lower_single(term)),
+                    .terminated = try common.createWith(self.allocator, try self.lower_single(term)),
                 }};
             },
             .unit => {
                 const terminal: Hir.Terminal = .unit;
                 out_node = .{ .inline_expr = .{
-                    .terminal = try mem.createWith(self.allocator, terminal)
+                    .terminal = try common.createWith(self.allocator, terminal)
                 }};
             },
             .path => |pth| {
@@ -811,7 +810,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                 const out = Hir.Terminal{
                     .path = pathid,
                 };
-                out_node = .{ .inline_expr = .{ .terminal = try mem.createWith(self.allocator, out) } };
+                out_node = .{ .inline_expr = .{ .terminal = try common.createWith(self.allocator, out) } };
             },
             .if_stmt => |stmt| {
                 const branch: Hir.Branch = .{ 
@@ -819,7 +818,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .b_path = if (stmt.else_block) |else_block| try self.lower_single(else_block) else null,
                     .condition = try self.lower_single(stmt.condition)
                 };
-                out_node = .{ .top_level = .{ .branch = try mem.createWith(self.allocator, branch)}};
+                out_node = .{ .top_level = .{ .branch = try common.createWith(self.allocator, branch)}};
             },
             .access_operator => |expr| {
                 const left = try self.lower_single(expr.left);
@@ -831,7 +830,7 @@ fn lower_single(self: *@This(), ast: *Ast.Ast) !Hir.Hir {
                     .left = left,
                     .right = right,
                 };
-                out_node = .{ .inline_expr = .{ .access_expr = try mem.createWith(self.allocator, out)}};
+                out_node = .{ .inline_expr = .{ .access_expr = try common.createWith(self.allocator, out)}};
             },
             else => |node| {
                 std.debug.print("Unhandled AST node: {any}\n", .{node});

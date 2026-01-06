@@ -1,18 +1,18 @@
 const std = @import("std");
-const mem = @import("mem.zig");
-const types = @import("types.zig");
+const common = @import("common");
+const Token = @import("lex").Token;
 
 
 /// Represents a binary expression of the form: left op right
 pub const BinaryExpr = struct {
-    op: types.Token, //the operation
+    op: Token, //the operation
     left: AstNodeId, //left hand side of the operation
     right: AstNodeId, //right hand side of the operation
 };
 
 /// Represents a unary expression of the form: op expr
 pub const UnaryExpr = struct {
-    op: types.Token, //the operation
+    op: Token, //the operation
     expr: AstNodeId //the operation its applied to
 };
 
@@ -24,7 +24,7 @@ pub const AccessOperator = struct {
 
 /// Represents an assignment operaton including compound assignment operations like += or *=
 pub const Assignment = struct {
-    op: types.Token,
+    op: Token,
     lvalue: AstNodeId,
     expr: AstNodeId
 };
@@ -35,7 +35,7 @@ pub const Assignment = struct {
 //which may be shared among other compilation units which wont have access to the source that it came from
 //FIXME: make sure that value is copied when it is created so that it isn't invalidated when the allocator is destroyed
 pub const Ident = struct {
-    span: types.Span,
+    span: common.Span,
     value: []const u8,
 
     pub fn equals(self: *const @This(), other: *const @This()) bool {
@@ -150,11 +150,6 @@ pub const Path = struct {
 
 };
 
-
-
-
-
-
 pub const TypeCons = struct {
     ty: AstNodeId,
     fields: std.StringHashMap(?AstNodeId),
@@ -163,8 +158,6 @@ pub const TypeCons = struct {
 pub const TypeDecl = struct {
     ty: AstNodeId,
     ident: Ident,
-    //Eventually will have constraints here
-    //This will also actually be an expression since you can do weird comptime things
 };
 
 
@@ -248,8 +241,8 @@ pub const Block = struct {
 
 
 
-const SpanId = usize;
-const AstNodeId = usize;
+pub const SpanId = usize;
+pub const AstNodeId = usize;
 
 pub const AstNode = struct {
     kind: AstKind,
@@ -285,12 +278,82 @@ pub const AstKind = enum {
     import,
 };
 
+pub const Ast = struct {
+    nodes: []const AstNode,
+    spans: []const common.Span,
+    binary_exprs: []const BinaryExpr,
+    unary_exprs: []const UnaryExpr,
+    terminals: []const Token,
+    type_exprs: []const TypeExpr,
+    type_binary_exprs: []const TypeBinaryExpr,
+    type_enums: []const TypeEnum,
+    type_structs: []const TypeStruct,
+    type_sets: []const TypeSet,
+    type_int_ranges: []const TypeIntRange,
+    assignments: []const Assignment,
+    if_stmts: []const IfStmt,
+    while_loops: []const WhileLoop,
+    blocks: []const Block,
+    var_decls: []const VarDecl,
+    fn_decls: []const FnDecl,
+    fn_calls: []const ParamList,
+    return_stmts: []const ReturnStmt,
+    type_decls: []const TypeDecl,
+    terminateds: []const Terminated,
+    type_cons: []const TypeCons,
+    access_operators: []const AccessOperator,
+    casts: []const Cast,
+    paths: []const Path,
+    module_decls: []const ModuleDecl,
+    imports: []const Import,
+
+    pub fn get(self: *@This(), id: AstNodeId) *anyopaque {
+        const node_index = self.nodes[id].index;
+        const node_kind = self.nodes[id].kind;
+        return switch (node_kind) {
+            .binary_expr => &self.binary_exprs[node_index],
+            .unary_expr => &self.unary_exprs[node_index],
+            .terminal => &self.terminals[node_index],
+            .type_expr => &self.type_exprs[node_index],
+            .type_binary_expr => &self.type_binary_exprs[node_index],
+            .type_enum => &self.type_enums[node_index],
+            .type_struct => &self.type_structs[node_index],
+            .type_set => &self.type_sets[node_index],
+            .type_int_range => &self.type_int_ranges[node_index],
+            .assignment => &self.assignments[node_index],
+            .if_stmt => &self.if_stmts[node_index],
+            .while_loop => &self.while_loops[node_index],
+            .block => &self.blocks[node_index],
+            .var_decl => &self.var_decls[node_index],
+            .fn_decl => &self.fn_decls[node_index],
+            .fn_call => &self.fn_calls[node_index],
+            .return_stmt => &self.return_stmts[node_index],
+            .type_decl => &self.type_decls[node_index],
+            .terminated => &self.terminateds[node_index],
+            .type_cons => &self.type_cons[node_index],
+            .access_operator => &self.access_operators[node_index],
+            .cast => &self.casts[node_index],
+            .path => &self.paths[node_index],
+            .module_decl => &self.module_decls[node_index],
+            .import => &self.imports[node_index],
+        };
+    }
+
+    pub fn get_node(self: *@This(), id: AstNodeId) AstNode {
+        return self.nodes[id];
+    }
+
+    pub fn get_span(self: *@This(), id: AstNodeId) common.Span {
+        return self.spans[self.nodes[id].span];
+    }
+};
+
 pub const AstBuilder = struct {
     nodes: std.ArrayList(AstNode),
-    spans: std.ArrayList(types.Span),
+    spans: std.ArrayList(common.Span),
     binary_exprs: std.ArrayList(BinaryExpr),
     unary_exprs: std.ArrayList(UnaryExpr),
-    terminals: std.ArrayList(types.Token),
+    terminals: std.ArrayList(Token),
     type_exprs: std.ArrayList(TypeExpr),
     type_binary_exprs: std.ArrayList(TypeBinaryExpr),
     type_enums: std.ArrayList(TypeEnum),
@@ -351,7 +414,7 @@ pub const AstBuilder = struct {
     }
     pub fn add_node(self: *@This(), 
         kind: AstKind,
-        span: types.Span,
+        span: common.Span,
         data: anytype) !AstNodeId {
         const id = switch (kind) {
             .binary_expr => try self.append(@TypeOf(self.binary_exprs), self.binary_exprs, data),
@@ -423,72 +486,4 @@ pub const AstBuilder = struct {
 
 };
 
-pub const Ast = struct {
-    nodes: []AstNode,
-    spans: []types.Span,
-    binary_exprs: []BinaryExpr,
-    unary_exprs: []UnaryExpr,
-    terminals: []types.Token,
-    type_exprs: []TypeExpr,
-    type_binary_exprs: []TypeBinaryExpr,
-    type_enums: []TypeEnum,
-    type_structs: []TypeStruct,
-    type_sets: []TypeSet,
-    type_int_ranges: []TypeIntRange,
-    assignments: []Assignment,
-    if_stmts: []IfStmt,
-    while_loops: []WhileLoop,
-    blocks: []Block,
-    var_decls: []VarDecl,
-    fn_decls: []FnDecl,
-    fn_calls: []ParamList,
-    return_stmts: []ReturnStmt,
-    type_decls: []TypeDecl,
-    terminateds: []Terminated,
-    type_cons: []TypeCons,
-    access_operators: []AccessOperator,
-    casts: []Cast,
-    paths: []Path,
-    module_decls: []ModuleDecl,
-    imports: []Import,
 
-    pub fn get(self: *@This(), id: AstNodeId) *anyopaque {
-        const node_index = self.nodes[id].index;
-        const node_kind = self.nodes[id].kind;
-        return switch (node_kind) {
-            .binary_expr => &self.binary_exprs[node_index],
-            .unary_expr => &self.unary_exprs[node_index],
-            .terminal => &self.terminals[node_index],
-            .type_expr => &self.type_exprs[node_index],
-            .type_binary_expr => &self.type_binary_exprs[node_index],
-            .type_enum => &self.type_enums[node_index],
-            .type_struct => &self.type_structs[node_index],
-            .type_set => &self.type_sets[node_index],
-            .type_int_range => &self.type_int_ranges[node_index],
-            .assignment => &self.assignments[node_index],
-            .if_stmt => &self.if_stmts[node_index],
-            .while_loop => &self.while_loops[node_index],
-            .block => &self.blocks[node_index],
-            .var_decl => &self.var_decls[node_index],
-            .fn_decl => &self.fn_decls[node_index],
-            .fn_call => &self.fn_calls[node_index],
-            .return_stmt => &self.return_stmts[node_index],
-            .type_decl => &self.type_decls[node_index],
-            .terminated => &self.terminateds[node_index],
-            .type_cons => &self.type_cons[node_index],
-            .access_operator => &self.access_operators[node_index],
-            .cast => &self.casts[node_index],
-            .path => &self.paths[node_index],
-            .module_decl => &self.module_decls[node_index],
-            .import => &self.imports[node_index],
-        };
-    }
-
-    pub fn get_node(self: *@This(), id: AstNodeId) AstNode {
-        return self.nodes[id];
-    }
-
-    pub fn get_span(self: *@This(), id: AstNodeId) types.Span {
-        return self.spans[self.nodes[id].span];
-    }
-};

@@ -1,25 +1,24 @@
 const std = @import("std");
-const Hir = @import("Hir.zig");
-const Ast = @import("Ast.zig");
-const types = @import("types.zig");
-const mem = @import("mem.zig");
-const diag = @import("diag.zig");
+const Hir = @import("hir");
+const Ast = @import("parse");
+const common = @import("common");
+const diag = @import("diagnostics");
 
 
-context: *types.Context,
+context: *common.Context,
 hir_table: Hir.HirInfoTable,
 gpa: std.mem.Allocator,
 
 
 expected_type: ?Ast.TypeId = null,
 function_return_type: ?Ast.TypeId = null,
-function_id_span: ?types.Span = null,
+function_id_span: ?common.Span = null,
 in_loop: bool = false,
 in_assignment: bool = false,
 in_global_scope: bool = true,
 current_scope: usize = 0,
 
-pub fn init(context: *types.Context,
+pub fn init(context: *common.Context,
         hir_table: Hir.HirInfoTable,
         gpa: std.mem.Allocator,
         ) @This() {
@@ -30,7 +29,7 @@ pub fn init(context: *types.Context,
     };
 }
 
-fn get_symbol(self: *@This(), defid: types.DefId) ?*types.Symbol {
+fn get_symbol(self: *@This(), defid: common.DefId) ?*common.Symbol {
     var current_scope = self.context.sym_tab.items[self.current_scope];
     var exit = false;
     while (!exit) {
@@ -438,7 +437,7 @@ fn get_float_type(value: f64) Ast.PrimitiveType {
     return if (@as(f64, conv) == value) .F32 else .F64;
 }
 
-fn type_equal(self: *@This(), node: Hir.Hir, expected_type: Ast.TypeId, actual_type: Ast.TypeId, span: types.Span) !bool {
+fn type_equal(self: *@This(), node: Hir.Hir, expected_type: Ast.TypeId, actual_type: Ast.TypeId, span: common.Span) !bool {
     if (expected_type == actual_type) {
         return true;
     }

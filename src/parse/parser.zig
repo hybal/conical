@@ -4,28 +4,27 @@ const std = @import("std");
 const Ast = @import("Ast.zig");
 const AstNode = @import("Ast.zig").AstNode;
 const Block = @import("Ast.zig").Block;
-const lex = @import("lexer.zig");
-const mem = @import("mem.zig");
-const types = @import("types.zig");
-const diag = @import("diag.zig");
+const lex = @import("lex");
+const common = @import("common");
+const diag = @import("diagnostics");
 
 //FIX: diagnostic messages need to be better
 gpa: std.mem.Allocator,
 lexer: lex.Lexer,
-context: *types.Context,
+context: *common.Context,
 has_module: bool = false,
 
 
 
 const ParseError = struct {
     kind: diag.ErrorCode,
-    span: types.Span,
+    span: common.Span,
     id: Ast.AstNodeId,
 
 };
 
 /// Initialize the parser from an already existing Lexer instance
-pub fn init_from_lexer(in: lex.Lexer, context: *types.Context, gpa: std.mem.Allocator) @This() {
+pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = in,
         .gpa = gpa,
@@ -35,7 +34,7 @@ pub fn init_from_lexer(in: lex.Lexer, context: *types.Context, gpa: std.mem.Allo
 }
 
 /// Initialize the parser from source
-pub fn init(context: *types.Context, gpa: std.mem.Allocator) @This() {
+pub fn init(context: *common.Context, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = lex.Lexer.init(context.source),
         .gpa = gpa,
@@ -51,8 +50,8 @@ pub fn parse(self: *@This()) !Ast {
 
 
 // expect a token type,  does not return anything
-fn expect(self: *@This(), token: types.Tag) !void {
-    if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |_| {
+fn expect(self: *@This(), token: common.Tag) !void {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{token})) |_| {
         return;
     } else {
         try self.context.session.emit(.Error, self.lexer.next_token().span, "Unexepected token");
@@ -61,8 +60,8 @@ fn expect(self: *@This(), token: types.Tag) !void {
 }
 
 // expect a token type and return it if it is valid
-fn expect_ret(self: *@This(), token: types.Tag) !types.Token {
-    if (self.lexer.consume_if_eq(&[_]types.Tag{token})) |tok| {
+fn expect_ret(self: *@This(), token: common.Tag) !common.Token {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{token})) |tok| {
         return tok;
     } else {
         try self.context.session.emit(.Error, self.lexer.next_token().span, "Unexepected token ret");
@@ -84,20 +83,20 @@ fn expression(self: *@This()) anyerror!*Ast {
 // block = "{" stmt* "}"
 fn block(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
     };
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket})) |_| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.open_bracket})) |_| {
         span.start = self.lexer.index;
         var exprs = std.ArrayList(*Ast).init(self.gpa);
         while (self.lexer.has_next() and !self.lexer.is_next_token(.close_bracket)) {
             const exp = try self.stmt();
             span.merge(exp.span);
-            if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |_| {
+            if (self.lexer.consume_if_eq(&[_]common.Tag{.semicolon})) |_| {
                 const termnt: Ast = Ast.create(.{ .terminated = exp }, span);
                 span.end = self.lexer.index;
-                try exprs.append(try mem.createWith(self.gpa, termnt)); 
+                try exprs.append(try common.createWith(self.gpa, termnt)); 
             } else {
                 try exprs.append(exp);
             }
@@ -108,7 +107,7 @@ fn block(self: *@This()) !*Ast {
         _ = self.lexer.next_token();
         span.end = self.lexer.index;
         const out: Ast = Ast.create(.{ .block = .{ .exprs = try exprs.toOwnedSlice() }}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     } 
     try self.context.session.emit(.Error, span, "Expected a block");
     return error.RequiredBlock;
@@ -133,16 +132,16 @@ fn optional_block(self: *@This()) !*Ast {
 
 // parse a type with modifiers and primitives
 // type = typemods* (primitivetype | ident)
-fn parse_type(self: *@This()) !Ast.Type { 
+fn parse_type(self: *@This()) !AstTypes.Type { 
     self.lexer.skip_whitespace();
-    var modifiers = std.ArrayList(Ast.TypeModifier).init(self.gpa);
-    var span: types.Span = .{
+    var modifiers = std.ArrayList(AstTypes.TypeModifier).init(self.gpa);
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
     };
-    while (self.lexer.consume_if_eq(&[_]types.Tag{.amp, .amp2, .star, .open_square, .keyword_mut, .keyword_const})) |mmod| {
+    while (self.lexer.consume_if_eq(&[_]common.Tag{.amp, .amp2, .star, .open_square, .keyword_mut, .keyword_const})) |mmod| {
                 
-        var mod: Ast.TypeModifier = .Ref;
+        var mod: AstTypes.TypeModifier = .Ref;
         switch (mmod.tag) {
             .amp => mod = .Ref, //&
             .amp2 => { //double ref since its a seperate token
@@ -173,7 +172,7 @@ fn parse_type(self: *@This()) !Ast.Type {
                 break;
             },
             .open_square => { //slice ([]) or static array ([x])
-                if (self.lexer.consume_if_eq(&[_]types.Tag{.int_literal})) |lit| {
+                if (self.lexer.consume_if_eq(&[_]common.Tag{.int_literal})) |lit| {
                     mod = .{ .Array = lit };
                 } else {
                     mod = .Slice;
@@ -187,10 +186,10 @@ fn parse_type(self: *@This()) !Ast.Type {
         }
         try modifiers.append(mod);
     }
-    var base_ty: Ast.Type = .createPrimitive(.Unit, if (modifiers.items.len > 0) try modifiers.toOwnedSlice() else null );
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.ident, .open_paren})) |ty| {
+    var base_ty: AstTypes.Type = .createPrimitive(.Unit, if (modifiers.items.len > 0) try modifiers.toOwnedSlice() else null );
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.ident, .open_paren})) |ty| {
         if (ty.tag == .open_paren) {
-            if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |_| { //()
+            if (self.lexer.consume_if_eq(&[_]common.Tag{.close_paren})) |_| { //()
                 if (base_ty.modifiers != null) {
                     span.end = self.lexer.index;
                     try self.context.session.emit(.Error, span, "Unit type cannot have modifiers");
@@ -201,14 +200,14 @@ fn parse_type(self: *@This()) !Ast.Type {
                 try self.context.session.emit(.Error, span, "Types cannot currently have paranthesis other than unit");
                 return error.ParenInTypeExprNotUnit;
             }
-        } else if (Ast.PrimitiveType.prims.get(ty.span.get_string(self.lexer.buffer))) |val| {
+        } else if (AstTypes.PrimitiveType.prims.get(ty.span.get_string(self.lexer.buffer))) |val| {
             base_ty.base_type = .{ .primitive = val };
         }  else {
             base_ty.base_type = .{ .user = .{ .span = ty.span, .value = ty.span.get_string(self.lexer.buffer) } };
         }
-    } else if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_struct})) |_|{
+    } else if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_struct})) |_|{
         try self.expect(.open_bracket);
-        var fields = std.StringHashMap(Ast.TypeId).init(self.gpa);
+        var fields = std.StringHashMap(AstTypes.TypeId).init(self.gpa);
 
         while (!self.lexer.is_next_token(.close_bracket)) {
             const ident = try self.expect_ret(.ident);
@@ -219,7 +218,7 @@ fn parse_type(self: *@This()) !Ast.Type {
                 try self.context.session.emit(.Error, span, "Missing comma");
                 return error.MissingCommaInStruct;
             }
-            _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
+            _ = self.lexer.consume_if_eq(&[_]common.Tag{.comma});
             fields.putNoClobber(ident.span.get_string(self.lexer.buffer), field_type.hash()) catch {
                 span.merge(.{ .start = span.start, .end = self.lexer.index});
                 try self.context.session.emit(.Error, span, "Struct with duplicate fields");
@@ -228,14 +227,14 @@ fn parse_type(self: *@This()) !Ast.Type {
         }
         try self.expect(.close_bracket);
         base_ty.base_type = .{ .strct = .{ .fields = fields } };
-    } else if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_enum})) |_| {
+    } else if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_enum})) |_| {
         try self.expect(.open_bracket);
-        var variants = std.StringHashMap(?Ast.TypeId).init(self.gpa);
+        var variants = std.StringHashMap(?AstTypes.TypeId).init(self.gpa);
 
         while (!self.lexer.is_next_token(.close_bracket)) {
             const ident = try self.expect_ret(.ident);
-            var var_ty: ?Ast.TypeId = null;
-            if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
+            var var_ty: ?AstTypes.TypeId = null;
+            if (self.lexer.consume_if_eq(&[_]common.Tag{.colon})) |_| {
                 var_ty = (try self.parse_type()).hash();
             }
             if (!self.lexer.is_next_token(.comma) and !self.lexer.is_next_token(.close_bracket)) {
@@ -243,7 +242,7 @@ fn parse_type(self: *@This()) !Ast.Type {
                 try self.context.session.emit(.Error, span, "Missing comma");
                 return error.MissingCommaInEnum;
             }
-            _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
+            _ = self.lexer.consume_if_eq(&[_]common.Tag{.comma});
             variants.putNoClobber(ident.span.get_string(self.lexer.buffer), var_ty) catch {
                 span.merge(.{ .start = span.start, .end = self.lexer.index});
                 try self.context.session.emit(.Error, span, "Duplicate enum variant");
@@ -260,15 +259,15 @@ fn parse_type(self: *@This()) !Ast.Type {
 }
 
 // trys to parse a global decleration modifier otherwise returns null
-fn try_decl_mod(self: *@This()) !?Ast.GlobalDeclMod {
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_pub, .keyword_export, .keyword_extern})) |key| {
-        var out: Ast.GlobalDeclMod = .Pub;
+fn try_decl_mod(self: *@This()) !?AstTypes.GlobalDeclMod {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_pub, .keyword_export, .keyword_extern})) |key| {
+        var out: AstTypes.GlobalDeclMod = .Pub;
         switch (key.tag) {
             .keyword_pub => {
-                if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_export})) |_| {
+                if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_export})) |_| {
                     out = .PubExport;
                 }
-                if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_extern})) |_| {
+                if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_extern})) |_| {
                     out = .PubExtern;
                 }
                 out = .Pub;
@@ -293,9 +292,9 @@ fn try_decl_mod(self: *@This()) !?Ast.GlobalDeclMod {
 // fn_decl = decl_mod? fn_mod? "fn" ident "(" param* ")" (":" "(" (type ",") | type ")" )? ("->" type)? block?
 fn fn_decl(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var decl_mod: ?Ast.GlobalDeclMod = null;
-    var fn_mod: ?Ast.FnModifier = null;
-    var span: types.Span = .{
+    var decl_mod: ?AstTypes.GlobalDeclMod = null;
+    var fn_mod: ?AstTypes.FnModifier = null;
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
@@ -303,7 +302,7 @@ fn fn_decl(self: *@This()) !*Ast {
         span.merge(.{ .start = span.start, .end = self.lexer.index });
         decl_mod = decl;
     }
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_async, .keyword_pure, .keyword_comp})) |fnm| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_async, .keyword_pure, .keyword_comp})) |fnm| {
         fn_mod = switch (fnm.tag) {
             .keyword_async => .Async,
             .keyword_pure => .Pure,
@@ -311,8 +310,8 @@ fn fn_decl(self: *@This()) !*Ast {
             else => unreachable
         };
     }
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_fn})) |_| {
-        var params = std.ArrayList(Ast.Ident).init(self.gpa);
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_fn})) |_| {
+        var params = std.ArrayList(AstTypes.Ident).init(self.gpa);
         const ident = try self.expect_ret(.ident);
         span.merge(ident.span);
         self.expect(.open_paren) catch |err| {
@@ -336,15 +335,15 @@ fn fn_decl(self: *@This()) !*Ast {
             }
         }
         _ = self.lexer.next_token();
-        var param_types = std.ArrayList(Ast.TypeId).init(self.gpa);
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
-            if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
+        var param_types = std.ArrayList(AstTypes.TypeId).init(self.gpa);
+        if (self.lexer.consume_if_eq(&[_]common.Tag{.colon})) |_| {
+            if (self.lexer.consume_if_eq(&[_]common.Tag{.open_paren})) |_| {
                 while (!self.lexer.is_next_token(.close_paren)) {
                     const param_ty = try self.parse_type();
                     const param_tyid = param_ty.hash();
                     _ = try self.context.type_tab.getOrPutValue(param_tyid, param_ty);
                     try param_types.append(param_tyid);
-                    if (self.lexer.consume_if_eq(&[_]types.Tag{.comma})) |_| {
+                    if (self.lexer.consume_if_eq(&[_]common.Tag{.comma})) |_| {
                         if (self.lexer.is_next_token(.close_paren)) {
                             span.merge(.{.start = span.start, .end = self.lexer.index});
                             try self.context.session.emit(.Error, span, "Type parameter list contains an extra comma");
@@ -362,8 +361,8 @@ fn fn_decl(self: *@This()) !*Ast {
             try self.context.session.emit(.Error, span, try std.fmt.allocPrint(self.gpa, "Type list is shorter than the parameter list. Expected: {}, got: {}", .{params.items.len, param_types.items.len}));
             return error.MismatchedParamToTypeLen;
         }
-        var return_ty: Ast.Type = Ast.Type.createPrimitive(.Unit, null);
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.thin_arrow})) |_| {
+        var return_ty: AstTypes.Type = AstTypes.Type.createPrimitive(.Unit, null);
+        if (self.lexer.consume_if_eq(&[_]common.Tag{.thin_arrow})) |_| {
             return_ty = try self.parse_type();
             span.merge(.{.start = span.start, .end = self.lexer.index});
         }
@@ -385,7 +384,7 @@ fn fn_decl(self: *@This()) !*Ast {
             .fn_mod = fn_mod,
             .body = blck
         }}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return self.var_decl();
 }
@@ -394,22 +393,22 @@ fn fn_decl(self: *@This()) !*Ast {
 // var_decl = ("let" | "mut") (":" type)? ("=" expression)? ";"
 fn var_decl(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_let, .keyword_mut})) |key| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_let, .keyword_mut})) |key| {
         const ident = try self.expect_ret(.ident);
         span.merge(key.span);
         span.merge(ident.span);
-        var ty: ?Ast.Type = null;
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.colon})) |_| {
+        var ty: ?AstTypes.Type = null;
+        if (self.lexer.consume_if_eq(&[_]common.Tag{.colon})) |_| {
             ty = try self.parse_type();
             span.merge(.{.start = span.start, .end = self.lexer.index});
         }
         var initial: ?*Ast = null;
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.eq})) |eq| {
+        if (self.lexer.consume_if_eq(&[_]common.Tag{.eq})) |eq| {
             span.merge(eq.span);
             initial = try self.expression();
             span.merge(initial.?.span);
@@ -425,26 +424,26 @@ fn var_decl(self: *@This()) !*Ast {
             .ty = tyid,
             .initialize = initial
         }}, span);
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |tok| {
+        if (self.lexer.consume_if_eq(&[_]common.Tag{.semicolon})) |tok| {
             span.merge(tok.span);
-            out = Ast.create(.{ .terminated = try mem.createWith(self.gpa, out)}, span);
+            out = Ast.create(.{ .terminated = try common.createWith(self.gpa, out)}, span);
         } else {
             try self.context.session.emit(.Error, span, "Missing Semicolon");
             return error.MissingSemicolon;
         }
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return try self.type_decl();
 }
 
 fn type_decl(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_type})) |_| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_type})) |_| {
         const ident = try self.expect_ret(.ident);
         try self.expect(.eq);
         const ty = try self.parse_type();
@@ -459,7 +458,7 @@ fn type_decl(self: *@This()) !*Ast {
             },
             .ty = tyid,
         }}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return self.expression();
 
@@ -467,11 +466,11 @@ fn type_decl(self: *@This()) !*Ast {
 
 fn module_decl(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_mod})) |key| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_mod})) |key| {
         if (self.has_module) {
             span.merge(.{ .start = span.start, .end = self.lexer.index});
             try self.context.session.emit(.Error, span, "There can only be one module per file");
@@ -485,7 +484,7 @@ fn module_decl(self: *@This()) !*Ast {
             return error.MalformedModulePath;
         }
         try self.expect(.semicolon);
-        const mod = types.Module {
+        const mod = common.Module {
             .exports = .init(self.gpa),
             .imports = .init(self.gpa),
             .path = path.?.node.path,
@@ -506,12 +505,12 @@ fn module_decl(self: *@This()) !*Ast {
 
 fn import_stmt(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_import})) |key| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_import})) |key| {
         span.merge(key.span);
         const path = try self.parse_path();
         if (path == null) {
@@ -519,45 +518,45 @@ fn import_stmt(self: *@This()) !*Ast {
             try self.context.session.emit(.Error, span, "Malformed import path");
             return error.MalformedModulePath;
         }
-        const node: Ast.Import = .{
+        const node: AstTypes.Import = .{
             .path = path.?,
         };
         const out = Ast.create(.{ .import = node }, span);
         try self.imports.append(path.?.node.path);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return self.fn_decl();
 }
 
 fn return_stmt(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_return})) |tok| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_return})) |tok| {
         span.merge(tok.span);
         const expr = try self.expression();
         span.merge(expr.span);
         const out = Ast.create(.{ .return_stmt = expr }, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return self.ifstmt();
 }
 fn ifstmt(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_if})) |tok| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_if})) |tok| {
         span.merge(tok.span);
         const condition = try self.expression();
         span.merge(condition.span);
         const then_block = try self.optional_block();
         span.merge(then_block.span);
         var else_block: ?*Ast = null;
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_else})) |_| {
+        if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_else})) |_| {
             else_block = try self.optional_block();
             span.merge(else_block.?.span);
         }
@@ -566,7 +565,7 @@ fn ifstmt(self: *@This()) !*Ast {
             .block = then_block,
             .else_block = else_block
         }}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return try self.while_loop();
 }
@@ -574,12 +573,12 @@ fn ifstmt(self: *@This()) !*Ast {
 //TODO: move this (wrong precedence)
 fn while_loop(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_while})) |tok| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_while})) |tok| {
         span.merge(tok.span);
         const condition = try self.expression();
         span.merge(condition.span);
@@ -589,7 +588,7 @@ fn while_loop(self: *@This()) !*Ast {
             .condition = condition,
             .block = body
         }}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return try self.assignment();
 }
@@ -597,14 +596,14 @@ fn while_loop(self: *@This()) !*Ast {
 //TODO: move this (wrong precedence)
 fn assignment(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     const lval = try self.ternary();
     span.merge(lval.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{
+    if (self.lexer.consume_if_eq(&[_]common.Tag{
         .eq, .pluseq, .minuseq, .stareq, .slasheq, .percenteq, .shleq, .shreq, .ampeq, .careteq, .pipeeq
     })) |token| {
         span.merge(token.span);
@@ -617,7 +616,7 @@ fn assignment(self: *@This()) anyerror!*Ast {
         }}, span);
         
         if (token.tag != .eq) {
-            const operator: types.Tag = switch (token.tag) {
+            const operator: common.Tag = switch (token.tag) {
                     .pluseq => .plus,
                     .minuseq => .minus,
                     .stareq => .star,
@@ -638,29 +637,29 @@ fn assignment(self: *@This()) anyerror!*Ast {
             parent = Ast.create(.{ .assignment = .{
                 .op = .{ .tag = .eq, .span = token.span },
                 .lvalue = lval,
-                .expr = try mem.createWith(self.gpa, binary_expr),
+                .expr = try common.createWith(self.gpa, binary_expr),
             }}, span);
         }
         
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.semicolon})) |tok| {
+        if (self.lexer.consume_if_eq(&[_]common.Tag{.semicolon})) |tok| {
             span.merge(tok.span);
-            parent = Ast.create(.{ .terminated = try mem.createWith(self.gpa, parent) }, span);
+            parent = Ast.create(.{ .terminated = try common.createWith(self.gpa, parent) }, span);
         }
-        return try mem.createWith(self.gpa, parent);
+        return try common.createWith(self.gpa, parent);
     } 
     return lval;
 }
 
 fn ternary(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var condition = try self.logical_or();
     span.merge(condition.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.question})) |_| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.question})) |_| {
         const true_path = try self.expression();
         span.merge(true_path.span);
         self.expect(.colon) catch |err| {
@@ -675,21 +674,21 @@ fn ternary(self: *@This()) !*Ast {
             .true_path = true_path,
             .false_path = false_path,
         }}, span);
-        condition = try mem.createWith(self.gpa, parent);
+        condition = try common.createWith(self.gpa, parent);
     }
     return condition;
 }
 
 fn logical_or(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.logical_and();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.pipe2})) |pipe2| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.pipe2})) |pipe2| {
         const right = try self.logical_or();
         span.merge(right.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -697,20 +696,20 @@ fn logical_or(self: *@This()) !*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 fn logical_and(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.bitwise_or();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.amp2})) |amp2| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.amp2})) |amp2| {
         const right = try self.logical_and();
         span.merge(right.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -718,21 +717,21 @@ fn logical_and(self: *@This()) !*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 
 fn bitwise_or(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.bitwise_xor();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.pipe})) |pipe| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.pipe})) |pipe| {
         const right = try self.bitwise_or();
         span.merge(right.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -740,20 +739,20 @@ fn bitwise_or(self: *@This()) !*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 fn bitwise_xor(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.bitwise_and();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.caret})) |caret| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.caret})) |caret| {
         const right = try self.bitwise_xor();
         span.merge(right.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -761,20 +760,20 @@ fn bitwise_xor(self: *@This()) anyerror!*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 fn bitwise_and(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.equality();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.amp})) |amp| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.amp})) |amp| {
         const right = try self.bitwise_and();
         span.merge(left.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -782,21 +781,21 @@ fn bitwise_and(self: *@This()) anyerror!*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 
 fn equality(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.relational();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.eq2, .noteq})) |op| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.eq2, .noteq})) |op| {
         const right = try self.equality();
         span.merge(right.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -804,21 +803,21 @@ fn equality(self: *@This()) anyerror!*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 
 fn relational(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.shift();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.lt, .lteq, .gt, .gteq})) |op| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.lt, .lteq, .gt, .gteq})) |op| {
         const right = try self.relational();
         span.merge(right.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -826,20 +825,20 @@ fn relational(self: *@This()) anyerror!*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 fn shift(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.additive();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.shl, .shr})) |op| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.shl, .shr})) |op| {
         const right = try self.shift();
         span.merge(right.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -847,21 +846,21 @@ fn shift(self: *@This()) anyerror!*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 
 fn additive(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.multiplicative();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.plus, .minus})) |op| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.plus, .minus})) |op| {
         const right = try self.additive();
         span.merge(right.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -869,20 +868,20 @@ fn additive(self: *@This()) anyerror!*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 fn multiplicative(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
     var left = try self.cast();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.star, .slash, .percent})) |op| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.star, .slash, .percent})) |op| {
         const right = try self.multiplicative();
         span.merge(right.span);
         const parent: Ast = Ast.create(.{ .binary_expr = .{
@@ -890,18 +889,18 @@ fn multiplicative(self: *@This()) anyerror!*Ast {
             .left = left,
             .right = right,
         }}, span);
-        left = try mem.createWith(self.gpa, parent);
+        left = try common.createWith(self.gpa, parent);
     }
     return left;
 }
 fn cast(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
     };
     const expr = try self.unary();
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.keyword_as})) |_| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.keyword_as})) |_| {
         const ty = try self.parse_type();
         span.merge(.{.start = span.start, .end = self.lexer.index});
         const ty_hash = ty.hash();
@@ -910,26 +909,26 @@ fn cast(self: *@This()) anyerror!*Ast {
             .expr = expr,
             .ty = ty_hash,
         }}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return expr;
 }
 
 fn unary(self: *@This()) anyerror!*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index,
     };
 
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.minus, .bang, .tilde, .star, .amp, .amp2})) |op| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.minus, .bang, .tilde, .star, .amp, .amp2})) |op| {
         const unry = try self.unary();
         span.merge(unry.span);
         const out: Ast = Ast.create(.{ .unary_expr = .{
             .op = op,
             .expr = unry,
         }}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return try self.fn_call();
 }
@@ -938,14 +937,14 @@ fn unary(self: *@This()) anyerror!*Ast {
 
 fn fn_call(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
     };
 
     const left = try self.access();
     span.merge(left.span);
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |_| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.open_paren})) |_| {
         var args = std.ArrayList(*Ast).init(self.gpa);
         while (!self.lexer.is_next_token(.close_paren)) {
             const expr = try self.expression();
@@ -960,34 +959,34 @@ fn fn_call(self: *@This()) !*Ast {
             .left = left,
             .params = try args.toOwnedSlice()
         }}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return left;
 }
 
 fn access(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
     };
     const left = try self.type_cons();
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.dot})) |_| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.dot})) |_| {
         span.merge(left.span);
         const ident = try self.expect_ret(.ident);
         span.merge(ident.span);
-        const out: Ast.Ast = Ast.create(.{.access_operator = .{
+        const out: AstTypes.Ast = Ast.create(.{.access_operator = .{
             .left = left,
             .right = .{ .span = ident.span, .value = ident.span.get_string(self.lexer.buffer)}
         }}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return left;
 }
 
 fn type_cons(self: *@This()) !*Ast {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
     };
@@ -995,14 +994,14 @@ fn type_cons(self: *@This()) !*Ast {
     self.context.session.freeze();
     const ty = self.parse_type() catch null;
     self.context.session.unfreeze();
-    if (ty != null and self.lexer.consume_if_eq(&[_]types.Tag{.open_bracket}) != null) {
+    if (ty != null and self.lexer.consume_if_eq(&[_]common.Tag{.open_bracket}) != null) {
         span.merge(.{.start = span.start, .end = self.lexer.index});
         var fields = std.StringHashMap(?*Ast).init(self.gpa);
         while (!self.lexer.is_next_token(.close_bracket)) {
             try self.expect(.dot);
             const field = try self.expect_ret(.ident);
             const field_name = field.span.get_string(self.lexer.buffer);
-            const value = if (self.lexer.consume_if_eq(&[_]types.Tag{.eq})) |_| try self.expression() else null; 
+            const value = if (self.lexer.consume_if_eq(&[_]common.Tag{.eq})) |_| try self.expression() else null; 
             span.merge(.{.start = span.start, .end = self.lexer.index});
             if (!self.lexer.is_next_token(.comma) 
                 and !self.lexer.is_next_token(.close_bracket)) {
@@ -1010,7 +1009,7 @@ fn type_cons(self: *@This()) !*Ast {
                 try self.context.session.emit(.Error, span, "Missing comma before struct initializer");
                 return error.MissingComma;
             }
-            _ = self.lexer.consume_if_eq(&[_]types.Tag{.comma});
+            _ = self.lexer.consume_if_eq(&[_]common.Tag{.comma});
             if (fields.contains(field_name)) {
                 span.merge(.{.start = span.start, .end = self.lexer.index});
                 try self.context.session.emit(.Error, span, "Duplicate field initialization");
@@ -1028,24 +1027,24 @@ fn type_cons(self: *@This()) !*Ast {
                 .fields = fields
             }
         }, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     self.lexer.index = saved;
     return try self.primary();
 }
 
 fn parse_path(self: *@This()) !?*Ast {
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index
     };
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.ident})) |fid| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.ident})) |fid| {
         span.merge(fid.span);
-        var parts = std.ArrayList(Ast.Ident).init(self.gpa);
+        var parts = std.ArrayList(AstTypes.Ident).init(self.gpa);
         try parts.append(.{ .span = fid.span, .value = fid.span.get_string(self.lexer.buffer)});
-        while (self.lexer.consume_if_eq(&[_]types.Tag{.colon2})) |tok| {
+        while (self.lexer.consume_if_eq(&[_]common.Tag{.colon2})) |tok| {
             span.merge(tok.span);
-            if (self.lexer.consume_if_eq(&[_]types.Tag{.ident})) |id| {
+            if (self.lexer.consume_if_eq(&[_]common.Tag{.ident})) |id| {
                 span.merge(id.span);
                 try parts.append(.{ .span = id.span, .value = id.span.get_string(self.lexer.buffer)});
             } else {
@@ -1053,17 +1052,17 @@ fn parse_path(self: *@This()) !?*Ast {
             }
         }
         const parts_slice = try parts.toOwnedSlice();
-        const path: Ast.Path = .{
+        const path: AstTypes.Path = .{
             .parts = parts_slice,
         };
         const out = Ast.create(.{ .path = path}, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
     return null;
 }
 fn primary(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: types.Span = .{
+    var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index + 1,
     };
@@ -1075,17 +1074,17 @@ fn primary(self: *@This()) anyerror!Ast.AstNodeId {
         try self.context.session.emit(.Error, span, "Malformed path");
         return error.MalformedPath;
     }
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
         span.merge(lit.span);
         const out: Ast = Ast.create(.{ .terminal = lit }, span);
-        return try mem.createWith(self.gpa, out);
+        return try common.createWith(self.gpa, out);
     }
-    if (self.lexer.consume_if_eq(&[_]types.Tag{.open_paren})) |tok| { 
+    if (self.lexer.consume_if_eq(&[_]common.Tag{.open_paren})) |tok| { 
         span.merge(tok.span);
-        if (self.lexer.consume_if_eq(&[_]types.Tag{.close_paren})) |ctok| {
+        if (self.lexer.consume_if_eq(&[_]common.Tag{.close_paren})) |ctok| {
             span.merge(ctok.span);
             const out: Ast = Ast.create(.unit, span);
-            return try mem.createWith(self.gpa, out);
+            return try common.createWith(self.gpa, out);
         }
         const out = try self.expression();
         span.merge(out.span);

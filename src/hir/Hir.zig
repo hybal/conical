@@ -1,8 +1,7 @@
 const std = @import("std");
-const Ast = @import("Ast.zig");
-const types = @import("types.zig");
-const mem = @import("mem.zig");
-const DefId = types.DefId;
+const Ast = @import("parse");
+const common = @import("common");
+const DefId = common.DefId;
 pub const HirId = u64;
 
 pub const AdjustmentStep = union(enum) {
@@ -12,7 +11,7 @@ pub const AdjustmentStep = union(enum) {
     NumericCast: Ast.TypeId,
     PointerCast: Ast.TypeId,
 
-    pub fn get_string(self: *const @This(), context: *types.Context, gpa: std.mem.Allocator) ![]const u8 {
+    pub fn get_string(self: *const @This(), context: *common.Context, gpa: std.mem.Allocator) ![]const u8 {
         switch (self.*) {
             .AutoDeref, .RefMutDiscard, .MutDiscard => {
                 return @tagName(self.*);
@@ -41,7 +40,7 @@ pub const EscapeInfo = enum {
 pub const HirInfo = struct {
     ty: ?Ast.TypeId,
     adjustments: ?[]AdjustmentStep,
-    span: types.Span,
+    span: common.Span,
     scope_id: usize,
     owner: ?HirId = null,
     escape: EscapeInfo = .Local,
@@ -114,7 +113,7 @@ pub const BinaryExpr = struct {
 };
 
 pub const Ident = struct {
-    location: types.Span,
+    location: common.Span,
     value: []const u8,
 
     pub fn hash(self: *const @This()) u64 {
@@ -445,7 +444,7 @@ pub const TopLevelExpr = union(enum) {
 pub const Hir = struct {
     node: HirNode,
     id: HirId,
-    pub fn create(node: HirNode, scope_id: usize, span: types.Span, hir_table: *HirInfoTable) !@This() {
+    pub fn create(node: HirNode, scope_id: usize, span: common.Span, hir_table: *HirInfoTable) !@This() {
         const id = node.hash();
         try hir_table.put(id, .{
             .ty = null,

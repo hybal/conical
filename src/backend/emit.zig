@@ -1,8 +1,8 @@
 const std = @import("std");
-const Hir = @import("Hir.zig");
-const Ast = @import("Ast.zig");
-const types = @import("types.zig");
-const diag = @import("diag.zig");
+const Hir = @import("hir");
+const Ast = @import("parse");
+const types = @import("common");
+const diag = @import("diagnostics");
 const llvm = @import("llvm");
 
 allocator: std.mem.Allocator,

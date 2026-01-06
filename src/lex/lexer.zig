@@ -1,6 +1,126 @@
 const std = @import("std");
-const Tag = @import("types.zig").Tag;
-const Token = @import("types.zig").Token;
+const common = @import("common");
+
+
+
+//These are all of the supported tokens
+pub const Tag = enum {
+    invalid,
+    eof,
+    //Literals
+    int_literal,
+    float_literal,
+    string_literal, //"..."
+    raw_string_literal, //`...`
+    char_literal, //'.'
+    ident, // [a-zA-Z_] [a-zA-Z_0-9]*
+    //Symbols
+    plus, //+
+    pluseq, //+=
+    plus2, //++
+    minus, //-
+    minuseq, //-=
+    minus2, //--
+    slash, // /
+    slasheq, // /=
+    back_slash, //\
+    star, //*
+    stareq, //*=
+    caret, //^
+    careteq, //^=
+    tilde, //~
+    percent, //%
+    percenteq, //%=
+    at, //@
+    dollar, //$
+    semicolon, //;
+    comma, //,
+    question, //?
+    question2, //??
+    pipe, //|
+    pipeeq, //|=
+    pipe2, //||
+    hash, //#
+    bang, // !
+    bang2, // !!
+    amp, //&
+    ampeq, //&=
+    amp2, //&&
+    eq, //=
+    eq2, //==
+    noteq, // !=
+    gt, //>
+    lt, //<
+    lteq, //<=
+    gteq, //>=
+    shl, //<<
+    shleq, //<<=
+    shr, //>>
+    shreq, //>>=
+    open_bracket, //{
+    close_bracket, //}
+    open_paren, //(
+    close_paren, //)
+    open_square, //[
+    close_square, //]
+    thin_arrow,
+    fat_arrow, //=>
+    dot, //.
+    dot2, //..
+    colon, //:
+    colon2, //::
+    single_quote, //'
+    //keywords
+    keyword_if, //if
+    keyword_else, //else 
+    keyword_while, //while 
+    keyword_for, //for
+    keyword_in, //in
+    keyword_match, //match 
+    keyword_fn, //fn
+    keyword_async, //async (may be removed)
+    keyword_await, //await (may be removed)
+    keyword_inline, //inline 
+    keyword_extern, //extern
+    keyword_priv, //priv (may be removed)
+    keyword_pub, //pub
+    keyword_export, //export
+    keyword_import, //import
+    keyword_let, //let
+    keyword_mut, //mut
+    keyword_return, //return
+    keyword_break, //break
+    keyword_struct, //struct
+    keyword_enum, //enum
+    keyword_test, //test (may be removed)
+    keyword_use, //use
+    keyword_mod, //mod
+    keyword_comp, //comp (may be changed to 'comptime')
+    keyword_continue, //continue
+    keyword_as, //as
+    keyword_static, //static (may be removed)
+    keyword_type,  //typ
+    keyword_const, //const
+    keyword_unsafe, //unsafe
+    keyword_impl, //impl
+    keyword_when, //when (may be removed)
+    keyword_Self, //Self
+    keyword_where, //where
+    keyword_macro, //macro
+    keyword_do, //do
+    keyword_pure, //pure
+    keyword_yield,
+    keyword_true, //true
+    keyword_false, //false
+};
+
+//a token consists of a span (the location in the source code the token is located)
+//and a tag (the actual type of token)
+pub const Token = struct {
+    span: common.Span,
+    tag: Tag,
+};
+
 
 const Base = enum { 
     b2, 

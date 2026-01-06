@@ -1,10 +1,10 @@
 const std = @import("std");
-const Hir = @import("Hir.zig");
-const types = @import("types.zig");
-const Ast = @import("Ast.zig");
+const Hir = @import("hir");
+const common = @import("common");
+const Ast = @import("parse");
 
 
-context: *types.Context,
+context: *common.Context,
 allocator: std.mem.Allocator,
 current_escape: Hir.EscapeInfo = .Local,
 // HIR id to put cleanup before -> HIR id's that need destructing (in correct order)
