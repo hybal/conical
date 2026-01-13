@@ -1,6 +1,7 @@
 const std = @import("std");
 const common = @import("common");
 const Token = @import("lex").Token;
+const ErrorId = @import("diagnostics").ErrorId;
 
 
 /// Represents a binary expression of the form: left op right
@@ -119,7 +120,7 @@ pub const Path = struct {
             return false;
         }
         for (self.parts, 0..) |part, i| {
-            if (!part.equals(other.parts[i])) {
+            if (!part.equals(&other.parts[i])) {
                 return false;
             }
         }
@@ -153,6 +154,15 @@ pub const Path = struct {
 pub const TypeCons = struct {
     ty: AstNodeId,
     fields: std.StringHashMap(?AstNodeId),
+};
+pub const InitializerField = struct {
+    id: Ident,
+    value: AstNodeId,
+};
+pub const Initializer = struct {
+    ty: ?AstNodeId,
+    fields: ?[]InitializerField,
+    expr: ?AstNodeId,
 };
 
 pub const TypeDecl = struct {
@@ -239,6 +249,12 @@ pub const Block = struct {
     exprs: []AstNodeId
 };
 
+pub const Poison = struct {
+    error_id: ErrorId,
+};
+
+pub const Unit = struct {};
+
 
 
 pub const SpanId = usize;
@@ -250,7 +266,12 @@ pub const AstNode = struct {
     index: usize,
 };
 
+// Is it bad that you have to change 8 things to add a new ast node, yes...
+// Am I going to make it better? Maybe...
+// Compile time stuff in zig aren't the easiest things to reason about.
 pub const AstKind = enum {
+    poison,
+    unit,
     binary_expr,
     unary_expr,
     terminal,
@@ -280,7 +301,9 @@ pub const AstKind = enum {
 
 pub const Ast = struct {
     nodes: []const AstNode,
+    poisons: []const Poison,
     spans: []const common.Span,
+    units: []const Unit,
     binary_exprs: []const BinaryExpr,
     unary_exprs: []const UnaryExpr,
     terminals: []const Token,
@@ -307,35 +330,37 @@ pub const Ast = struct {
     module_decls: []const ModuleDecl,
     imports: []const Import,
 
-    pub fn get(self: *@This(), id: AstNodeId) *anyopaque {
+    pub fn get(self: *@This(), id: AstNodeId) struct {AstKind, *anyopaque} {
         const node_index = self.nodes[id].index;
         const node_kind = self.nodes[id].kind;
         return switch (node_kind) {
-            .binary_expr => &self.binary_exprs[node_index],
-            .unary_expr => &self.unary_exprs[node_index],
-            .terminal => &self.terminals[node_index],
-            .type_expr => &self.type_exprs[node_index],
-            .type_binary_expr => &self.type_binary_exprs[node_index],
-            .type_enum => &self.type_enums[node_index],
-            .type_struct => &self.type_structs[node_index],
-            .type_set => &self.type_sets[node_index],
-            .type_int_range => &self.type_int_ranges[node_index],
-            .assignment => &self.assignments[node_index],
-            .if_stmt => &self.if_stmts[node_index],
-            .while_loop => &self.while_loops[node_index],
-            .block => &self.blocks[node_index],
-            .var_decl => &self.var_decls[node_index],
-            .fn_decl => &self.fn_decls[node_index],
-            .fn_call => &self.fn_calls[node_index],
-            .return_stmt => &self.return_stmts[node_index],
-            .type_decl => &self.type_decls[node_index],
-            .terminated => &self.terminateds[node_index],
-            .type_cons => &self.type_cons[node_index],
-            .access_operator => &self.access_operators[node_index],
-            .cast => &self.casts[node_index],
-            .path => &self.paths[node_index],
-            .module_decl => &self.module_decls[node_index],
-            .import => &self.imports[node_index],
+            .poison => .{.poison, @constCast(&self.poisons[node_index])},
+            .unit => .{.unit, @constCast(&self.units[node_index])},
+            .binary_expr => .{.binary_expr, @constCast(&self.binary_exprs[node_index])},
+            .unary_expr => .{.unary_expr, @constCast(&self.unary_exprs[node_index])},
+            .terminal => .{.terminal, @constCast(&self.terminals[node_index])},
+            .type_expr => .{.type_expr, @constCast(&self.type_exprs[node_index])},
+            .type_binary_expr => .{.type_binary_expr, @constCast(&self.type_binary_exprs[node_index])},
+            .type_enum => .{.type_enum, @constCast(&self.type_enums[node_index])},
+            .type_struct => .{.type_struct, @constCast(&self.type_structs[node_index])},
+            .type_set => .{.type_set, @constCast(&self.type_sets[node_index])},
+            .type_int_range => .{.type_int_range, @constCast(&self.type_int_ranges[node_index])},
+            .assignment => .{.assignment, @constCast(&self.assignments[node_index])},
+            .if_stmt => .{.if_stmt, @constCast(&self.if_stmts[node_index])},
+            .while_loop => .{.while_loop, @constCast(&self.while_loops[node_index])},
+            .block => .{.block, @constCast(&self.blocks[node_index])},
+            .var_decl => .{.var_decl, @constCast(&self.var_decls[node_index])},
+            .fn_decl => .{.fn_decl, @constCast(&self.fn_decls[node_index])},
+            .fn_call => .{.fn_call, @constCast(&self.fn_calls[node_index])},
+            .return_stmt => .{.return_stmt, @constCast(&self.return_stmts[node_index])},
+            .type_decl => .{.type_decl, @constCast(&self.type_decls[node_index])},
+            .terminated => .{.terminated, @constCast(&self.terminateds[node_index])},
+            .type_cons => .{.type_cons, @constCast(&self.type_cons[node_index])},
+            .access_operator => .{.access_operator, @constCast(&self.access_operators[node_index])},
+            .cast => .{.cast, @constCast(&self.casts[node_index])},
+            .path => .{.path, @constCast(&self.paths[node_index])},
+            .module_decl => .{.module_decl, @constCast(&self.module_decls[node_index])},
+            .import => .{.import, @constCast(&self.imports[node_index])},
         };
     }
 
@@ -348,9 +373,13 @@ pub const Ast = struct {
     }
 };
 
+//NOTE: an optimization here would be to use ArrayListUnmanaged instead of ArrayList
+// that way you only need to store the allocator once
 pub const AstBuilder = struct {
     nodes: std.ArrayList(AstNode),
+    poisons: std.ArrayList(Poison),
     spans: std.ArrayList(common.Span),
+    units: std.ArrayList(Unit),
     binary_exprs: std.ArrayList(BinaryExpr),
     unary_exprs: std.ArrayList(UnaryExpr),
     terminals: std.ArrayList(Token),
@@ -380,9 +409,11 @@ pub const AstBuilder = struct {
     pub fn init(allocator: std.mem.Allocator) !AstBuilder {
         return .{
             .nodes = .init(allocator),
+            .poisons = .init(allocator),
             .spans = .init(allocator),
+            .units = .init(allocator),
             .binary_exprs = .init(allocator),
-            .unary_expr = .init(allocator),
+            .unary_exprs = .init(allocator),
             .terminals = .init(allocator),
             .type_exprs = .init(allocator),
             .type_binary_exprs = .init(allocator),
@@ -417,6 +448,8 @@ pub const AstBuilder = struct {
         span: common.Span,
         data: anytype) !AstNodeId {
         const id = switch (kind) {
+            .poison => try self.append(@TypeOf(self.poisons), self.poisons, data),
+            .unit => try self.append(@TypeOf(self.units), self.units, data),
             .binary_expr => try self.append(@TypeOf(self.binary_exprs), self.binary_exprs, data),
             .unary_expr => try self.append(@TypeOf(self.unary_exprs), self.unary_exprs, data),
             .terminal => try self.append(@TypeOf(self.terminals), self.terminals, data),
@@ -451,11 +484,54 @@ pub const AstBuilder = struct {
         });
         return out;
     }
+    pub fn get(self: *@This(), id: AstNodeId) struct {AstKind, *anyopaque} {
+        const node_index = self.nodes[id].index;
+        const node_kind = self.nodes[id].kind;
+        return switch (node_kind) {
+            .poison => .{.poison, @constCast(&self.poisons[node_index])},
+            .unit => .{.unit, @constCast(&self.units[node_index])},
+            .binary_expr => .{.binary_expr, @constCast(&self.binary_exprs[node_index])},
+            .unary_expr => .{.unary_expr, @constCast(&self.unary_exprs[node_index])},
+            .terminal => .{.terminal, @constCast(&self.terminals[node_index])},
+            .type_expr => .{.type_expr, @constCast(&self.type_exprs[node_index])},
+            .type_binary_expr => .{.type_binary_expr, @constCast(&self.type_binary_exprs[node_index])},
+            .type_enum => .{.type_enum, @constCast(&self.type_enums[node_index])},
+            .type_struct => .{.type_struct, @constCast(&self.type_structs[node_index])},
+            .type_set => .{.type_set, @constCast(&self.type_sets[node_index])},
+            .type_int_range => .{.type_int_range, @constCast(&self.type_int_ranges[node_index])},
+            .assignment => .{.assignment, @constCast(&self.assignments[node_index])},
+            .if_stmt => .{.if_stmt, @constCast(&self.if_stmts[node_index])},
+            .while_loop => .{.while_loop, @constCast(&self.while_loops[node_index])},
+            .block => .{.block, @constCast(&self.blocks[node_index])},
+            .var_decl => .{.var_decl, @constCast(&self.var_decls[node_index])},
+            .fn_decl => .{.fn_decl, @constCast(&self.fn_decls[node_index])},
+            .fn_call => .{.fn_call, @constCast(&self.fn_calls[node_index])},
+            .return_stmt => .{.return_stmt, @constCast(&self.return_stmts[node_index])},
+            .type_decl => .{.type_decl, @constCast(&self.type_decls[node_index])},
+            .terminated => .{.terminated, @constCast(&self.terminateds[node_index])},
+            .type_cons => .{.type_cons, @constCast(&self.type_cons[node_index])},
+            .access_operator => .{.access_operator, @constCast(&self.access_operators[node_index])},
+            .cast => .{.cast, @constCast(&self.casts[node_index])},
+            .path => .{.path, @constCast(&self.paths[node_index])},
+            .module_decl => .{.module_decl, @constCast(&self.module_decls[node_index])},
+            .import => .{.import, @constCast(&self.imports[node_index])},
+        };
+    }
+
+    pub fn get_node(self: *@This(), id: AstNodeId) AstNode {
+        return self.nodes[id];
+    }
+
+    pub fn get_span(self: *@This(), id: AstNodeId) common.Span {
+        return self.spans[self.nodes[id].span];
+    }
 
     pub fn build(self: *@This()) !Ast {
         return .{
             .nodes = try self.nodes.toOwnedSlice(),
+            .poisons = try self.poisons.toOwnedSlice(),
             .spans = try self.spans.toOwnedSlice(),
+            .units = try self.units.toOwnedSlice(),
             .binary_exprs = try self.binary_exprs.toOwnedSlice(),
             .unary_exprs = try self.unary_exprs.toOwnedSlice(),
             .terminals = try self.terminals.toOwnedSlice(),

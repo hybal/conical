@@ -42,21 +42,21 @@ pub const Tag = enum {
     pipe2, //||
     hash, //#
     bang, // !
+    bangeq, // != 
     bang2, // !!
     amp, //&
     ampeq, //&=
     amp2, //&&
     eq, //=
     eq2, //==
-    noteq, // !=
     gt, //>
     lt, //<
     lteq, //<=
     gteq, //>=
-    shl, //<<
-    shleq, //<<=
-    shr, //>>
-    shreq, //>>=
+    lt2, //<< 
+    lt2eq, //<<=
+    gt2, //>> 
+    gt2eq, //>>= 
     open_bracket, //{
     close_bracket, //}
     open_paren, //(
@@ -112,6 +112,7 @@ pub const Tag = enum {
     keyword_yield,
     keyword_true, //true
     keyword_false, //false
+
 };
 
 //a token consists of a span (the location in the source code the token is located)
@@ -421,9 +422,9 @@ pub const Lexer = struct {
                 '&' => tag = if (self.next_if('&')) |_| .amp2 else if (self.next_if('=')) |_| .ampeq else .amp,
                 '=' => tag = if (self.next_if('=')) |_| .eq2 else if (self.next_if('>')) |_| .fat_arrow else .eq,
                 '-' => tag = if (self.next_if('-')) |_| .minus2 else if (self.next_if('>')) |_| .thin_arrow else .minus,
-                '!' => tag = if (self.next_if('=')) |_| .noteq else if (self.next_if('!')) |_| .bang2 else .bang,
-                '>' => tag = if (self.next_if('=')) |_| .gteq else if (self.next_if('>')) |_| if (self.next_if('=')) |_| .shreq else .shr else .gt,
-                '<' => tag = if (self.next_if('=')) |_| .lteq else if (self.next_if('<')) |_| if (self.next_if('=')) |_| .shleq else .shl else .lt,
+                '!' => tag = if (self.next_if('=')) |_| .bangeq else if (self.next_if('!')) |_| .bang2 else .bang,
+                '>' => tag = if (self.next_if('=')) |_| .gteq else if (self.next_if('>')) |_| if (self.next_if('=')) |_| .gt2eq else .gt2 else .gt,
+                '<' => tag = if (self.next_if('=')) |_| .lteq else if (self.next_if('<')) |_| if (self.next_if('=')) |_| .lt2eq else .lt2 else .lt,
 
                 '\'' => { //parses character literals
                     if (self.next_if('\\')) |_| {

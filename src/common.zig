@@ -1,7 +1,5 @@
 const std = @import("std");
-const Ast = @import("Ast.zig");
-const Hir = @import("Hir.zig");
-const diag = @import("diag.zig");
+const diag = @import("diagnostics");
 
 pub inline fn createWith(allocator: std.mem.Allocator, val: anytype) std.mem.Allocator.Error!*@TypeOf(val) {
     const allocation = try allocator.create(@TypeOf(val));
@@ -113,8 +111,6 @@ pub const Context = struct {
     //module: ?ModuleId,
     //module_store: *ModuleStore,
 };
-
-
 
 
 

@@ -30,8 +30,11 @@ pub const Suggestion = struct {
     },
 };
 
+
+
 pub const Diagnostic = struct {
     code: ErrorCode,
+    span: common.Span,
     severity: Severity,
     message: []const u8,
     labels: []const Label,
@@ -44,6 +47,7 @@ pub const Diagnostic = struct {
 pub const DiagnosticBuilder = struct {
     allocator: std.mem.Allocator,
     _code: ?ErrorCode,
+    _span: ?common.Span,
     _severity: ?Severity,
     _message: ?[]const u8,
     _labels: std.ArrayList(Label),
@@ -68,12 +72,14 @@ pub const DiagnosticBuilder = struct {
         MissingCode,
         MissingSeverity,
         MissingMessage,
+        MissingSpan,
     };
     pub fn build(self: *@This()) ( BuildError || std.mem.Allocator.Error )!Diagnostic {
         return Diagnostic {
             .code = self._code orelse return error.MissingCode,
             .severity = self._severity orelse return error.MissingSeverity,
             .message = self._message orelse return error.MissingMessage,
+            .span = self._span orelse return error.MissingSpan,
             .labels = try self._labels.toOwnedSlice(),
             .help = self._help,
             .notes = try self._notes.toOwnedSlice(),
@@ -83,6 +89,11 @@ pub const DiagnosticBuilder = struct {
 
     pub fn code(self: *@This(), value: ErrorCode) *@This() {
         self._code = value;
+        return self;
+    }
+
+    pub fn span(self: *@This(), value: common.Span) *@This() {
+        self._span = value;
         return self;
     }
 

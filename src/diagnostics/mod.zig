@@ -1,0 +1,17 @@
+const diag = @import("diag.zig");
+pub const pretty = @import("prettify.zig");
+pub const Severity = diag.Severity;
+pub const LabelStyle = diag.LabelStyle;
+pub const Label = diag.Label;
+pub const Suggestion = diag.Suggestion;
+pub const Diagnostic = diag.Diagnostic;
+pub const DiagnosticBuilder = diag.DiagnosticBuilder;
+pub const ErrorId = diag.ErrorId;
+pub const ErrorStore = diag.ErrorStore;
+pub const ErrorType = diag.ErrorType;
+pub const LEXER_ERROR_RANGE = diag.LEXER_ERROR_RANGE;
+pub const PARSE_ERROR_RANGE = diag.PARSE_ERROR_RANGE;
+pub const SYMBOL_RES_ERROR_RANGE = diag.SYMBOL_RES_ERROR_RANGE;
+pub const TYPE_INFER_ERROR_RANGE = diag.TYPE_INFER_ERROR_RANGE;
+pub const GENERAL_SEMA_ERROR_RANGE = diag.GENERAL_SEMA_ERROR_RANGE;
+pub const ErrorCode = diag.ErrorCode;
