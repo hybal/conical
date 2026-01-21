@@ -1064,7 +1064,6 @@ fn initializer(self: *@This()) !Ast.AstNodeId {
     }
 }
 
-//TODO: update to newest syntax (when decided)
 fn type_cons(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
     var span: common.Span = .{
@@ -1161,7 +1160,7 @@ fn parse_path(self: *@This()) !Ast.AstNodeId {
                 //TODO: collect more than just one error
                 if (self.lexer.consume_if_eq(&[_]lex.Tag{.ident})) |_| {
                     while (self.lexer.consume_if_eq(&[_]lex.Tag{.colon2, .ident})) |_| {
-
+                        
                     }
                 }
                 return err_node;
@@ -1188,18 +1187,26 @@ fn parse_path(self: *@This()) !Ast.AstNodeId {
         );
         return out;
     }
-    unreachable;
+    // This function should always be called when the next token is an identifier
+    // It is a compiler error if it isn't
+    @compileError("Parser reached an unreachable state");
 }
 
 
+/// Parse a "primary" expression
+/// This is mostly to be able to use the same terminal parser for both general and type expressions
+/// As such this includes things like parenthesized expressions and inline blocks
 fn primary(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
     var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index + 1,
     };
+    // Sub-expression parsing
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.open_paren})) |tok| { 
         span.merge(tok.span);
+        // If there is nothing in between the parenthesis it is interpreted as `unit` 
+        // This may change in the future if I decide to make unit an actual empty set (something like `{ }` for type expressions and `.{ }` for general)
         if (self.lexer.consume_if_eq(&[_]lex.Tag{.close_paren})) |ctok| {
             span.merge(ctok.span);
             const out = try self.builder.add_node(
@@ -1234,16 +1241,22 @@ fn primary(self: *@This()) !Ast.AstNodeId {
     return try self.terminal();
 
 }
+
+/// Parse a terminal node
+/// This is stuff like literals and initializers, this does *not* include parenthesized expressions.
 fn terminal(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
     var span: common.Span = .{
         .start = self.lexer.index,
         .end = self.lexer.index + 1,
     };
+
     if (self.lexer.is_next_token(.ident)) {
         return try self.parse_path();
     }
-    if (self.lexer.consume_if_eq(&[_]lex.Tag{.float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) |lit| {
+    if (self.lexer.consume_if_eq(
+            &[_]lex.Tag{.float_literal, .int_literal, .string_literal, .raw_string_literal, .char_literal, .keyword_true, .keyword_false})) 
+        |lit| {
         span.merge(lit.span);
         const out = try self.builder.add_node(
             .terminal,
@@ -1253,7 +1266,7 @@ fn terminal(self: *@This()) anyerror!Ast.AstNodeId {
         return out;
     }
     span.merge(.{.start = span.start, .end = self.lexer.index});
-    const err = errors.UnexpectedTokenError {
+    const err = errors.ExpectedExpressionError {
         .found = self.lexer.next_token(),
     };
     const errid = try self.context.session.push(err.get_error_type());

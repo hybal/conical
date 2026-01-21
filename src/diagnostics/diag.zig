@@ -162,7 +162,7 @@ pub const ErrorType = struct {
 pub const LEXER_ERROR_RANGE = .{ 0x0000, 0x0010 };
 pub const PARSE_ERROR_RANGE = .{ 0x0100, 0x0199 }; 
 pub const SYMBOL_RES_ERROR_RANGE = .{ 0x0200, 0x0299 };
-pub const TYPE_INFER_ERROR_RANGE = .{ 0x0300, 0x699 };
+pub const TYPE_INFER_ERROR_RANGE = .{ 0x0300, 0x0699 };
 pub const GENERAL_SEMA_ERROR_RANGE = .{ 0x0700, 0x0799 };
 
 

@@ -8,7 +8,7 @@ const MODS = std.StaticStringMap(ModInf).initComptime(.{
     .{ "common", ModInf { .path = "src/common.zig", .deps = &.{ "diagnostics"} } },
     .{ "lex", ModInf { .path  = "src/lex/mod.zig", .deps = &.{"common"} } },
     .{ "parse", ModInf { .path  = "src/parse/mod.zig", .deps = &.{"common", "lex", "diagnostics"} } },
-    .{ "diagnostics", ModInf { .path  = "src/diagnostics/mod.zig", .deps = &.{"common", "lex", "parse", "hir", "mir", "sema", "backend", "bindings", "driver"} } },
+    .{ "diagnostics", ModInf { .path  = "src/diagnostics/mod.zig", .deps = &.{"common"} } },
     .{ "hir", ModInf { .path  = "src/hir/mod.zig", .deps = &.{"common", "diagnostics"} } },
     .{ "mir", ModInf { .path  = "src/mir/mod.zig", .deps = &.{"common", "diagnostics"} } },
     .{ "sema", ModInf { .path  = "src/sema/mod.zig", .deps = &.{"common", "diagnostics"} } },

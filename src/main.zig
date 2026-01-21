@@ -28,6 +28,3 @@ test "main" {
     //std.testing.refAllDeclsRecursive(driver);
 }
 
-comptime {
-    _ = @import("parse");
-}

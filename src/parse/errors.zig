@@ -16,6 +16,14 @@ const ParseErrorKind = enum(u16) {
     malformed_initializer,
 };
 
+comptime {
+    const info = @typeInfo(ParseErrorKind).@"enum";
+    for (info.fields) |field| {
+        if (field.value > diag.PARSE_ERROR_RANGE.@"1") {
+            @compileError("A field in ParseErrorKind exceeds the allowed limit");
+        }
+    }
+}
 
 
 pub const UnexpectedTokenError = struct {
@@ -37,6 +45,33 @@ pub const UnexpectedTokenError = struct {
             .vtable = &self.to_diagnostic,
         };
     }
+};
+
+pub const ExpectedExpressionError = struct {
+    found: lex.Token,
+
+    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
+        var builder = diag.DiagnosticBuilder.init(allocator);
+        try builder
+            .code(@intFromEnum(ParseErrorKind.expected_expression))
+            .severity(.Error)
+            .span(self.found.span)
+            .message("Expected expression")
+            .add_label(diag.Label {
+                .message = "Found this",
+                .span = self.found.span,
+                .style = .primary
+            });
+        return try builder.build();
+    }
+
+    pub fn get_error_type(self: *@This()) diag.ErrorType {
+        return diag.ErrorType {
+            .ptr = @ptrCast(self),
+            .vtable = &self.to_diagnostic,
+        };
+    }
+
 };
 
 pub const UnmatchedDelimeterError = struct {
@@ -134,3 +169,5 @@ pub const MalformedInitializerError = struct {
     }
 
 };
+
+
