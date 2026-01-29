@@ -47,6 +47,8 @@ pub const UnexpectedTokenError = struct {
     }
 };
 
+
+
 pub const ExpectedExpressionError = struct {
     found: lex.Token,
 
@@ -107,7 +109,7 @@ pub const MalformedPathError = struct {
         trailing,
         consecutive,
         empty,
-        single_colon
+        single_colon,
     },
     span: common.Span,
     malformed_span: common.Span,
@@ -152,6 +154,8 @@ pub const MalformedInitializerError = struct {
         duplicate_field,
         missing_comma,
         missing_bracket,
+        missing_ident,
+        missing_colon,
     },
     span: common.Span,
     previous_field: ?common.Span,

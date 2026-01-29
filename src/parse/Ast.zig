@@ -151,18 +151,18 @@ pub const Path = struct {
 
 };
 
-pub const TypeCons = struct {
-    ty: AstNodeId,
-    fields: std.StringHashMap(?AstNodeId),
+pub const Terminal = struct {
+    tok: Token,
 };
+
 pub const InitializerField = struct {
     id: Ident,
     value: AstNodeId,
 };
 pub const Initializer = struct {
     ty: ?AstNodeId,
-    fields: ?[]InitializerField,
-    expr: ?AstNodeId,
+    fields: []InitializerField,
+    //expr: ?AstNodeId,
 };
 
 pub const TypeDecl = struct {
@@ -291,7 +291,7 @@ pub const AstKind = enum {
     return_stmt,
     type_decl,
     terminated,
-    type_cons,
+    intializer,
     access_operator,
     cast,
     path,
@@ -306,7 +306,7 @@ pub const Ast = struct {
     units: []const Unit,
     binary_exprs: []const BinaryExpr,
     unary_exprs: []const UnaryExpr,
-    terminals: []const Token,
+    terminals: []const Terminal,
     type_exprs: []const TypeExpr,
     type_binary_exprs: []const TypeBinaryExpr,
     type_enums: []const TypeEnum,
@@ -323,7 +323,7 @@ pub const Ast = struct {
     return_stmts: []const ReturnStmt,
     type_decls: []const TypeDecl,
     terminateds: []const Terminated,
-    type_cons: []const TypeCons,
+    intializer: []const Initializer,
     access_operators: []const AccessOperator,
     casts: []const Cast,
     paths: []const Path,
@@ -355,7 +355,7 @@ pub const Ast = struct {
             .return_stmt => .{.return_stmt, @constCast(&self.return_stmts[node_index])},
             .type_decl => .{.type_decl, @constCast(&self.type_decls[node_index])},
             .terminated => .{.terminated, @constCast(&self.terminateds[node_index])},
-            .type_cons => .{.type_cons, @constCast(&self.type_cons[node_index])},
+            .intializer => .{.intializer, @constCast(&self.intializer[node_index])},
             .access_operator => .{.access_operator, @constCast(&self.access_operators[node_index])},
             .cast => .{.cast, @constCast(&self.casts[node_index])},
             .path => .{.path, @constCast(&self.paths[node_index])},
@@ -382,7 +382,7 @@ pub const AstBuilder = struct {
     units: std.ArrayList(Unit),
     binary_exprs: std.ArrayList(BinaryExpr),
     unary_exprs: std.ArrayList(UnaryExpr),
-    terminals: std.ArrayList(Token),
+    terminals: std.ArrayList(Terminal),
     type_exprs: std.ArrayList(TypeExpr),
     type_binary_exprs: std.ArrayList(TypeBinaryExpr),
     type_enums: std.ArrayList(TypeEnum),
@@ -399,7 +399,7 @@ pub const AstBuilder = struct {
     return_stmts: std.ArrayList(ReturnStmt),
     type_decls: std.ArrayList(TypeDecl),
     terminateds: std.ArrayList(Terminated),
-    type_cons: std.ArrayList(TypeCons),
+    intializer: std.ArrayList(Initializer),
     access_operators: std.ArrayList(AccessOperator),
     casts: std.ArrayList(Cast),
     paths: std.ArrayList(Path),
@@ -431,7 +431,7 @@ pub const AstBuilder = struct {
             .return_stmts = .init(allocator),
             .type_decls = .init(allocator),
             .terminateds = .init(allocator),
-            .type_cons = .init(allocator),
+            .intializer = .init(allocator),
             .access_operators = .init(allocator),
             .casts = .init(allocator),
             .paths = .init(allocator),
@@ -469,7 +469,7 @@ pub const AstBuilder = struct {
             .return_stmt => try self.append(@TypeOf(self.return_stmts), self.return_stmts, data),
             .type_decl => try self.append(@TypeOf(self.type_decls), self.type_decls, data),
             .terminated => try self.append(@TypeOf(self.terminateds), self.terminateds, data),
-            .type_cons => try self.append(@TypeOf(self.type_cons), self.type_cons, data),
+            .intializer => try self.append(@TypeOf(self.intializer), self.intializer, data),
             .access_operator => try self.append(@TypeOf(self.access_operators), self.access_operators, data),
             .cast => try self.append(@TypeOf(self.casts), self.casts, data),
             .path => try self.append(@TypeOf(self.paths), self.paths, data),
@@ -509,13 +509,21 @@ pub const AstBuilder = struct {
             .return_stmt => .{.return_stmt, @constCast(&self.return_stmts[node_index])},
             .type_decl => .{.type_decl, @constCast(&self.type_decls[node_index])},
             .terminated => .{.terminated, @constCast(&self.terminateds[node_index])},
-            .type_cons => .{.type_cons, @constCast(&self.type_cons[node_index])},
+            .intializer => .{.intializer, @constCast(&self.intializer[node_index])},
             .access_operator => .{.access_operator, @constCast(&self.access_operators[node_index])},
             .cast => .{.cast, @constCast(&self.casts[node_index])},
             .path => .{.path, @constCast(&self.paths[node_index])},
             .module_decl => .{.module_decl, @constCast(&self.module_decls[node_index])},
             .import => .{.import, @constCast(&self.imports[node_index])},
         };
+    }
+
+    pub fn get_or_null(self: *@This(), T: type, kind: AstKind, id: AstNodeId) ?T {
+        const node = self.get(id);
+        if (node.@"0" == kind) {
+            return @as(T, @constCast(node.@"1"));
+        }
+        return null;
     }
 
     pub fn get_node(self: *@This(), id: AstNodeId) AstNode {
@@ -551,7 +559,7 @@ pub const AstBuilder = struct {
             .return_stmts = try self.return_stmts.toOwnedSlice(),
             .type_decls = try self.type_decls.toOwnedSlice(),
             .terminateds = try self.terminateds.toOwnedSlice(),
-            .type_cons = try self.type_cons.toOwnedSlice(),
+            .intializer = try self.intializer.toOwnedSlice(),
             .access_operators = try self.access_operators.toOwnedSlice(),
             .casts = try self.casts.toOwnedSlice(),
             .paths = try self.paths.toOwnedSlice(),

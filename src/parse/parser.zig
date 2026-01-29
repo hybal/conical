@@ -931,11 +931,12 @@ fn unary(self: *@This()) anyerror!Ast.AstNodeId {
 
 
 
+//TODO:
 fn fn_call(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
     var span: common.Span = .{
         .start = self.lexer.index,
-        .end = self.lexer.index
+        .end = self.lexer.index + 1,
     };
 
     const left = try self.access();
@@ -964,9 +965,9 @@ fn access(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
     var span: common.Span = .{
         .start = self.lexer.index,
-        .end = self.lexer.index
+        .end = self.lexer.index + 1,
     };
-    const left = try self.type_cons();
+    const left = try self.initializer();
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.dot})) |_| {
         span.merge(left.span);
         const ident = try self.expect_ret(.ident);
@@ -989,7 +990,7 @@ fn initializer(self: *@This()) !Ast.AstNodeId {
     
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.dot})) |dot_token| {
         span.merge(dot_token.span);
-        var typ: ?Ast.TypeExpr = null;
+        var typ: ?Ast.AstNodeId = null;
         if (self.lexer.consume_if_eq(&[_]lex.Tag{.open_paren})) |open_paren_token| {
             span.merge(open_paren_token.span);
             const ty = try self.parse_type();
@@ -1025,110 +1026,124 @@ fn initializer(self: *@This()) !Ast.AstNodeId {
             );
             return out;
         }
-        self.expect(.open_bracket) catch unreachable;
-        if (self.lexer.has_next() and !self.lexer.is_next_token(.close_bracket)) {
-            if (self.lexer.is_next_token(.ident)) {
-                const id = self.lexer.next_token();
-                span.merge(id.span);
-                if (self.lexer.is_next_token(.colon)) {
-                    var fields = std.ArrayList(Ast.InitializerField).init(self.gpa);
-                    const colon_token = self.lexer.next_token();
-                    span.merge(colon_token.span);
-                    const expr = try self.expression();
-                    try fields.append(.{ .id = id, .value = expr });
-                    while (self.lexer.consume_if_eq(&[_]lex.Tag{.comma})) |comma_token| {
-                        span.merge(comma_token.span);
-                        if (self.lexer.is_next_token(.close_bracket)) {
-                            break;
-                        }
-                        if (self.lexer.is_next_token(.ident)) {
-                            const id2 = self.lexer.next_token();
-                            if (self.lexer.is_next_token(.colon)) {
-                                _ = self.lexer.next_token();
-                                const expr2 = try self.expression();
-                                span.merge(.{ .start = span.start, .end = self.lexer.index });
-                                try fields.append(.{ .id = id2, .value = expr2 });
-                            } else {
-                                //Expected colon error
-                            }
-                        } else {
-                            //Expected identifier error
-                        }
+        const open_bracket_token = self.expect_ret(.open_bracket) catch unreachable;
+        var fields = std.ArrayList(Ast.InitializerField).init(self.gpa);
+        var fields_store = std.StringHashMap(common.Span).init(std.heap.page_allocator);
+        defer fields_store.deinit();
+        while (self.lexer.has_next() and !self.lexer.is_next_token(.close_bracket)) {
+            const id = self.expect_ret(.ident) catch {
+                const err = errors.MalformedInitializerError {
+                    .kind = .missing_ident,
+                    .span = self.lexer.next_token().span,
+                };
+                const errid = try self.context.session.push(err.get_error_type());
+                while (self.lexer.consume_if_eq(&[_]lex.Tag {.close_bracket}) == null) {
+                    _ = self.lexer.next_token();
+                }
+                const out = try self.builder.add_node(
+                    .poison,
+                    span,
+                    Ast.Poison { .error_id = errid },
+                );
+                return out;
+            };
+            span.merge(id.span);
+            if (fields_store.contains(id.span.get_string(self.context.source))) {
+                const err = errors.MalformedInitializerError {
+                    .kind = .duplicate_field,
+                    .previous_field = fields_store.get(id.span.get_string(self.context.source)),
+                    .span = id.span,
+                };
+                const errid = try self.context.session.push(err.get_error_type());
+                while (self.lexer.consume_if_eq(&[_]lex.Tag {.close_bracket}) == null) {
+                    _ = self.lexer.next_token();
+                }
+
+                span.merge(.{ .start = span.start, .end = self.lexer.index});
+                const out = try self.builder.add_node(
+                    .poison,
+                    span,
+                    Ast.Poison { .error_id = errid },
+                );
+                return out;
+            }
+
+            self.expect(.colon) catch {
+                const err = errors.MalformedInitializerError {
+                    .kind = .missing_colon,
+                    .span = self.lexer.next_token().span,
+                };
+                const errid = try self.context.session.push(err.get_error_type());
+                while (self.lexer.consume_if_eq(&[_]lex.Tag {.close_bracket}) == null) {
+                    _ = self.lexer.next_token();
+                }
+                const out = try self.builder.add_node(
+                    .poison,
+                    span,
+                    Ast.Poison { .error_id = errid },
+                );
+                return out;
+            };
+            const expr = try self.expression();
+            span.merge(.{ .start = span.start, .end = self.lexer.index});
+
+            if (self.lexer.consume_if_eq(&[_]lex.Tag{.comma})) |comma_tok| {
+                span.merge(comma_tok.span);
+            } else {
+                if (!self.lexer.is_next_token(.close_bracket)) {
+                    const expr_span = self.builder.get_span(expr);
+                    const err = errors.MalformedInitializerError {
+                        .kind = .missing_comma,
+                        .span = .{ .start = expr_span.end, .end = expr_span.end + 1 },
+                    };
+                    while (self.lexer.consume_if_eq(&[_]lex.Tag {.close_bracket}) == null) {
+                        _ = self.lexer.next_token();
                     }
-                    if (!self.lexer.is_next_token(.close_bracket)) {
-                        //Unmatched delimeter error
-                    }
+                    span.merge(.{ .start = span.start, .end = self.lexer.index });
+                    const errid = try self.context.session.push(err.get_error_type());
+                    const out = try self.builder.add_node(
+                        .poison,
+                        span,
+                        Ast.Poison { .error_id = errid }
+                    );
+                    return out;
                 }
             }
-        }
-    }
-}
-
-fn type_cons(self: *@This()) !Ast.AstNodeId {
-    self.lexer.skip_whitespace();
-    var span: common.Span = .{
-        .start = self.lexer.index,
-        .end = self.lexer.index
-    };
-    const saved = self.lexer.index;
-    self.context.session.freeze();
-    const ty = self.parse_type() catch null;
-    self.context.session.unfreeze();
-    if (ty != null and self.lexer.is_next_token(.open_bracket)) {
-        const tok = self.lexer.next_token();
-        span.merge(.{.start = span.start, .end = self.lexer.index});
-        var fields = std.StringHashMap(?Ast.AstNodeId).init(self.gpa);
-        while (!self.lexer.is_next_token(.close_bracket)) {
-            try self.expect(.dot);
-            const field = try self.expect_ret(.ident);
-            const field_name = field.span.get_string(self.lexer.buffer);
-            const value = if (self.lexer.consume_if_eq(&[_]lex.Tag{.eq})) |_| try self.expression() else null; 
-            span.merge(.{.start = span.start, .end = self.lexer.index});
-            if (!self.lexer.is_next_token(.comma) 
-                and !self.lexer.is_next_token(.close_bracket)) {
-                span.merge(.{.start = span.start, .end = self.lexer.index});
-                try self.context.session.emit(.Error, span, "Missing comma before struct initializer");
-                return error.MissingComma;
-            }
-            _ = self.lexer.consume_if_eq(&[_]lex.Tag{.comma});
-            if (fields.contains(field_name)) {
-                span.merge(.{.start = span.start, .end = self.lexer.index});
-                try self.context.session.emit(.Error, span, "Duplicate field initialization");
-                return error.DuplicateFieldInit;
-            }
-            span.merge(.{.start = span.start, .end = self.lexer.index});
-            try fields.put(field_name, value);
-        }
-        self.expect(.close_bracket) catch {
-            span.merge(.{ .start = span.start, .end = self.lexer.index });
-            const err = errors.UnmatchedDelimeterError {
-                .expected_delim = .close_bracket,
-                .start_delim = tok,
-                .span = span,
+            self.expect(.close_bracket) catch {
+                span.merge(.{ .start = span.start, .end = self.lexer.index });
+                const err = errors.UnmatchedDelimeterError {
+                    .expected_delim = .close_bracket,
+                    .span = span,
+                    .start_delim = open_bracket_token,
+                };
+                const errid = try self.context.session.push(err.get_error_type());
+                const out = try self.builder.add_node(
+                    .poison,
+                    span,
+                    Ast.Poison { .error_id = errid },
+                );
+                self.panic_recovery();
+                return out;
             };
-            const errid = try self.context.session.push(err.get_error_type());
-            const out = try self.builder.add_node(
-                .poison,
-                span,
-                Ast.Poison { .error_id = errid },
-            );
-            return out;
-        };
 
-        span.merge(.{.start = span.start, .end = self.lexer.index});
+            try fields.append(.{ .id = .{ .span = id.span, .value = id.span.get_string(self.context.source)}, .value = expr});
+            try fields_store.put(id.span.get_string(self.context.source), id.span);
+        }
+
+        span.merge(.{ .start = span.start, .end = self.lexer.index });
         const out = try self.builder.add_node(
-            .type_cons,
+            .initializer,
             span,
-            Ast.TypeCons {
-                .ty = ty.?.hash(),
-                .fields = fields,
+            Ast.Initializer {
+                .fields = try fields.toOwnedSlice(),
+                .ty = typ,
             }
         );
         return out;
     }
-    self.lexer.index = saved;
     return try self.primary();
 }
+
 
 fn parse_path(self: *@This()) !Ast.AstNodeId {
     try self.lexer.skip_whitespace();
