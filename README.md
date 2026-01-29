@@ -1,52 +1,24 @@
 # Conical
 
-Conical is a work-in-progress systems programming language that makes use of a new form of static resource management.
+Conical is a work-in-progress systems language that uses set-theoretic principals to make most invariants unrepresentable. It will also use scope based lifetime resolution to handle resource management.
 
-## Getting Started
+There are currently 3 operating principles that are being used in the design process:
 
-The project is currently in the **very** early stages so don't assume things work :)
+1. If a specific feature can be implemented using a more general one, the general one should be used.
 
-To build the project make sure that you have LLVM-19 installed and accessible as well as the zig 0.14.0 compiler. Then just run
-```bash
-$ zig build
-```
-to get an executable at ./zig-out/bin/conical
-or you can just run:
-```bash
-$ zig build run
-```
-to run it directly in which case add `--` to the end to pass arguments
+2. Its better for something to have more granular control with incremental defaults than have it be based on a assumed use-case.
 
-The conical compiler currently only takes a single argument for a single file and produces an object file from that as well as some debug information (like a reconstruction of the AST and the emitted LLVM IR)
+3. The compiler is much better at enforcing assumptions than humans are.
 
-Then to actually run the binary you will have to have a c compiler in which case you can just link it like
-```bash
-$ CC file.o -o file
-```
-to create the executable.
+Examples of each principle, in-order, are:
 
-## Syntax Overview
+1. Since async functions are essentially just generators + global state, and generators are just compiler-led transformation of a function into a state-machine, both of these should be implemented using macros instead of being a builtin compiler feature.
 
-Note that currently the majority of the implemented syntax is not supported by the backend (meaning it wont compile). As such if it gives the error that it reached unreachable code, it is unsupported.
+2. There is no "unsafe" keyword in Conical that just turns off all safety checks. Rather safety should be implemented using the type system; so only the safety mechanisms that are required are used. This makes safety much more granular and controlled than rust which has a single safe/unsafe distinction.
 
-Variables are declared using `let` and `mut` for immutable and mutable variables respectively.
-They also take an optional type after the identifier
-```conical
-let a = 4;
-let b: i32 = 128;
-mut c = 1.4;
-c += 12;
-```
-all of the common arithmetic and logic operators are supported.
+3. If you have a number that is required to be in a non-standard range (e.g. 5-370), in most languages you would have to rely on runtime checks and documentation, in Conical you can exactly define every value allowed and - except in things like external functions or intrinsics - that assumption is guaranteed.
+    - This also means that Conical could be partially formally provable.
 
-Functions are declared like:
-```conical
-fn foo(arg1, arg2): (i32, i32) -> i32 {
-    arg1 + arg2
-}
-```
-where the types of the parameters are seperated from the parameters themselves and the return type is specified with the arrow (`->`) operator.
-Also note that semicolons have semantic meaning, they essentially "discard" the result of the operation making the type unit (essentially equivalent to void) also blocks will evaluate to the last expression in them.
+# Documentation
 
-Also note that the type system is currently broken since I had to do some weird things to be able to test external functions + strings, since there currently is no type coercion.
-
+Currently there is no official documentation for the language as it is still very early in design and implementation. However, there is a design ideas / general syntax overview [here](./docs/book/language.md) (N.B. Everything in that document is subject to change).
