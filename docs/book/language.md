@@ -136,7 +136,7 @@ for i in range(1, 10) { // range(1, 10) is a range from 1 to 10, meaning i will 
 ```
 Loops cannot yield values, and as such have the type unit `()`
 
-### Types
+## Types
 
 The basic struct and enum syntaxes exist and can be used:
 ```conical
