@@ -948,7 +948,9 @@ fn fn_call(self: *@This()) !Ast.AstNodeId {
             try args.append(expr);
             span.merge(expr.span);
             if (!self.lexer.is_next_token(.close_paren)) {
-                try self.expect(.comma);
+                try self.expect(.comma) catch {
+                    
+                };
             }
         }
         try self.expect(.close_paren);
@@ -981,6 +983,7 @@ fn access(self: *@This()) !Ast.AstNodeId {
     return left;
 }
 
+//NOTE: its possible that this syntax will change from id: to .id =, as the latter does not require lookahead / backtracking. If this does end up being the case, then it will have to be changed to be consistent in argument lists as well
 fn initializer(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
     var span: common.Span = .{

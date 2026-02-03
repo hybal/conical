@@ -14,6 +14,7 @@ const ParseErrorKind = enum(u16) {
     invalid_expression,
     malformed_path,
     malformed_initializer,
+    malformed_argument_list,
 };
 
 comptime {
@@ -163,7 +164,7 @@ pub const MalformedInitializerError = struct {
     pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
         _ = self;
         _ = allocator;
-        unreachable;
+        @compileError("TODO: this function has not been implemented yet");
     }
     pub fn get_error_type(self: *@This()) diag.ErrorType {
         return diag.ErrorType {
@@ -174,4 +175,24 @@ pub const MalformedInitializerError = struct {
 
 };
 
+//NOTE: This may be removed in favor of expected_token
+pub const MalformedParamListError = struct {
+    kind: enum {
+        missing_comma,
+    },
+    span: common.Span,
+    param_list_span: common.Span,
 
+    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
+        _ = self;
+        _ = allocator;
+        @compileError("TODO: this function has not been implemented yet");
+    }
+
+    pub fn get_error_type(self: *@This()) diag.ErrorType {
+        return diag.ErrorType {
+            .ptr = @ptrCast(self),
+            .vtable = &self.to_diagnostic,
+        };
+    }
+};
