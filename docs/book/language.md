@@ -295,3 +295,9 @@ Unlike most lifetime-based languages (e.g. Rust), this approach does not seek to
 Rather, it merely determines the last scope it is used via escape-analysis and inserts clean-up code at the end of said scope.
 This does not mean that it can't be more granular, instead, that is relegated to being an optimization rather then being the default.
 
+## Compiler Guarantees 
+
+The way that the compiler guarantees that value sets are upheld is by making _everything_ happen via intrinsics.
+For example, all functional operators are de-sugared into function calls to associated functions (so operator overloading).
+In those associated functions the actual operation is preformed via a call to a compiler intrinsic.
+As such, the only locations that the contract could be violated are intrinsics (which the compiler controls) and external functions.
