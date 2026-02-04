@@ -283,6 +283,7 @@ Some planned meta builtin categories are:
 In-addition to usage rules, the set will also contain lifetime information.
 How this will be done is still being worked on.
 
+
 The last attribute on memory slots is the set of functions that are associated with it.
 This is a separate set to keep the meta-set distinct.
 It also only exists at compile time, all of the functions are lifted to the global scope and all references to them are replaced with those functions.
@@ -301,3 +302,21 @@ The way that the compiler guarantees that value sets are upheld is by making _ev
 For example, all functional operators are de-sugared into function calls to associated functions (so operator overloading).
 In those associated functions the actual operation is preformed via a call to a compiler intrinsic.
 As such, the only locations that the contract could be violated are intrinsics (which the compiler controls) and external functions.
+
+## Destructors / Drop Functions
+
+> **NOTE**
+> This section is entirely just ideas at this point
+
+Since the goal is to have automatic resource management, destructors (which I will be using the "drop functions" terminology from Rust), are a requirement.
+There are two _good_ (good is relative) ways to do drop functions.
+A single function that only takes in the value itself (which would require all non-global allocators to have a reference in their allocations).
+Or a function that is required to be called at the end of the values lifetime (which is the approach of linear-type based languages).
+
+The first one is nice in that it reduces boilerplate and complexity, however its downside is that you can't pass any extra context to it without having it be apart of the type.
+The second is the opposite.
+
+Perhaps, conical could use both.
+Where drop functions that only have a single argument of `self` will be called automatically, and more complex drop functions would require manual invocation. 
+Of course, there shouldn't be a "destructor" keyword / syntax as that makes drop code "magical".
+I am currently leaning toward an attribute marker on an associated function that marks it as a drop function, however that does mean that there is more functionality that is not able to be implemented in the language itself.
