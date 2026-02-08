@@ -27,11 +27,11 @@ Most common literals will be supported.
 1_000_12 // all number literals support underscores as whitespace
 
 'A' // character literal
-'ᚹ' // Unicode is supported as well, note that character literals are polymorphic, meaning that their size is based on the data in them (since they are just desugared to numbers).
+'ᚹ' // Unicode is supported as well, note that character literals are polymorphic, meaning that their size is based on the data in them and the expected type (since they are just desugared to numbers).
 
-"Hello, World!" // A utf-8 encoded string, since strings are arrays they can't be polymorphic like characters, so instead they are byte-length (utf-8).
+"Hello, World!" // A utf-8 encoded string, since strings are arrays they can't be polymorphic like characters, so instead they are just utf-8.
 
-.abc // if the type allows it, arbitrary identifiers can be used as values, these are called symbols (the leading period may be removed)
+.abc // if the type allows it, arbitrary identifiers can be used as values, these are called symbols (the leading period may be removed in the future)
 
 ```
 
@@ -195,6 +195,13 @@ There are also boolean operations that if evaluate to false will cause a compile
 
 These are, subset (`<=`), strict subset (`<`), superset (`>=`), strict superset (`>`), equality (`==`), and set inclusion (`in`).
 
+Example:
+```conical
+type u32 = 0..!(math::pow(2, 32)-1);
+type Pos = x: u32 * y: u32;
+
+```
+
 ## Union
 
 A type union is equivalent to the algebraic enum from before, just that it doesn't require labels for each of the variants (in fact that is what the enum syntax desugars to).
@@ -257,7 +264,7 @@ All of this makes it so that there is no need for an external dependency to be a
 > I will try to keep it up-to-date as much as possible.
 
 All data in Conical is internally represented using the concept of a _memory slot_.
-A memory slot is an abstract location in memory that data is stored, it has 4 different attributes: size, value set, meta set, and the associated-function set.
+A memory slot is an abstract location in memory that data is stored, it has 4 different attributes: size, value set, capability set, and the associated-function set.
 
 The size is just the number of bits that the memory slot is _required_ to have.
 This does not mean that the slot _will_ be that size, just that it cannot be smaller then that.
@@ -265,7 +272,8 @@ This does not mean that the slot _will_ be that size, just that it cannot be sma
 The value set is analogous to other languages' types.
 It is the set of values that this slot can store.
 It could in-theory be generalized to be the set of _bit-patterns_ that this slot can have, but the "types" of values is retained to help with correctness and to be able to pass them to the backend (as for example, different backends support different floating point representations).
-
+<details>
+<summary>This content is out-of-date but is kept for reference reasons</summary>
 The meta set is a compile-time only set of usage constraints. 
 It can hold arbitrary values, however the compiler has some builtin values that it automatically adds to types as it does semantic analysis.
 For example, the `mutable` builtin is added when a slot gets mutated in any way. 
@@ -280,14 +288,33 @@ Some planned meta builtin categories are:
 - thread-local 
 - etc.
 
+One thing that still needs to be researched is how to model more complex interactions.
+For example, there is a difference between a slot not having any mutability information and being immutable. 
+One has the possibility of mutation - given the right conditions - the other makes it exact.
+While this could be fixed by adding an "immutable" builtin, it does not make sense for a set to have both `mutable` and `immutable` attributes, and the current system cannot handle this case without additional checks in the compiler (which defeats the point of having a separate meta set in the first place).
+
+An option to fix this is by adding something like "production rules", where the programmer can specify the interactions between two attributes.
+For example, for the previous mutability problem a fix would be something equivalent to: `mutable | immutable := ()` (or in set notation: `mutable ∪ immutable ⇒ ∅`).
+One way to do this is to just have compile-time code that preforms the checks, however this could lead to non-termination.
+Another would be to add support for actual production rules as part of the type, however this adds complexity and more syntax.
+The best way would be to find an equation that solves all of the needed semantics while still allowing for additional complexity outside of the normal language semantics.
+
 In-addition to usage rules, the set will also contain lifetime information.
 How this will be done is still being worked on.
+</details>
+
+The capability set is a set of plain values (mostly symbols) that represent what things can be done to a memory slot. 
+This works because the compiler has a collection of builtin values that it uses internally.
+For example, `builtin::write`, is checked for whenever assignment occurs (and as such is also inferred based on declaration).
+
+Note that the capability set cannot be implicitly expanded, rather it can only be declared.
+This prevents unintended functionality from creeping in.
 
 
 The last attribute on memory slots is the set of functions that are associated with it.
 This is a separate set to keep the meta-set distinct.
-It also only exists at compile time, all of the functions are lifted to the global scope and all references to them are replaced with those functions.
-This can also be used to add any value that only exists at compile time.
+It also does not effect the value set, all of the functions are lifted to the global scope and all references to them are replaced with those functions.
+This can also be used to add value declaration that is interned and static and associated with a type.
 
 ## Resource Management
 
@@ -308,7 +335,7 @@ As such, the only locations that the contract could be violated are intrinsics (
 > **NOTE**
 > This section is entirely just ideas at this point
 
-Since the goal is to have automatic resource management, destructors (which I will be using the "drop functions" terminology from Rust), are a requirement.
+Since the goal is to have automatic resource management, destructors (I will be using the "drop functions" terminology from Rust), are a requirement.
 There are two _good_ (good is relative) ways to do drop functions.
 A single function that only takes in the value itself (which would require all non-global allocators to have a reference in their allocations).
 Or a function that is required to be called at the end of the values lifetime (which is the approach of linear-type based languages).
