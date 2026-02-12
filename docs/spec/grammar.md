@@ -63,7 +63,7 @@ KEYWORD_FALSE    ::= 'false'
 These are the valid escape sequences for strings and characters:
 ```ebnf
 ESCAPE_SEQUENCE ::= 
-        '\' ([0ntrvfb'"\] 
+        '\\' ([0ntrvfb'"\] 
         | 'x' {HEX_DIGIT, 2} 
         | 'u' {HEX_DIGIT, 4}
         | 'U' {HEX_DIGIT, 8}
@@ -113,25 +113,43 @@ HEX_LITERAL           ::= '0' [xX] (HEX_DIGIT | '_')+
 
 FLOAT_LITERAL ::= {SIGN} DECIMAL_LITERAL ( '.' DECIMAL_LITERAL | '.' DECIMAL_LITERAL [eE] {SIGN} DIGIT*)
 ```
-## Operators
+## Arithmetic Operators
 
-Here is the precedence table for operators:
+This is the precedence table for arithmetic operators:
 
-| Precedence (High → Low)  | Operator(s)                   | Description                                         | Example                 |
-| -------------------------|-------------------------------|-----------------------------------------------------|-------------------------|
-| 1                        | `()`                          | Parentheses                                         | `(a+b)*c`               |
-| 2                        | `!`, `~`, `+`, `-`, `++`, `-  | Logical NOT, Bitwise NOT, Unary plus/minus          | `!x`, `~x`, `-x`        |
-| 4                        | `*`, `/`, `%`                 | Multiply, Divide, Modulus                           | `a*b`, `a/b`, `a%b`     |
-| 5                        | `+`, `-`                      | Add, Subtract                                       | `a+b`, `a-b`            |
-| 6                        | `<<`, `>>`                    | Bit shifts                                          | `x<<1`, `x>>1`          |
-| 7                        | `<`, `<=`, `>`, `>=`          | Relational comparison                               | `a < b`                 |
-| 8                        | `==`, `!=`                    | Equality                                            | `a == b`                |
-| 9                        | `&`                           | Bitwise AND                                         | `a & b`                 |
-| 10                       | `^`                           | Bitwise XOR                                         | `a ^ b`                 |
-| 11                       | `|`                           | Bitwise OR                                          | `a | b`                 |
-| 12                       | `&&`                          | Logical AND                                         | `a && b`                |
-| 13                       | `||`                          | Logical OR                                          | `a || b`                |
-| 14                       | `=`, `+=`, `-=`, `*=`, `/=`   | Assignment operators                                | `x += 3`                |
+| Precedence (High -> Low) | Operator(s)                   | Description                                         | Example                      |
+| -------------------------|-------------------------------|-----------------------------------------------------|------------------------------|
+| 1                        | `()`, `{}`                    | Grouping                                            | `(a+b)*c`, `{ let a = 1; a}` |
+| 2                        | `.`                           | Dot Operator / Access Operator                      | `a.b`                        |
+| 2                        | `expr(params)`                | Function Call                                       | `add(1, 2)`                  |
+| 2                        | `!`, `~`, `+`, `-`            | Logical NOT, Bitwise NOT, Unary plus/minus          | `!x`, `~x`, `-x`             |
+| 4                        | `*`, `/`, `%`                 | Multiply, Divide, Modulus                           | `a*b`, `a/b`, `a%b`          |
+| 5                        | `+`, `-`                      | Add, Subtract                                       | `a+b`, `a-b`                 |
+| 6                        | `<<`, `>>`                    | Bit shifts                                          | `x<<1`, `x>>1`               |
+| 7                        | `<`, `<=`, `>`, `>=`          | Relational comparison                               | `a < b`                      |
+| 8                        | `==`, `!=`                    | Equality                                            | `a == b`                     |
+| 9                        | `&`                           | Bitwise AND                                         | `a & b`                      |
+| 10                       | `^`                           | Bitwise XOR                                         | `a ^ b`                      |
+| 11                       | `\|`                          | Bitwise OR                                          | `a \| b`                     |
+| 12                       | `&&`                          | Logical AND                                         | `a && b`                     |
+| 13                       | `\|\|`                        | Logical OR                                          | `a \|\| b`                   |
+| 14                       | `=`, `+=`, `-=`, `*=`, `/=`   | Assignment operators                                | `x += 3`                     |
+
+
+
+
+## Type Operators
+
+| Precedence (High -> Low) | Operator(s)                   | Description                                          | Example                     |
+|--------------------------|-------------------------------|------------------------------------------------------|-----------------------------|
+| 1                        | `()`                          | Grouping                                             | `(A | B) * C`               |
+| 2                        | `id: expr`                    | Label                                                | `x: i32`                    |
+| 3                        | `*`                           | Cartesian Product                                    | `A * B`                     |
+| 4                        | `&`                           | Intersection                                         | `A & B`                     |
+| 5                        | `-`                           | Difference                                           | `A - B`                     |
+| 6                        | `|`                           | Union                                                | `A | B`                     |
+
+
 
 
 
