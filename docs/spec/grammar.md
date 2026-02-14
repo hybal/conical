@@ -62,47 +62,45 @@ KEYWORD_FALSE    ::= 'false'
 
 These are the valid escape sequences for strings and characters:
 ```ebnf
-ESCAPE_SEQUENCE ::= 
-        '\\' ([0ntrvfb'"\] 
-        | 'x' {HEX_DIGIT, 2} 
-        | 'u' {HEX_DIGIT, 4}
-        | 'U' {HEX_DIGIT, 8}
-UNICODE_NON_CHARACTERS ::=
-          [U+00FDD0-U+00FDEF] 
-        | [U+00FFFE-U+00FFFF]
-        | [U+01FFFE-U+01FFFF]
-        | [U+02FFFE-U+02FFFF]
-        | [U+03FFFE-U+03FFFF]
-        | [U+04FFFE-U+04FFFF]
-        | [U+05FFFE-U+05FFFF]
-        | [U+06FFFE-U+06FFFF]
-        | [U+07FFFE-U+07FFFF]
-        | [U+08FFFE-U+08FFFF]
-        | [U+09FFFE-U+09FFFF]
-        | [U+0AFFFE-U+0AFFFF]
-        | [U+0BFFFE-U+0BFFFF]
-        | [U+0CFFFE-U+0CFFFF]
-        | [U+0DFFFE-U+0DFFFF]
-        | [U+0EFFFE-U+0EFFFF]
-        | [U+0FFFFE-U+0FFFFF]
-        | [U+10FFFE-U+10FFFF]
+ESCAPE_SEQUENCE        ::= '\\' ([0ntrvfb'"\] 
+                         | 'x' {HEX_DIGIT, 2}
+                         | 'u' {HEX_DIGIT, 4}
+                         | 'U' {HEX_DIGIT, 8}
+
+UNICODE_NON_CHARACTERS ::= [U+00FDD0-U+00FDEF] 
+                         | [U+00FFFE-U+00FFFF]
+                         | [U+01FFFE-U+01FFFF]
+                         | [U+02FFFE-U+02FFFF]
+                         | [U+03FFFE-U+03FFFF]
+                         | [U+04FFFE-U+04FFFF]
+                         | [U+05FFFE-U+05FFFF]
+                         | [U+06FFFE-U+06FFFF]
+                         | [U+07FFFE-U+07FFFF]
+                         | [U+08FFFE-U+08FFFF]
+                         | [U+09FFFE-U+09FFFF]
+                         | [U+0AFFFE-U+0AFFFF]
+                         | [U+0BFFFE-U+0BFFFF]
+                         | [U+0CFFFE-U+0CFFFF]
+                         | [U+0DFFFE-U+0DFFFF]
+                         | [U+0EFFFE-U+0EFFFF]
+                         | [U+0FFFFE-U+0FFFFF]
+                         | [U+10FFFE-U+10FFFF]
 
 ```
 
 ## Literals
 
 ```ebnf
-DISALLOWED_CHARACTERS ::=
-                          [U+000000-U+00001F] 
+DISALLOWED_CHARACTERS ::= [U+000000-U+00001F]
                         | [U+00007F]
                         | [U+000080-U+00009F] 
                         | [U+00D800-U+00DFFF] 
                         | UNICODE_NON_CHARACTERS
 
-BOOL_LITERAL                  ::= KEYWORD_TRUE | KEYWORD_FALSE
-CHAR_LITERAL                  ::= '\'' (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE '\''
-STRING_LITERAL               ::= '"' ( (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE )* '"'
-RAW_STRING_LITERAL            ::= '`' (~ DISALLOWED_CHARACTERS)* | [U+00000A] | [U+00000D] '`'
+BOOL_LITERAL          ::= KEYWORD_TRUE | KEYWORD_FALSE
+CHAR_LITERAL          ::= '\'' (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE '\''
+STRING_LITERAL        ::= '"' ( (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE )* '"'
+RAW_STRING_LITERAL    ::= '`' (~ DISALLOWED_CHARACTERS)* | [U+00000A] | [U+00000D] '`'
 
 SIGN                  ::= [+-]
 INTEGER_LITERAL       ::= {SIGN} DECIMAL_LITERAL | BINARY_LITERAL | OCTAL_LITERAL | HEX_LITERAL
@@ -111,9 +109,9 @@ BINARY_LITERAL        ::= '0' [bB] (BINARY_DIGIT | '_')+
 OCTAL_LITERAL         ::= '0' [oO] (OCTAL_DIGIT | '_')+
 HEX_LITERAL           ::= '0' [xX] (HEX_DIGIT | '_')+
 
-FLOAT_LITERAL ::= {SIGN} DECIMAL_LITERAL ( '.' DECIMAL_LITERAL | '.' DECIMAL_LITERAL [eE] {SIGN} DIGIT*)
+FLOAT_LITERAL         ::= {SIGN} DECIMAL_LITERAL ( '.' DECIMAL_LITERAL | '.' DECIMAL_LITERAL [eE] {SIGN} DIGIT*)
 
-RANGE_LITERAL ::= (INTEGER_LITERAL | FLOAT_LITERAL) {'!'} '..' {'!'} (INTEGER_LITERAL | FLOAT_LITERAL)
+RANGE_LITERAL         ::= (INTEGER_LITERAL | FLOAT_LITERAL) {'!'} '..' {'!'} (INTEGER_LITERAL | FLOAT_LITERAL)
 ```
 
 
@@ -139,7 +137,6 @@ This is the precedence table for arithmetic operators:
 | 12                       | `\|`                          | Bitwise OR                                          | `a \| b`                     |
 | 13                       | `&&`                          | Logical AND                                         | `a && b`                     |
 | 14                       | `\|\|`                        | Logical OR                                          | `a \|\| b`                   |
-| 15                       | `=`, `+=`, `-=`, `*=`, `/=`   | Assignment operators                                | `x += 3`                     |
 
 
 
@@ -159,40 +156,168 @@ This is the precedence table for type operators:
 | 7                        | `^`, `with`, `bits`           | Metadata Operators                                   | `A ^ builtin::write`        |
 
 
+## Expressions
+
+```ebnf
+
+EXPRESSION_BLOCK ::= '{' STATEMENT | EXPRESSION '}'
+
+EXPRESSION_OPTIONAL_BLOCK ::= EXPRESSION_BLOCK | EXPRESSION
+
+EXPRESSION                ::= EXPRESSION_RETURN
+
+EXPRESSION_RETURN         ::= KEYWORD_RETURN EXPRESSION | EXPRESSION_IF
+
+CONDITION_AND_BLOCK       ::= '(' EXPRESSION ')' EXPRESSION_OPTIONAL_BLOCK | EXPRESSION EXPRESSION_BLOCK
+
+EXPRESSION_IF             ::= KEYWORD_IF CONDITION_AND_BLOCK
+                            { KEYWORD_ELSE CONDITION_AND_BLOCK } 
+                            | EXPRESSION_LOGICAL_OR
+
+EXPRESSION_LOGICAL_OR     ::= EXPRESSION_LOGICAL_AND { '||' EXPRESSION_LOGICAL_AND }
+
+EXPRESSION_LOGICAL_AND    ::= EXPRESSION_BITWISE_OR { '&&' EXPRESSION_BITWISE_OR }
+
+EXPRESSION_BITWISE_OR     ::= EXPRESSION_BITWISE_XOR { '|' EXPRESSION_BITWISE_XOR }
+
+EXPRESSION_BITWISE_XOR    ::= EXPRESSION_BITWISE_AND { '^' EXPRESSION_BITWISE_AND }
+
+EXPRESSION_BITWISE_AND    ::= EXPRESSION_EQUALITY { '&' EXPRESSION_EQUALITY }
+
+EXPRESSION_EQUALITY       ::= EXPRESSION_RELATIONAL { ('==' | '!=' ) EXPRESSION_RELATIONAL }
+
+EXPRESSION_RELATIONAL     ::= EXPRESSION_SHIFT { ('<' | '<=' | '>' | '>=' ) EXPRESSION_SHIFT }
+
+EXPRESSION_SHIFT          ::= EXPRESSION_ADDITIVE { ( '<<' | '>>' ) EXPRESSION_ADDITIVE }
+
+EXPRESSION_ADDITIVE       ::= EXPRESSION_MULTIPLICATIVE { ( '+' | '-' ) EXPRESSION_MULTIPLICATIVE }
+
+EXPRESSION_MULTIPLICATIVE ::= EXPRESSION_CAST { ( '*' | '/' | '%' )  EXPRESSION_CAST }
+
+EXPRESSION_CAST           ::= EXPRESSION_UNARY { KEYWORD_AS TYPE_EXPRESSION }
+
+EXPRESSION_UNARY          ::= ( '-' | '!' | '~' | '*' | '&' | '&&' ) EXPRESSION_UNARY 
+                            | EXPRESSION_FUNCTION_CALL
+
+FUNCTION_CALL_ARGUMENT    ::= { '.' IDENTIFIER '=' } EXPRESSION
+
+EXPRESSION_FUNCTION_CALL  ::= EXPRESSION_ACCESS 
+                              { '(' { FUNCTION_CALL_ARGUMENT (',' FUNCTION_CALL_ARGUMENT)* {','} } ')' }
+
+EXPRESSION_ACCESS         ::= EXPRESSION_INITIALIZER { '.' IDENTIFIER }
+
+EXPRESSION_INITIALIZER    ::= '.' { '(' TYPE_EXPRESSION ')' } '{' (EXPRESSION | '.' IDENTIFIER '=' EXPRESSION) '}' 
+                            | EXPRESSION_PRIMARY
+
+EXPRESSION_PRIMARY        ::= '(' EXPRESSION ')' 
+                            | EXPRESSION_BLOCK 
+                            | EXPRESSION_TERMINAL
+
+EXPRESSION_TERMINAL       ::= EXPRESSION_PATH 
+                            | EXPRESSION_LITERAL
+
+EXPRESSION_PATH           ::= IDENTIFIER ( '::' IDENTIFIER )*
+
+EXPRESSION_LITERAL        ::= INTEGER_LITERAL 
+                            | FLOAT_LITERAL 
+                            | STRING_LITERAL 
+                            | RAW_STRING_LITERAL 
+                            | CHAR_LITERAL 
+                            | BOOL_LITERAL
+
+```
+
+## Statements
+
+```ebnf
+STATEMENT     ::= DECLARATION | ASSIGNMENT | LOOP | ( EXPRESSION ';' )
+
+DECLARATION   ::= VARIABLE_DECLARATION | FUNCTION_DECLARATION | TYPE_DECLARATION
+
+ASSIGNMENT    ::= EXPRESSION (
+                  '='
+                | '+='
+                | '-='
+                | '*='
+                | '/='
+                | '%='
+                | '<<='
+                | '>>='
+                | '&='
+                | '^='
+                | '&&='
+                | '||='
+                ) EXPRESSION
+
+LOOP          ::= WHILE_LOOP | FOR_LOOP | KEYWORD_LOOP LOOP_BLOCK
+
+WHILE_LOOP    ::= KEYWORD_WHILE EXPRESSION LOOP_BLOCK
+
+FOR_LOOP      ::= KEYWORD_FOR IDENTIFIER KEYWORD_IN EXPRESSION LOOP_BLOCK
+
+LOOP_BLOCK    ::= '{' (STATEMENT | LOOP_CONTINUE | LOOP_BREAK | EXPRESSION)* '}'
+
+LOOP_CONTINUE ::= KEYWORD_CONTINUE ';'
+
+LOOP_BREAK    ::= KEYWORD_BREAK ';'
+
+```
+
+
 ## Variables
 
 ```ebnf
 
-BINDING ::= IDENTIFIER {':' TYPE_EXPRESSION} '=' EXPRESSION
+BINDING              ::= IDENTIFIER {':' TYPE_EXPRESSION} '=' EXPRESSION
 
-LET_BINDING ::= KEYWORD_LET BINDING ';'
+LET_BINDING          ::= KEYWORD_LET BINDING ';'
 
-MUT_BINDING ::= KEYWORD_MUT BINDING ';'
+MUT_BINDING          ::= KEYWORD_MUT BINDING ';'
+
+VARIABLE_DECLARATION ::= LET_BINDING | MUT_BINDING
 
 ```
  
 ## Types
 
 ```ebnf
-TYPE_DECLARATION ::= KEYWORD_TYPE IDENTIFIER '=' TYPE_EXPRESSION ';'
+TYPE_DECLARATION             ::= KEYWORD_TYPE IDENTIFIER '=' TYPE_EXPRESSION ';'
 
-TYPE_EXPRESSION ::= TYPE_EXPRESSION_METADATA
+TYPE_EXPRESSION              ::= TYPE_EXPRESSION_METADATA
 
-TYPE_EXPRESSION_METADATA ::= TYPE_EXPRESSION_UNION { ('^' | 'with' | 'bits') TYPE_EXPRESSION_UNION }
+TYPE_EXPRESSION_METADATA     ::= TYPE_EXPRESSION_UNION { ( '^' | KEYWORD_WITH ) TYPE_EXPRESSION_UNION }
 
-TYPE_EXPRESSION_UNION ::= TYPE_EXPRESSION_DIFFERENCE { '|' TYPE_EXPRESSION_DIFFERENCE }
+TYPE_EXPRESSION_UNION        ::= TYPE_EXPRESSION_PRODUCT { '|' TYPE_EXPRESSION_PRODUCT }
 
-TYPE_EXPRESSION_DIFFERENCE ::= TYPE_EXPRESSION_INTERSECTION { '-' TYPE_EXPRESSION_INTERSECTION }
+#TODO: Verify that this is the correct precedence level for product
+TYPE_EXPRESSION_PRODUCT      ::= TYPE_EXPRESSION_DIFFERENCE { '*' TYPE_EXPRESSION_DIFFERENCE }
+
+TYPE_EXPRESSION_DIFFERENCE   ::= TYPE_EXPRESSION_INTERSECTION { '-' TYPE_EXPRESSION_INTERSECTION }
 
 TYPE_EXPRESSION_INTERSECTION ::= TYPE_EXPRESSION_PRODUCT { '&' TYPE_EXPRESSION_PRODUCT }
 
-TYPE_EXPRESSION_PRODUCT ::= TYPE_EXPRESSION_LABEL { '*' TYPE_EXPRESSION_LABEL }
+TYPE_EXPRESSION_LABEL        ::= IDENTIFIER ':' TYPE_EXPRESSION_GROUPING
 
-TYPE_EXPRESSION_LABEL ::= IDENTIFIER ':' TYPE_EXPRESSION_GROUPING
+TYPE_EXPRESSION_GROUPING     ::= LAMBDA | '(' TYPE_EXPRESSION ')' | TYPE_EXPRESSION_LITERAL
 
-TYPE_EXPRESSION_GROUPING ::= LAMBDA | '(' TYPE_EXPRESSION ')' | TYPE_EXPRESSION_LITERAL
+TYPE_EXPRESSION_LITERAL      ::= EXPRESSION_PATH
+                               | RANGE_LITERAL 
+                               | INTEGER_LITERAL 
+                               | FLOAT_LITERAL 
+                               | STRING_LITERAL 
+                               | CHAR_LITERAL 
+                               | BOOL_LITERAL 
+                               | TYPE_STRUCT_LITERAL
+                               | TYPE_ENUM_LITERAL
+                               | TYPE_IMPL_LITERAL
+                               | KEYWORD_SELF 
+                               | '.' IDENTIFIER
 
-TYPE_EXPRESSION_LITERAL ::= RANGE_LITERAL | INTEGER_LITERAL | FLOAT_LITERAL | STRING_LITERAL | CHAR_LITERAL | BOOL_LITERAL | KEYWORD_SELF | '.' IDENTIFIER
+TYPE_STRUCT_LITERAL          ::= KEYWORD_STRUCT '{' IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION)* {','} '}'
+
+TYPE_ENUM_LITERAL            ::= KEYWORD_ENUM '{' (IDENTIFIER { ':' TYPE_EXPRESSION } (',' IDENTIFIER { ':' TYPE_EXPRESSION })*) '}'
+
+TYPE_IMPL_LITERAL            ::= KEYWORD_IMPL '{' FUNCTION_DECLARATION+ '}'
 
 ```
 
@@ -200,23 +325,34 @@ TYPE_EXPRESSION_LITERAL ::= RANGE_LITERAL | INTEGER_LITERAL | FLOAT_LITERAL | ST
 
 ```ebnf
 
-FUNCTION_MODIFIERS ::= (KEYWORD_PUB | KEYWORD_EXPORT) ({KEYWORD_INLINE} {KEYWORD_PURE} {KEYWORD_COMPTIME})
+FUNCTION_MODIFIERS           ::= (KEYWORD_PUB | KEYWORD_EXPORT) (KEYWORD_INLINE | KEYWORD_PURE | KEYWORD_COMPTIME)*
 
-FUNCTION_HEADER ::= {FUNCTION_MODIFIERS} KEYWORD_FN IDENTIFIER
+FUNCTION_HEADER              ::= {FUNCTION_MODIFIERS} KEYWORD_FN IDENTIFIER
 
-GENERIC ::= '$' IDENTIFIER
-GENERIC_LIST ::= GENERIC (',' GENERIC) {','}
+GENERIC                      ::= '$' IDENTIFIER
+GENERIC_LIST                 ::= GENERIC (',' GENERIC) {','}
 
-PARAMETER_LIST_INLINE ::= {GENERIC_LIST} {IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','}}
+PARAMETER_LIST_INLINE        ::= {GENERIC_LIST} {IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','}}
 
-PARAMETER_LIST_POSTFIX ::= {GENERIC_LIST} {IDENTIFIER (',' IDENTIFIER) {','}}
+PARAMETER_LIST_POSTFIX       ::= {GENERIC_LIST} {IDENTIFIER (',' IDENTIFIER) {','}}
 
+FUNCTION_DECLARATION         ::= FUNCTION_DECLARATION_INLINE | FUNCTION_DECLARATION_POSTFIX
 
-FUNCTION_DECLARATION_INLINE ::= FUNCTION_HEADER '(' PARAMETER_LIST_INLINE ')' {'->' TYPE_EXPRESSION} 
+FUNCTION_DECLARATION_INLINE  ::= FUNCTION_HEADER '(' PARAMETER_LIST_INLINE ')' 
+                                 {'->' TYPE_EXPRESSION}
 
-FUNCTION_DECLARATION_POSTFIX ::= FUNCTION_HEADER '(' PARAMETER_LIST_POSTFIX ')' { ':' TYPE_EXPRESSION | '(' TYPE_EXPRESSION (',' TYPE_EXPRESSION)* {','} ')'} { '->' TYPE_EXPRESSION }
+FUNCTION_DECLARATION_POSTFIX ::= FUNCTION_HEADER '(' PARAMETER_LIST_POSTFIX ')' 
+                               { ':' TYPE_EXPRESSION | '(' TYPE_EXPRESSION (',' TYPE_EXPRESSION)* {','} ')'} 
+                               { '->' TYPE_EXPRESSION }
+
+LAMBDA                       ::= '\\' ((GENERIC | IDENTIFIER {':' TYPE_EXPRESSION }) 
+                               | '(' IDENTIFIER { ':' TYPE_EXPRESSION } (',' IDENTIFIER {':' TYPE_EXPRESSION })* {','} ')') 
+                               { '->' TYPE_EXPRESSION } 
+                               (EXPRESSION_BLOCK | EXPRESSION)
 
 ```
+
+
 
 
 
