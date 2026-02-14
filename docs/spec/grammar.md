@@ -3,6 +3,13 @@
 This is the formal grammar for the _syntax_ of the Conical programming language.
 It uses an extended Backus-Naur form (EBNF) with the addition of negation (`~ expression`) and unicode values (`U+XXXXXX`)
 
+## Incomplete/Todo
+
+- [ ] Pattern Matching
+- [ ] Macro declarations
+- [ ] Attribute-like macros / Function like macros
+- [ ] Builtins / Intrinsics
+
 ## Comments
 
 Comments are ignored during lexing and as such do not contribute to the AST.
@@ -51,12 +58,20 @@ KEYWORD_IMPL     ::= 'impl'
 KEYWORD_WHEN     ::= 'when'
 KEYWORD_SELF     ::= 'Self'
 KEYWORD_WHERE    ::= 'where'
+KEYWORD_WITH     ::= 'with'
 KEYWORD_MACRO    ::= 'macro'
 KEYWORD_DO       ::= 'do'
 KEYWORD_PURE     ::= 'pure'
 KEYWORD_TRUE     ::= 'true'
 KEYWORD_FALSE    ::= 'false'
 ```
+
+## Toplevel
+
+```ebnf
+PROGRAM ::= MODULE_DECLARATION DECLARATION*
+```
+
 
 ## Escape Sequences
 
@@ -112,6 +127,8 @@ HEX_LITERAL           ::= '0' [xX] (HEX_DIGIT | '_')+
 FLOAT_LITERAL         ::= {SIGN} DECIMAL_LITERAL ( '.' DECIMAL_LITERAL | '.' DECIMAL_LITERAL [eE] {SIGN} DIGIT*)
 
 RANGE_LITERAL         ::= (INTEGER_LITERAL | FLOAT_LITERAL) {'!'} '..' {'!'} (INTEGER_LITERAL | FLOAT_LITERAL)
+
+SYMBOL                ::= '.' IDENTIFIER
 ```
 
 
@@ -224,6 +241,7 @@ EXPRESSION_LITERAL        ::= INTEGER_LITERAL
                             | RAW_STRING_LITERAL 
                             | CHAR_LITERAL 
                             | BOOL_LITERAL
+                            | SYMBOL
 
 ```
 
@@ -311,7 +329,7 @@ TYPE_EXPRESSION_LITERAL      ::= EXPRESSION_PATH
                                | TYPE_ENUM_LITERAL
                                | TYPE_IMPL_LITERAL
                                | KEYWORD_SELF 
-                               | '.' IDENTIFIER
+                               | SYMBOL
 
 TYPE_STRUCT_LITERAL          ::= KEYWORD_STRUCT '{' IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION)* {','} '}'
 
@@ -330,6 +348,7 @@ FUNCTION_MODIFIERS           ::= (KEYWORD_PUB | KEYWORD_EXPORT) (KEYWORD_INLINE 
 FUNCTION_HEADER              ::= {FUNCTION_MODIFIERS} KEYWORD_FN IDENTIFIER
 
 GENERIC                      ::= '$' IDENTIFIER
+
 GENERIC_LIST                 ::= GENERIC (',' GENERIC) {','}
 
 PARAMETER_LIST_INLINE        ::= {GENERIC_LIST} {IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','}}
@@ -351,6 +370,7 @@ LAMBDA                       ::= '\\' ((GENERIC | IDENTIFIER {':' TYPE_EXPRESSIO
                                (EXPRESSION_BLOCK | EXPRESSION)
 
 ```
+
 
 
 
