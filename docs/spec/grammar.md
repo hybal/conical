@@ -141,7 +141,7 @@ This is the precedence table for arithmetic operators:
 | Precedence (High -> Low) | Operator(s)                   | Description                                         | Example                      |
 | -------------------------|-------------------------------|-----------------------------------------------------|------------------------------|
 | 1                        | `()`, `{}`                    | Grouping                                            | `(a+b)*c`, `{ let a = 1; a}` |
-| 2                        | `.`, `|>`                     | Dot Operator / Access Operator, Sequence Operator   | `a.b`, `1 |> add(2)`         |
+| 2                        | `.`, `\|>`                    | Dot Operator / Access Operator, Sequence Operator   | `a.b`, `1 |> add(2)`         |
 | 3                        | `expr(params)`                | Function Call                                       | `add(1, 2)`                  |
 | 4                        | `!`, `~`, `+`, `-`            | Logical NOT, Bitwise NOT, Unary plus/minus          | `!x`, `~x`, `-x`             |
 | 5                        | `*`, `/`, `%`                 | Multiply, Divide, Modulus                           | `a*b`, `a/b`, `a%b`          |
@@ -169,8 +169,8 @@ This is the precedence table for type operators:
 | 3                        | `*`                           | Cartesian Product                                    | `A * B`                     |
 | 4                        | `&`                           | Intersection                                         | `A & B`                     |
 | 5                        | `-`                           | Difference                                           | `A - B`                     |
-| 6                        | `|`                           | Union                                                | `A | B`                     |
-| 7                        | `^`, `with`, `bits`           | Metadata Operators                                   | `A ^ builtin::write`        |
+| 6                        | `\|`                          | Union                                                | `A | B`                     |
+| 7                        | `^`, `with`                   | Metadata Operators                                   | `A ^ builtin::write`        |
 
 
 ## Expressions
@@ -221,7 +221,9 @@ FUNCTION_CALL_ARGUMENT    ::= { '.' IDENTIFIER '=' } EXPRESSION
 EXPRESSION_FUNCTION_CALL  ::= EXPRESSION_ACCESS 
                               { '(' { FUNCTION_CALL_ARGUMENT (',' FUNCTION_CALL_ARGUMENT)* {','} } ')' }
 
-EXPRESSION_ACCESS         ::= EXPRESSION_INITIALIZER { '.' IDENTIFIER }
+EXPRESSION_ACCESS         ::= EXPRESSION_SEQUENCE { '.' IDENTIFIER }
+
+EXPRESSION_SEQUENCE       ::= EXPRESSION_INITIALIZER { '|>' EXPRESSION }
 
 EXPRESSION_INITIALIZER    ::= '.' { '(' TYPE_EXPRESSION ')' } '{' (EXPRESSION | '.' IDENTIFIER '=' EXPRESSION) '}' 
                             | EXPRESSION_PRIMARY
