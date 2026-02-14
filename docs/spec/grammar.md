@@ -99,46 +99,54 @@ DISALLOWED_CHARACTERS ::=
                         | [U+00D800-U+00DFFF] 
                         | UNICODE_NON_CHARACTERS
 
-BOOL                  ::= KEYWORD_TRUE | KEYWORD_FALSE
-CHAR                  ::= '\'' (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE '\''
-STRING                ::= '"' ( (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE )* '"'
-RAW_STRING            ::= '`' (~ DISALLOWED_CHARACTERS)* | [U+00000A] | [U+00000D] '`'
+BOOL_LITERAL                  ::= KEYWORD_TRUE | KEYWORD_FALSE
+CHAR_LITERAL                  ::= '\'' (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE '\''
+STRING_LITERAL               ::= '"' ( (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE )* '"'
+RAW_STRING_LITERAL            ::= '`' (~ DISALLOWED_CHARACTERS)* | [U+00000A] | [U+00000D] '`'
 
 SIGN                  ::= [+-]
-INTEGER               ::= {SIGN} DECIMAL_LITERAL | BINARY_LITERAL | OCTAL_LITERAL | HEX_LITERAL
+INTEGER_LITERAL       ::= {SIGN} DECIMAL_LITERAL | BINARY_LITERAL | OCTAL_LITERAL | HEX_LITERAL
 DECIMAL_LITERAL       ::= (DIGIT_ONE | '_') (DIGIT | '_')*
 BINARY_LITERAL        ::= '0' [bB] (BINARY_DIGIT | '_')+
 OCTAL_LITERAL         ::= '0' [oO] (OCTAL_DIGIT | '_')+
 HEX_LITERAL           ::= '0' [xX] (HEX_DIGIT | '_')+
 
 FLOAT_LITERAL ::= {SIGN} DECIMAL_LITERAL ( '.' DECIMAL_LITERAL | '.' DECIMAL_LITERAL [eE] {SIGN} DIGIT*)
+
+RANGE_LITERAL ::= (INTEGER_LITERAL | FLOAT_LITERAL) {'!'} '..' {'!'} (INTEGER_LITERAL | FLOAT_LITERAL)
 ```
-## Arithmetic Operators
+
+
+## Operators 
+
+### Arithmetic Operators
 
 This is the precedence table for arithmetic operators:
 
 | Precedence (High -> Low) | Operator(s)                   | Description                                         | Example                      |
 | -------------------------|-------------------------------|-----------------------------------------------------|------------------------------|
 | 1                        | `()`, `{}`                    | Grouping                                            | `(a+b)*c`, `{ let a = 1; a}` |
-| 2                        | `.`                           | Dot Operator / Access Operator                      | `a.b`                        |
-| 2                        | `expr(params)`                | Function Call                                       | `add(1, 2)`                  |
-| 2                        | `!`, `~`, `+`, `-`            | Logical NOT, Bitwise NOT, Unary plus/minus          | `!x`, `~x`, `-x`             |
-| 4                        | `*`, `/`, `%`                 | Multiply, Divide, Modulus                           | `a*b`, `a/b`, `a%b`          |
-| 5                        | `+`, `-`                      | Add, Subtract                                       | `a+b`, `a-b`                 |
-| 6                        | `<<`, `>>`                    | Bit shifts                                          | `x<<1`, `x>>1`               |
-| 7                        | `<`, `<=`, `>`, `>=`          | Relational comparison                               | `a < b`                      |
-| 8                        | `==`, `!=`                    | Equality                                            | `a == b`                     |
-| 9                        | `&`                           | Bitwise AND                                         | `a & b`                      |
-| 10                       | `^`                           | Bitwise XOR                                         | `a ^ b`                      |
-| 11                       | `\|`                          | Bitwise OR                                          | `a \| b`                     |
-| 12                       | `&&`                          | Logical AND                                         | `a && b`                     |
-| 13                       | `\|\|`                        | Logical OR                                          | `a \|\| b`                   |
-| 14                       | `=`, `+=`, `-=`, `*=`, `/=`   | Assignment operators                                | `x += 3`                     |
+| 2                        | `.`, `|>`                     | Dot Operator / Access Operator, Sequence Operator   | `a.b`, `1 |> add(2)`         |
+| 3                        | `expr(params)`                | Function Call                                       | `add(1, 2)`                  |
+| 4                        | `!`, `~`, `+`, `-`            | Logical NOT, Bitwise NOT, Unary plus/minus          | `!x`, `~x`, `-x`             |
+| 5                        | `*`, `/`, `%`                 | Multiply, Divide, Modulus                           | `a*b`, `a/b`, `a%b`          |
+| 6                        | `+`, `-`                      | Add, Subtract                                       | `a+b`, `a-b`                 |
+| 7                        | `<<`, `>>`                    | Bit shifts                                          | `x<<1`, `x>>1`               |
+| 8                        | `<`, `<=`, `>`, `>=`          | Relational comparison                               | `a < b`                      |
+| 9                        | `==`, `!=`                    | Equality                                            | `a == b`                     |
+| 10                       | `&`                           | Bitwise AND                                         | `a & b`                      |
+| 11                       | `^`                           | Bitwise XOR                                         | `a ^ b`                      |
+| 12                       | `\|`                          | Bitwise OR                                          | `a \| b`                     |
+| 13                       | `&&`                          | Logical AND                                         | `a && b`                     |
+| 14                       | `\|\|`                        | Logical OR                                          | `a \|\| b`                   |
+| 15                       | `=`, `+=`, `-=`, `*=`, `/=`   | Assignment operators                                | `x += 3`                     |
 
 
 
 
-## Type Operators
+### Type Operators
+
+This is the precedence table for type operators:
 
 | Precedence (High -> Low) | Operator(s)                   | Description                                          | Example                     |
 |--------------------------|-------------------------------|------------------------------------------------------|-----------------------------|
@@ -148,6 +156,67 @@ This is the precedence table for arithmetic operators:
 | 4                        | `&`                           | Intersection                                         | `A & B`                     |
 | 5                        | `-`                           | Difference                                           | `A - B`                     |
 | 6                        | `|`                           | Union                                                | `A | B`                     |
+| 7                        | `^`, `with`, `bits`           | Metadata Operators                                   | `A ^ builtin::write`        |
+
+
+## Variables
+
+```ebnf
+
+BINDING ::= IDENTIFIER {':' TYPE_EXPRESSION} '=' EXPRESSION
+
+LET_BINDING ::= KEYWORD_LET BINDING ';'
+
+MUT_BINDING ::= KEYWORD_MUT BINDING ';'
+
+```
+ 
+## Types
+
+```ebnf
+TYPE_DECLARATION ::= KEYWORD_TYPE IDENTIFIER '=' TYPE_EXPRESSION ';'
+
+TYPE_EXPRESSION ::= TYPE_EXPRESSION_METADATA
+
+TYPE_EXPRESSION_METADATA ::= TYPE_EXPRESSION_UNION { ('^' | 'with' | 'bits') TYPE_EXPRESSION_UNION }
+
+TYPE_EXPRESSION_UNION ::= TYPE_EXPRESSION_DIFFERENCE { '|' TYPE_EXPRESSION_DIFFERENCE }
+
+TYPE_EXPRESSION_DIFFERENCE ::= TYPE_EXPRESSION_INTERSECTION { '-' TYPE_EXPRESSION_INTERSECTION }
+
+TYPE_EXPRESSION_INTERSECTION ::= TYPE_EXPRESSION_PRODUCT { '&' TYPE_EXPRESSION_PRODUCT }
+
+TYPE_EXPRESSION_PRODUCT ::= TYPE_EXPRESSION_LABEL { '*' TYPE_EXPRESSION_LABEL }
+
+TYPE_EXPRESSION_LABEL ::= IDENTIFIER ':' TYPE_EXPRESSION_GROUPING
+
+TYPE_EXPRESSION_GROUPING ::= LAMBDA | '(' TYPE_EXPRESSION ')' | TYPE_EXPRESSION_LITERAL
+
+TYPE_EXPRESSION_LITERAL ::= RANGE_LITERAL | INTEGER_LITERAL | FLOAT_LITERAL | STRING_LITERAL | CHAR_LITERAL | BOOL_LITERAL | KEYWORD_SELF | '.' IDENTIFIER
+
+```
+
+## Functions
+
+```ebnf
+
+FUNCTION_MODIFIERS ::= (KEYWORD_PUB | KEYWORD_EXPORT) ({KEYWORD_INLINE} {KEYWORD_PURE} {KEYWORD_COMPTIME})
+
+FUNCTION_HEADER ::= {FUNCTION_MODIFIERS} KEYWORD_FN IDENTIFIER
+
+GENERIC ::= '$' IDENTIFIER
+GENERIC_LIST ::= GENERIC (',' GENERIC) {','}
+
+PARAMETER_LIST_INLINE ::= {GENERIC_LIST} {IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','}}
+
+PARAMETER_LIST_POSTFIX ::= {GENERIC_LIST} {IDENTIFIER (',' IDENTIFIER) {','}}
+
+
+FUNCTION_DECLARATION_INLINE ::= FUNCTION_HEADER '(' PARAMETER_LIST_INLINE ')' {'->' TYPE_EXPRESSION} 
+
+FUNCTION_DECLARATION_POSTFIX ::= FUNCTION_HEADER '(' PARAMETER_LIST_POSTFIX ')' { ':' TYPE_EXPRESSION | '(' TYPE_EXPRESSION (',' TYPE_EXPRESSION)* {','} ')'} { '->' TYPE_EXPRESSION }
+
+```
 
 
 
