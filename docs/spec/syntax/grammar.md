@@ -66,7 +66,7 @@ KEYWORD_TRUE     ::= 'true'
 KEYWORD_FALSE    ::= 'false'
 ```
 
-## Toplevel
+## Top-Level
 
 ```ebnf
 PROGRAM ::= MODULE_DECLARATION DECLARATION*
@@ -177,7 +177,7 @@ This is the precedence table for type operators:
 
 ```ebnf
 
-EXPRESSION_BLOCK ::= '{' STATEMENT | EXPRESSION '}'
+EXPRESSION_BLOCK ::= '{' (STATEMENT | EXPRESSION)* '}'
 
 EXPRESSION_OPTIONAL_BLOCK ::= EXPRESSION_BLOCK | EXPRESSION
 
@@ -250,36 +250,38 @@ EXPRESSION_LITERAL        ::= INTEGER_LITERAL
 ## Statements
 
 ```ebnf
-STATEMENT     ::= DECLARATION | ASSIGNMENT | LOOP | ( EXPRESSION ';' )
+STATEMENT             ::= DECLARATION | ASSIGNMENT | LOOP | TERMINATED_EXPRESSION
 
-DECLARATION   ::= VARIABLE_DECLARATION | FUNCTION_DECLARATION | TYPE_DECLARATION
+TERMINATED_EXPRESSION ::= EXPRESSION ';'
 
-ASSIGNMENT    ::= EXPRESSION (
-                  '='
-                | '+='
-                | '-='
-                | '*='
-                | '/='
-                | '%='
-                | '<<='
-                | '>>='
-                | '&='
-                | '^='
-                | '&&='
-                | '||='
-                ) EXPRESSION
+DECLARATION           ::= VARIABLE_DECLARATION | FUNCTION_DECLARATION | TYPE_DECLARATION
 
-LOOP          ::= WHILE_LOOP | FOR_LOOP | KEYWORD_LOOP LOOP_BLOCK
+ASSIGNMENT            ::= EXPRESSION (
+                          '='
+                        | '+='
+                        | '-='
+                        | '*='
+                        | '/='
+                        | '%='
+                        | '<<='
+                        | '>>='
+                        | '&='
+                        | '^='
+                        | '&&='
+                        | '||='
+                        ) EXPRESSION
 
-WHILE_LOOP    ::= KEYWORD_WHILE EXPRESSION LOOP_BLOCK
+LOOP                  ::= WHILE_LOOP | FOR_LOOP | KEYWORD_LOOP LOOP_BLOCK
 
-FOR_LOOP      ::= KEYWORD_FOR IDENTIFIER KEYWORD_IN EXPRESSION LOOP_BLOCK
+WHILE_LOOP            ::= KEYWORD_WHILE EXPRESSION LOOP_BLOCK
 
-LOOP_BLOCK    ::= '{' (STATEMENT | LOOP_CONTINUE | LOOP_BREAK | EXPRESSION)* '}'
+FOR_LOOP              ::= KEYWORD_FOR IDENTIFIER KEYWORD_IN EXPRESSION LOOP_BLOCK
 
-LOOP_CONTINUE ::= KEYWORD_CONTINUE ';'
+LOOP_BLOCK            ::= '{' (STATEMENT | LOOP_CONTINUE | LOOP_BREAK | EXPRESSION)* '}'
 
-LOOP_BREAK    ::= KEYWORD_BREAK ';'
+LOOP_CONTINUE         ::= KEYWORD_CONTINUE ';'
+
+LOOP_BREAK            ::= KEYWORD_BREAK ';'
 
 ```
 
@@ -372,11 +374,3 @@ LAMBDA                       ::= '\\' ((GENERIC | IDENTIFIER {':' TYPE_EXPRESSIO
                                (EXPRESSION_BLOCK | EXPRESSION)
 
 ```
-
-
-
-
-
-
-
-
