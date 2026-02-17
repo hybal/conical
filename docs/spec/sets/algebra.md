@@ -12,7 +12,7 @@ These are:
 
 The union operator, defined by the production [`TYPE_EXPRESSION_UNION`](../syntax/grammar.md#types), is defined as:
 
-For sets A and B the union between them - that is A ∪ B - is all elements of A and all elements of B with de-duplication.
+For sets A and B the union between them is all elements of A and all elements of B with de-duplication.
 Or formally: `A ∪ B = {x | x ∈ A ∨ x ∈ B}`
 
 For example the union between the set `{1, 2, 3}` and set `{2, 3, 4}` is the set `{1, 2, 3, 4}`.
@@ -28,7 +28,7 @@ For sets A and B the Cartesian product between them is the set of ordered-pairs 
 Or formally: `A × B = {(a, b) | a ∈ A ∧ b ∈ B}`.
 
 For example, the Cartesian product between the set `{1, 2}` and `{2, 3}` is the set: `{(1, 2), (1, 3), (2, 2), (2, 3)}`.
-Or formally: `A × B = {(1, 2), (1, 3), (2, 2), (2, 3)}`.
+Or formally: `{1, 2} × {2, 3} = {(1, 2), (1, 3), (2, 2), (2, 3)}`.
 
 ## Set Difference
 
