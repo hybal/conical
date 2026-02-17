@@ -141,7 +141,7 @@ This is the precedence table for arithmetic operators:
 | Precedence (High -> Low) | Operator(s)                   | Description                                         | Example                      |
 | -------------------------|-------------------------------|-----------------------------------------------------|------------------------------|
 | 1                        | `()`, `{}`                    | Grouping                                            | `(a+b)*c`, `{ let a = 1; a}` |
-| 2                        | `.`, `\|>`                    | Dot Operator / Access Operator, Sequence Operator   | `a.b`, `1 |> add(2)`         |
+| 2                        | `.`, `\|>`                    | Dot Operator / Access Operator, Sequence Operator   | `a.b`, `1 \|> add(2)`         |
 | 3                        | `expr(params)`                | Function Call                                       | `add(1, 2)`                  |
 | 4                        | `!`, `~`, `+`, `-`            | Logical NOT, Bitwise NOT, Unary plus/minus          | `!x`, `~x`, `-x`             |
 | 5                        | `*`, `/`, `%`                 | Multiply, Divide, Modulus                           | `a*b`, `a/b`, `a%b`          |
@@ -164,12 +164,12 @@ This is the precedence table for type operators:
 
 | Precedence (High -> Low) | Operator(s)                   | Description                                          | Example                     |
 |--------------------------|-------------------------------|------------------------------------------------------|-----------------------------|
-| 1                        | `()`                          | Grouping                                             | `(A | B) * C`               |
+| 1                        | `()`                          | Grouping                                             | `(A \| B) * C`               |
 | 2                        | `id: expr`                    | Label                                                | `x: i32`                    |
 | 3                        | `*`                           | Cartesian Product                                    | `A * B`                     |
 | 4                        | `&`                           | Intersection                                         | `A & B`                     |
 | 5                        | `-`                           | Difference                                           | `A - B`                     |
-| 6                        | `\|`                          | Union                                                | `A | B`                     |
+| 6                        | `\|`                          | Union                                                | `A \| B`                     |
 | 7                        | `^`, `with`                   | Metadata Operators                                   | `A ^ builtin::write`        |
 
 
@@ -326,12 +326,11 @@ TYPE_EXPRESSION_INTERSECTION     ::= TYPE_EXPRESSION_PRODUCT { '&' TYPE_EXPRESSI
 
 TYPE_EXPRESSION_PRODUCT          ::= TYPE_EXPRESSION_GROUPING { '*' TYPE_EXPRESSION_GROUPING }
 
-TYPE_EXPRESSION_GROUPING         ::= LAMBDA | '(' TYPE_EXPRESSION ')' | TYPE_EXPRESSION_LITERAL
+TYPE_EXPRESSION_GROUPING         ::= LAMBDA | '(' TYPE_EXPRESSION ')' | EXPRESSION_PATH | TYPE_EXPRESSION_LITERAL
 
 TYPE_EXPRESSION_LABEL            ::= IDENTIFIER ':' TYPE_EXPRESSION_GROUPING
 
-TYPE_EXPRESSION_LITERAL          ::= EXPRESSION_PATH
-                                   | RANGE_LITERAL 
+TYPE_EXPRESSION_LITERAL          ::= RANGE_LITERAL 
                                    | INTEGER_LITERAL 
                                    | FLOAT_LITERAL 
                                    | STRING_LITERAL 
@@ -341,7 +340,6 @@ TYPE_EXPRESSION_LITERAL          ::= EXPRESSION_PATH
                                    | TYPE_ENUM_LITERAL
                                    | TYPE_IMPL_LITERAL
                                    | TYPE_EXPRESSION_LABEL
-                                   | IDENTIFIER
                                    | KEYWORD_SELF 
                                    | SYMBOL
 
