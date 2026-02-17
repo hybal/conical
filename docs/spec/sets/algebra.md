@@ -1,4 +1,4 @@
-# Algebra of Sets
+# Set Algebra
 
 There exist builtin operations between sets that produce a set.
 These are:

@@ -5,4 +5,5 @@ This section covers the definition of sets in the Conical language and the opera
 # Table of Contents
 
 - [Set Definition](./definition.md)
-- [Algebra of Sets](./algebra.md)
+- [Set Algebra](./algebra.md)
+- [Set Comparisons](./comparison.md)
