@@ -24,7 +24,7 @@ A, & \text{if } a ∈ A \\
 \end{cases}
 $$
 
-For example, given the set `{1, 2, 3}` and the value `3` the expression `3 in {1, 2, 3}` evaluates to `{1, 2, 3}` as the condition is true.
+For example, given the set `{1, 2, 3}` and the value `3` the membership check of `3` in `{1, 2, 3}` evaluates to `{1, 2, 3}` as the condition is true.
 
 ## Subset
 
