@@ -5,53 +5,74 @@
 Validation between two value-sets is defined as a subset-or-equal check between them.
 Formally, given:
 
-- inferred set `I` 
-- expected set `E`
+- inferred set $I$ 
+- expected set $E$
 
 The validation is defined as:
 
 $$
 S =
 \begin{cases}
-E, & \text{if } I ⊆ E \\
-⊥, & \text{otherwise}
+E, & \text{if } I \subseteq E \\
+\bot, & \text{otherwise}
 \end{cases}
 $$
 
-Where `⊥` denotes a type error, and any widening or value conversion required to transform `I` to `E` is applied.
+Where $\bot$ denotes a type error, and any widening or value conversion required to transform $I$ to $E$ is applied.
 
 ## Inference
 
-For inference to function every SSA variable in the [MIR](../mir/overview.md) is annotated with the specific memory slot that it refers to. 
+Inference happens in two phases
 
-The inference algorithm starts by walking the SSA graph and constructing a non-evaluated set expression and assigning said expression to relevant memory slots (or SSA values if they are ephemeral).
-It does this by following these rules for assignment (given the inferred set expression E):
+1. [Construction](#construction)
+2. [Simplification](#simplification)
 
-1. For a new slot initialize its associated sets to ∅.
+### Construction
 
-1. If it is a constant then add it to the value set via a union: `Ev ∪ c`
+Given an SSA value $v$ that has an associated set expression $E(v)$ and memory slot $S(v)$, with associated value set expression $E(S)$.
 
-1. If it is a reference to an existing SSA variable then add that variable's value set to this one by adding an abstract reference to it: `E ∪ SlotExpr(var)`
+The inference starts by constructing $E(v)$ via the following rules:
 
-1. If it is a primitive operation add that operation as unevaluated: `E ∪ Prim(op, left ∪ right)`, also for each argument to the operator update the corresponding slots with the expected type, that is `right ⊆ left` for most operations.
+1. If $v$ is a constant literal then: 
+$$
+E(v) = v
+$$
 
-1. If it is a function call add that call: `E ∪ Call(func, parameters)`, and also add each of the parameter's value sets to the slots that are being referred too.
+1. If $v$ is a variable then:
 
-1. If it is a cyclical operation (via a φ function) then add the special element ∞, which specifies that this set cannot be determined and as such requires an explicit annotation
+$$
+E(v) = E(S) 
+$$
+
+1. If $v$ is a primitive operation and given $v = op(l, r)$, then:
+
+$$
+E(v) = Prim(op, E(l), E(r))
+$$
+
+Inference should then be ran on the two operands to update the slot associated with them.
+
+1. If $v$ is a call to a free-function with the return set $E(R)$ then:
+
+$$
+E(v) = E(R)
+$$
+
+Inference should then be ran on all of the arguments, if any of them are SSA variables then the slot associated with those variables should have its set expression updated.
 
 ## Collapse
 
 To collapse the generated set expressions these rules are followed:
 
-1. If there is a union of two constants those constants are collapsed: `a ∪ b = {a, b}`
+1. If there is a union of two constants those constants are collapsed: $a \cup b = \{a, b\}$
 
 1. If a term of the union is a reference to an existing set (via SlotExpr(var)) then a subset operation is performed between the current set and the reference, and if the existing set is a subset then the reference set is taken:
 
 $$
 S =
 \begin{cases}
-R, & \text{if } E ⊆ R \\
-E | R, & \text{otherwise}
+R, & \text{if } E \subseteq R \\
+E \cup R, & \text{otherwise}
 \end{cases}
 $$
 
