@@ -37,17 +37,18 @@ Given an SSA value $v$ that has an associated set expression $E_v$ and memory sl
 The inference starts by constructing $E_v$ via the following rules:
 
 1. If $v$ is a constant literal then: 
+
 $$
 E_v = v
 $$
 
-1. If $v$ is a variable then:
+2. If $v$ is a variable then:
 
 $$
 E_v = E_S 
 $$
 
-1. If $v$ is a primitive operation and given $v = op(l, r)$, then:
+3. If $v$ is a primitive operation and given $v = op(l, r)$, then:
 
 $$
 E_v = Prim(op, E_l, E_r)
@@ -55,14 +56,15 @@ $$
 
 Inference should then be ran on the two operands to update the slot associated with them.
 
-1. If $v$ is a call to a free-function with the return set $E_R$ then:
+4. If $v$ is a call to a free-function with the return set $E_R$ then:
 
 $$
 E_v = E_R
 $$
 
-1. If $v$ is a call to an associated-function $f$ that has not already added to the associated-function set then:
+5. If $v$ is a call to an associated-function $f$ that has not already added to the associated-function set then:
 Given the function call: 
+
 $$
 f(a_1, \cdots, a_n)
 $$
@@ -80,7 +82,7 @@ $$
 With both free-functions and associated-functions, the argument's are validated with the expected argument type.
 
 
-1. If $v$ is a phi-function and creates a cycle, then:
+6. If $v$ is a phi-function and creates a cycle, then:
 
 $$
 E_v = \inf
@@ -88,7 +90,7 @@ $$
 
 Where $\inf$ represents an infinite set, or a set that cannot be inferred without explicit type annotations.
 
-1. If $v$ is a phi-function $\phi(a, b)$ and _does not_ create a cycle, then:
+7. If $v$ is a phi-function $\phi(a, b)$ and _does not_ create a cycle, then:
 
 $$
 E_v = E_a \cup E_b
@@ -112,31 +114,31 @@ $$
 E_v' = E_v' \cup \{ e_1, e_2 \}
 $$
 
-a. If $e_1$ and $e_2$ are both integers then they are merged into a range:
+    i. If $e_1$ and $e_2$ are both integers then they are merged into a range:
 
 $$
 E_v' = E_v' \cup Range(min(e_1, e_2), max(e_1, e_2))
 $$
 
-1. If $e_1$ is a subset-or-equal of $e_2$ then it is replaced with $e_2$:
+2. If $e_1$ is a subset-or-equal of $e_2$ then it is replaced with $e_2$:
 
 $$
 E_v' = E_v' \cup e_2
 $$
 
-1. If $e_1$ is a superset-or-equal of $e_2$ then:
+3. If $e_1$ is a superset-or-equal of $e_2$ then:
 
 $$
 E_v' = E_v' \cup e_1
 $$
 
-1. If $e_1$ and $e_2$ are ranges that overlap then, that is $Range(a_1, b_1)$ and $Range(a_2, b_2)$ then:
+4. If $e_1$ and $e_2$ are ranges that overlap then, that is $Range(a_1, b_1)$ and $Range(a_2, b_2)$ then:
 
 $$
 E_v' = E_v' \cup Range(min(a_1, a_2), max(b_1, b_2))
 $$
 
-1. If $e_1$ is a primitive operator $\circ$, and the primitive operator can be applied to all elements in both sets $E_l$ and $E_r$, then:
+5. If $e_1$ is a primitive operator $\circ$, and the primitive operator can be applied to all elements in both sets $E_l$ and $E_r$, then:
 
 $$
 E_v' = E_v' \cup \{ a \circ b | a \in E_l, b \in E_r \}
