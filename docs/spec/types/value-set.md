@@ -114,31 +114,31 @@ $$
 E_v' = E_v' \cup \{ e_1, e_2 \}
 $$
 
-    i. If $e_1$ and $e_2$ are both integers then they are merged into a range:
+2. If $e_1$ and $e_2$ are both integers then they are merged into a range:
 
 $$
 E_v' = E_v' \cup Range(min(e_1, e_2), max(e_1, e_2))
 $$
 
-2. If $e_1$ is a subset-or-equal of $e_2$ then it is replaced with $e_2$:
+3. If $e_1$ is a subset-or-equal of $e_2$ then it is replaced with $e_2$:
 
 $$
 E_v' = E_v' \cup e_2
 $$
 
-3. If $e_1$ is a superset-or-equal of $e_2$ then:
+4. If $e_1$ is a superset-or-equal of $e_2$ then:
 
 $$
 E_v' = E_v' \cup e_1
 $$
 
-4. If $e_1$ and $e_2$ are ranges that overlap then, that is $Range(a_1, b_1)$ and $Range(a_2, b_2)$ then:
+5. If $e_1$ and $e_2$ are ranges that overlap then, that is $Range(a_1, b_1)$ and $Range(a_2, b_2)$ then:
 
 $$
 E_v' = E_v' \cup Range(min(a_1, a_2), max(b_1, b_2))
 $$
 
-5. If $e_1$ is a primitive operator $\circ$, and the primitive operator can be applied to all elements in both sets $E_l$ and $E_r$, then:
+6. If $e_1$ is a primitive operator $\circ$, and the primitive operator can be applied to all elements in both sets $E_l$ and $E_r$, then:
 
 $$
 E_v' = E_v' \cup \{ a \circ b | a \in E_l, b \in E_r \}
