@@ -111,7 +111,7 @@ Given the set expression $E_v$, with the form: $e_1 \cup e_2 \cup \cdot$, and th
 1. If $e_1$ and $e_2$ are constant literals then:
 
 $$
-E_v' = E_v' \cup \text{\{} e_1, e_2 \text{\}}
+E_v' = E_v' \cup \lbrace e_1, e_2 \rbrace
 $$
 
 2. If $e_1$ and $e_2$ are both integers then they are merged into a range:
@@ -141,7 +141,7 @@ $$
 6. If $e_1$ is a primitive operator $\circ$, and the primitive operator can be applied to all elements in both sets $E_l$ and $E_r$, then:
 
 $$
-E_v' = E_v' \cup \text{\{} a \circ b | a \in E_l, b \in E_r \text{\}}
+E_v' = E_v' \cup \lbrace \{ a \circ b | a \in E_l, b \in E_r \rbrace
 $$
 
 
