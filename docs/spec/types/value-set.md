@@ -62,8 +62,8 @@ $$
 E_v = E_R
 $$
 
-5. If $v$ is a call to an associated-function $f$ that has not already added to the associated-function set then:
-Given the function call: 
+5. If $v$ is a call to an associated-function $f$ that has not already added to the associated-function set then,
+given the function call: 
 
 $$
 f(a_1, \cdots, a_n)
@@ -106,7 +106,7 @@ $$
 
 ### Simplification
 
-Given the set expression $E_v$, with the form: $e_1 \cup e_2 \cup \cdot$, and the simplified set: $E_v'$, the following simplification rules are applied recursively until none are applicable.
+Given the set expression $E_v$, with the form: $e_1 \cup e_2 \cup \cdots$, and the simplified set: $E_v'$, the following simplification rules are applied recursively.
 
 1. If $e_1$ and $e_2$ are constant literals then:
 
@@ -117,7 +117,7 @@ $$
 2. If $e_1$ and $e_2$ are both integers then they are merged into a range:
 
 $$
-E_v' = E_v' \cup Range(min(e_1, e_2), max(e_1, e_2))
+E_v' = E_v' \cup min(e_1, e_2)..max(e_1, e_2)
 $$
 
 3. If $e_1$ is a subset-or-equal of $e_2$ then it is replaced with $e_2$:
@@ -132,10 +132,10 @@ $$
 E_v' = E_v' \cup e_1
 $$
 
-5. If $e_1$ and $e_2$ are ranges that overlap then, that is $Range(a_1, b_1)$ and $Range(a_2, b_2)$ then:
+5. If $e_1$ and $e_2$ are ranges that overlap, that is $Range(a_1, b_1)$ and $Range(a_2, b_2)$ then:
 
 $$
-E_v' = E_v' \cup Range(min(a_1, a_2), max(b_1, b_2))
+E_v' = E_v' \cup min(a_1, a_2)..max(b_1, b_2)
 $$
 
 6. If $e_1$ is a primitive operator $\circ$, and the primitive operator can be applied to all elements in both sets $E_l$ and $E_r$, then:
