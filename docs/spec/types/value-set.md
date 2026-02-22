@@ -85,10 +85,10 @@ With both free-functions and associated-functions, the argument's are validated 
 6. If $v$ is a phi-function and creates a cycle, then:
 
 $$
-E_v = \inf
+E_v = \infty
 $$
 
-Where $\inf$ represents an infinite set, or a set that cannot be inferred without explicit type annotations.
+Where $\infty$ represents an infinite set, or a set that cannot be inferred without explicit type annotations.
 
 7. If $v$ is a phi-function $\phi(a, b)$ and _does not_ create a cycle, then:
 
@@ -111,7 +111,7 @@ Given the set expression $E_v$, with the form: $e_1 \cup e_2 \cup \cdot$, and th
 1. If $e_1$ and $e_2$ are constant literals then:
 
 $$
-E_v' = E_v' \cup \{ e_1, e_2 \}
+E_v' = E_v' \cup \text{\{} e_1, e_2 \text{\}}
 $$
 
 2. If $e_1$ and $e_2$ are both integers then they are merged into a range:
@@ -141,7 +141,7 @@ $$
 6. If $e_1$ is a primitive operator $\circ$, and the primitive operator can be applied to all elements in both sets $E_l$ and $E_r$, then:
 
 $$
-E_v' = E_v' \cup \{ a \circ b | a \in E_l, b \in E_r \}
+E_v' = E_v' \cup \text{\{} a \circ b | a \in E_l, b \in E_r \text{\}}
 $$
 
 
