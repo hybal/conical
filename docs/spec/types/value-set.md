@@ -141,7 +141,7 @@ $$
 6. If $e_1$ is a primitive operator $\circ$, and the primitive operator can be applied to all elements in both sets $E_l$ and $E_r$, then:
 
 $$
-E_v' = E_v' \cup \lbrace \{ a \circ b | a \in E_l, b \in E_r \rbrace
+E_v' = E_v' \cup \lbrace a \circ b | a \in E_l, b \in E_r \rbrace
 $$
 
 
