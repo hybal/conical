@@ -1,6 +1,4 @@
 # Slot Resolution Semantics
 
-Memory slots are created using the `slot` SSA instruction.
-They are then mutated and assigned to via the `store` and `load` instructions.
-
+Memory slots are resolved during the lowering between [HIR](../hir/overview.md) and [MIR](../mir/overview.md), and then associated with specific SSA values in the MIR graph.
 

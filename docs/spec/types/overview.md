@@ -1,4 +1,4 @@
-# Overview
+# Overview 
 
 This section describes the construction, inference, and validation of types.
 Note that type construction and validation is based on the first [MIR](../mir/overview.md) form.

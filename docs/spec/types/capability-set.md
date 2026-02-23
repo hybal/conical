@@ -1,6 +1,6 @@
 # Capability Set Semantics
 
-> **WARN**:
+> **WARNING**:
 > This feature is still being designed
 > As such everything in this document is subject to change
 
