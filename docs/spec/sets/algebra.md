@@ -33,13 +33,13 @@ The Cartesian product operator, defined by the production [`TYPE_EXPRESSION_PROD
 For sets A and B the Cartesian product between them is the set of ordered-pairs (a, b) where a is from A and b is from B.
 Or formally: 
 $`
-A \cross B = \{(a, b) | a \in A \wedge b \in B}
+A \times B = \{(a, b) | a \in A \wedge b \in B\}
 `$
 
 For example, the Cartesian product between the set $`\{1, 2\}`$ and $`\{2, 3\}`$ is the set: $`\{(1, 2), (1, 3), (2, 2), (2, 3)\}`$.
 Or formally: 
 $`
-\{1, 2\} \cross \{2, 3\} = \{(1, 2), (1, 3), (2, 2), (2, 3)\}
+\{1, 2\} \times \{2, 3\} = \{(1, 2), (1, 3), (2, 2), (2, 3)\}
 `$.
 
 ## Set Difference
@@ -65,7 +65,7 @@ The intersection operator, defined by the production [`TYPE_EXPRESSION_INTERSECT
 For sets A and B the intersection between them is the set of all elements of A that are in B.
 Or formally: 
 $`
-A \cap B = \{x | x \in A \wedge x \in B}
+A \cap B = \{x | x \in A \wedge x \in B\}
 `$
 
 For example, the intersection between the sets $`\{1, 2, 3\}`$ and $`\{1, 3, 4\}`$ is the set $`\{1, 3\}`$.

@@ -52,12 +52,12 @@ Or formally:
 $$
 S =
 \begin{cases}
-A, & \text{if } A \superseteq B \\
+A, & \text{if } A \supseteq B \\
 \bot, & \text{otherwise}
 \end{cases}
 $$
 
-For example, given the sets $`\{1, 2, 3\}`$ and $`\{1, 2\}`$ the superset check of $`\{1, 2, 3\} \superseteq \{1, 2\}` will evaluate to `\{1, 2, 3\}`.
+For example, given the sets $`\{1, 2, 3\}`$ and $`\{1, 2\}`$ the superset check of $`\{1, 2, 3\} \supseteq \{1, 2\}`$ will evaluate to $`\{1, 2, 3\}`$.
 
 ## Strict Subset
 
@@ -84,10 +84,10 @@ Or formally:
 $$
 S =
 \begin{cases}
-A, & \text{if } A \superset B \\
+A, & \text{if } A \supset B \\
 \bot, & \text{otherwise}
 \end{cases}
 $$
 
-For example, given the sets $`\{1, 2, 3\}`$ and $`\{1, 2\}`$ the strict superset check of $`\{1, 2, 3\} \superset \{1, 2\}`$ will evaluate to $`\{1, 2, 3\}`$
+For example, given the sets $`\{1, 2, 3\}`$ and $`\{1, 2\}`$ the strict superset check of $`\{1, 2, 3\} \supset \{1, 2\}`$ will evaluate to $`\{1, 2, 3\}`$
 
