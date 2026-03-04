@@ -29,7 +29,7 @@ For example, given the set $`\{1, 2, 3\}`$ and the value $3$ the membership chec
 ## Subset
 
 The subset operator is defined by the production [`TYPE_EXPRESSION_INCLUSION`](../syntax/grammar.md#types), and is defined as:
-given the sets `A` and `B` the subset check of A and B is the condition that all elements in A are in B.
+given the sets $A$ and $B$ the subset check of $A$ and $B$ is the condition that all elements in $A$ are in $B$.
 Or formally:
 
 $$

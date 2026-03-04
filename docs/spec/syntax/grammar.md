@@ -42,6 +42,7 @@ KEYWORD_EXPORT   ::= 'export'
 KEYWORD_IMPORT   ::= 'import'
 KEYWORD_LET      ::= 'let'
 KEYWORD_MUT      ::= 'mut'
+KEYWORD_ALIAS    ::= 'alias'
 KEYWORD_RETURN   ::= 'return'
 KEYWORD_BREAK    ::= 'break'
 KEYWORD_STRUCT   ::= 'struct'
@@ -49,6 +50,7 @@ KEYWORD_ENUM     ::= 'enum'
 KEYWORD_USE      ::= 'use'
 KEYWORD_MOD      ::= 'mod'
 KEYWORD_COMPTIME ::= 'comptime'
+KEYWORD_LOOP     ::= 'loop'
 KEYWORD_CONTINUE ::= 'continue'
 KEYWORD_AS       ::= 'as'
 KEYWORD_STATIC   ::= 'static'
@@ -60,7 +62,6 @@ KEYWORD_SELF     ::= 'Self'
 KEYWORD_WHERE    ::= 'where'
 KEYWORD_WITH     ::= 'with'
 KEYWORD_MACRO    ::= 'macro'
-KEYWORD_DO       ::= 'do'
 KEYWORD_PURE     ::= 'pure'
 KEYWORD_TRUE     ::= 'true'
 KEYWORD_FALSE    ::= 'false'
@@ -187,7 +188,8 @@ EXPRESSION_RETURN         ::= KEYWORD_RETURN EXPRESSION | EXPRESSION_IF
 
 CONDITION_AND_BLOCK       ::= '(' EXPRESSION ')' EXPRESSION_OPTIONAL_BLOCK | EXPRESSION EXPRESSION_BLOCK
 
-CONDITION_BINDING         ::= '|' ( IDENTIFIER { '=' EXPRESSION } ( ',' IDENTIFIER { '=' EXPRESSION } )* {','}) '|'
+CONDITION_BINDING         ::= '|' ( IDENTIFIER { '=' IDENTIFIER } ( ',' IDENTIFIER { '=' IDENTIFIER } )* {','}) '|'
+
 EXPRESSION_IF             ::= KEYWORD_IF { CONDITION_BINDING } CONDITION_AND_BLOCK
                             { KEYWORD_ELSE { CONDITION_BINDING } CONDITION_AND_BLOCK } 
                             | EXPRESSION_LOGICAL_OR
@@ -263,7 +265,7 @@ STATEMENT             ::= DECLARATION | ASSIGNMENT | LOOP | TERMINATED_EXPRESSIO
 
 TERMINATED_EXPRESSION ::= EXPRESSION ';'
 
-DECLARATION           ::= VARIABLE_DECLARATION | FUNCTION_DECLARATION | TYPE_DECLARATION
+DECLARATION           ::= LET_BINDING | FUNCTION_DECLARATION | TYPE_DECLARATION
 
 ASSIGNMENT            ::= EXPRESSION (
                           '='
@@ -298,14 +300,11 @@ LOOP_BREAK            ::= KEYWORD_BREAK ';'
 ## Variables
 
 ```ebnf
+BINDING_MODIFIER     ::= KEYWORD_ALIAS | KEYWORD_MUT
 
 BINDING              ::= IDENTIFIER {':' TYPE_EXPRESSION} '=' EXPRESSION
 
-LET_BINDING          ::= KEYWORD_LET BINDING ';'
-
-MUT_BINDING          ::= KEYWORD_MUT BINDING ';'
-
-VARIABLE_DECLARATION ::= LET_BINDING | MUT_BINDING
+LET_BINDING          ::= KEYWORD_LET {BINDING_MODIFIER} BINDING ';'
 
 ```
  
@@ -335,31 +334,33 @@ TYPE_EXPRESSION_INTERSECTION     ::= TYPE_EXPRESSION_PRODUCT { '&' TYPE_EXPRESSI
 
 TYPE_EXPRESSION_PRODUCT          ::= TYPE_EXPRESSION_MODIFIERS { '*' TYPE_EXPRESSION_MODIFIERS }
 
-TYPE_EXPRESSION_MODIFIERS        ::= ( '&' | '[]' | '[' INTEGER_LITERAL ']' )* TYPE_EXPRESSION_GROUPING
+TYPE_EXPRESSION_MODIFIERS        ::= ( '&' | '[]' | '[' EXPRESSION ']' )* TYPE_EXPRESSION_GROUPING
 
-TYPE_EXPRESSION_GROUPING         ::= LAMBDA | '(' TYPE_EXPRESSION ')' | EXPRESSION_PATH | TYPE_EXPRESSION_LITERAL
+TYPE_EXPRESSION_GROUPING         ::= LAMBDA | '(' TYPE_EXPRESSION ')' | '{' EXPRESSION '}' | EXPRESSION_PATH | TYPE_EXPRESSION_SUGAR | TYPE_EXPRESSION_LITERAL
 
 TYPE_EXPRESSION_LABEL            ::= IDENTIFIER ':' TYPE_EXPRESSION_GROUPING
 
 
-TYPE_EXPRESSION_LITERAL          ::= RANGE_LITERAL 
-                                   | INTEGER_LITERAL 
+TYPE_EXPRESSION_LITERAL          ::= INTEGER_LITERAL 
                                    | FLOAT_LITERAL 
                                    | STRING_LITERAL 
                                    | CHAR_LITERAL 
                                    | BOOL_LITERAL 
-                                   | TYPE_STRUCT_LITERAL
-                                   | TYPE_ENUM_LITERAL
-                                   | TYPE_IMPL_LITERAL
+                                   | TYPE_SET_LITERAL
                                    | TYPE_EXPRESSION_LABEL
                                    | KEYWORD_SELF 
                                    | SYMBOL
 
-TYPE_STRUCT_LITERAL              ::= KEYWORD_STRUCT '{' IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION)* {','} '}'
 
-TYPE_ENUM_LITERAL                ::= KEYWORD_ENUM '{' (IDENTIFIER { ':' TYPE_EXPRESSION } (',' IDENTIFIER { ':' TYPE_EXPRESSION })*) '}'
+TYPE_SET_LITERAL                 ::= '.' '{' ( TYPE_EXPRESSION_LITERAL ( ',' TYPE_EXPRESSION_LITERAL 
 
-TYPE_IMPL_LITERAL                ::= KEYWORD_IMPL '{' FUNCTION_DECLARATION+ '}'
+TYPE_EXPRESSION_SUGAR            ::= TYPE_STRUCT_SUGAR | TYPE_ENUM_SUGAR | TYPE_IMPL_SUGAR | RANGE_LITERAL
+
+TYPE_STRUCT_SUGAR                ::= KEYWORD_STRUCT '{' IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION)* {','} '}'
+
+TYPE_ENUM_SUGAR                  ::= KEYWORD_ENUM '{' (IDENTIFIER { ':' TYPE_EXPRESSION } (',' IDENTIFIER { ':' TYPE_EXPRESSION })*) '}'
+
+TYPE_IMPL_SUGAR                  ::= KEYWORD_IMPL '{' FUNCTION_DECLARATION+ '}'
 
 ```
 
@@ -375,9 +376,9 @@ GENERIC                      ::= '$' IDENTIFIER
 
 GENERIC_LIST                 ::= GENERIC (',' GENERIC) {','}
 
-PARAMETER_LIST_INLINE        ::= {GENERIC_LIST} {IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','}}
+PARAMETER_LIST_INLINE        ::= {GENERIC_LIST} { {BINDING_MODIFIER} IDENTIFIER ':' TYPE_EXPRESSION (',' {BINDING_MODIFIER} IDENTIFIER ':' TYPE_EXPRESSION )* {','}}
 
-PARAMETER_LIST_POSTFIX       ::= {GENERIC_LIST} {IDENTIFIER (',' IDENTIFIER) {','}}
+PARAMETER_LIST_POSTFIX       ::= {GENERIC_LIST} { {BINDING_MODIFIER} IDENTIFIER (',' {BINDING_MODIFIER} IDENTIFIER) {','}}
 
 FUNCTION_DECLARATION         ::= FUNCTION_DECLARATION_INLINE | FUNCTION_DECLARATION_POSTFIX
 
@@ -388,8 +389,8 @@ FUNCTION_DECLARATION_POSTFIX ::= FUNCTION_HEADER '(' PARAMETER_LIST_POSTFIX ')'
                                { ':' TYPE_EXPRESSION | '(' TYPE_EXPRESSION (',' TYPE_EXPRESSION)* {','} ')'} 
                                { '->' TYPE_EXPRESSION }
 
-LAMBDA                       ::= '\\' ((GENERIC | IDENTIFIER {':' TYPE_EXPRESSION }) 
-                               | '(' IDENTIFIER { ':' TYPE_EXPRESSION } (',' IDENTIFIER {':' TYPE_EXPRESSION })* {','} ')') 
+LAMBDA                       ::= '\\' ((GENERIC | {BINDING_MODIFIER} IDENTIFIER {':' TYPE_EXPRESSION }) 
+                               | '(' {BINDING_MODIFIER} IDENTIFIER { ':' TYPE_EXPRESSION } (',' {BINDING_MODIFIER} IDENTIFIER {':' TYPE_EXPRESSION })* {','} ')') 
                                { '->' TYPE_EXPRESSION } 
                                (EXPRESSION_BLOCK | EXPRESSION)
 
