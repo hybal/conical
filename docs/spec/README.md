@@ -4,6 +4,6 @@ This collection of documents define the syntax and semantics of the Conical prog
 
 ## Table of Contents
 
-- [Syntax](./syntax/grammar.md)
+- [Syntax](./syntax/overview.md)
 - [Sets](./sets/overview.md)
 - [Types](./types/overview.md)

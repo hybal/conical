@@ -10,110 +10,146 @@ pub const Tag = enum {
     //Literals
     int_literal,
     float_literal,
-    string_literal, //"..."
+    string_literal,     //"..."
     raw_string_literal, //`...`
-    char_literal, //'.'
-    ident, // [a-zA-Z_] [a-zA-Z_0-9]*
+    char_literal,       //'.'
+    ident,              // [a-zA-Z_] [a-zA-Z_0-9]*
     //Symbols
-    plus, //+
-    pluseq, //+=
-    plus2, //++
-    minus, //-
-    minuseq, //-=
-    minus2, //--
-    slash, // /
-    slasheq, // /=
-    back_slash, //\
-    star, //*
-    stareq, //*=
-    caret, //^
-    careteq, //^=
-    tilde, //~
-    percent, //%
-    percenteq, //%=
-    at, //@
-    dollar, //$
-    semicolon, //;
-    comma, //,
-    question, //?
-    question2, //??
-    pipe, //|
-    pipeeq, //|=
-    pipe2, //||
-    hash, //#
-    bang, // !
-    bangeq, // != 
-    bang2, // !!
-    amp, //&
-    ampeq, //&=
-    amp2, //&&
-    eq, //=
-    eq2, //==
-    gt, //>
-    lt, //<
-    lteq, //<=
-    gteq, //>=
-    lt2, //<< 
-    lt2eq, //<<=
-    gt2, //>> 
-    gt2eq, //>>= 
-    open_bracket, //{
-    close_bracket, //}
-    open_paren, //(
-    close_paren, //)
-    open_square, //[
-    close_square, //]
+    plus,               //+
+    pluseq,             //+=
+    plus2,              //++
+    minus,              //-
+    minuseq,            //-=
+    minus2,             //--
+    slash,              // /
+    slasheq,            // /=
+    back_slash,         //\
+    star,               //*
+    stareq,             //*=
+    caret,              //^
+    careteq,            //^=
+    tilde,              //~
+    percent,            //%
+    percenteq,          //%=
+    at,                 //@
+    dollar,             //$
+    semicolon,          //;
+    comma,              //,
+    question,           //?
+    question2,          //??
+    pipe,               //|
+    pipeeq,             //|=
+    pipe2,              //||
+    hash,               //#
+    bang,               // !
+    bangeq,             // !=
+    bang2,              // !!
+    amp,                //&
+    ampeq,              //&=
+    amp2,               //&&
+    eq,                 //=
+    eq2,                //==
+    gt,                 //>
+    lt,                 //<
+    lteq,               //<=
+    gteq,               //>=
+    lt2,                //<<
+    lt2eq,              //<<=
+    gt2,                //>>
+    gt2eq,              //>>=
+    open_bracket,       //{
+    close_bracket,      //}
+    open_paren,         //(
+    close_paren,        //)
+    open_square,        //[
+    close_square,       //]
     thin_arrow,
-    fat_arrow, //=>
-    dot, //.
-    dot2, //..
-    colon, //:
-    colon2, //::
-    single_quote, //'
+    fat_arrow,          //=>
+    dot,                //.
+    dot2,               //..
+    colon,              //:
+    colon2,             //::
+    single_quote,       //'
     //keywords
-    keyword_if, //if
-    keyword_else, //else 
-    keyword_while, //while 
-    keyword_for, //for
-    keyword_in, //in
-    keyword_match, //match 
-    keyword_fn, //fn
-    keyword_async, //async (may be removed)
-    keyword_await, //await (may be removed)
-    keyword_inline, //inline 
-    keyword_extern, //extern
-    keyword_priv, //priv (may be removed)
-    keyword_pub, //pub
-    keyword_export, //export
-    keyword_import, //import
-    keyword_let, //let
-    keyword_mut, //mut
-    keyword_return, //return
-    keyword_break, //break
-    keyword_struct, //struct
-    keyword_enum, //enum
-    keyword_test, //test (may be removed)
-    keyword_use, //use
-    keyword_mod, //mod
-    keyword_comp, //comp (may be changed to 'comptime')
-    keyword_continue, //continue
-    keyword_as, //as
-    keyword_static, //static (may be removed)
-    keyword_type,  //typ
-    keyword_const, //const
-    keyword_unsafe, //unsafe
-    keyword_impl, //impl
-    keyword_when, //when (may be removed)
-    keyword_Self, //Self
-    keyword_where, //where
-    keyword_macro, //macro
-    keyword_do, //do
-    keyword_pure, //pure
-    keyword_yield,
-    keyword_true, //true
-    keyword_false, //false
+    keyword_if,         //KEYWORD_IF
+    keyword_else,       //KEYWORD_ELSE
+    keyword_while,      //KEYWORD_WHILE
+    keyword_for,        //KEYWORD_FOR
+    keyword_loop,       //KEYWORD_LOOP
+    keyword_continue,   //KEYWORD_CONTINUE
+    keyword_break,      //KEYWORD_BREAK
+    keyword_in,         //KEYWORD_IN
+    keyword_match,      //KEYWORD_MATCH
+    keyword_fn,         //KEYWORD_FN
+    keyword_inline,     //KEYWORD_INLINE
+    keyword_pub,        //KEYWORD_PUB
+    keyword_export,     //KEYWORD_EXPORT
+    keyword_extern,     //KEYWORD_EXTERN
+    keyword_import,     //KEYWORD_IMPORT
+    keyword_let,        //KEYWORD_LET
+    keyword_mut,        //KEYWORD_MUT
+    keyword_alias,      //KEYWORD_ALIAS
+    keyword_return,     //KEYWORD_RETURN
+    keyword_struct,     //KEYWORD_STRUCT
+    keyword_enum,       //KEYWORD_ENUM
+    keyword_use,        //KEYWORD_USE
+    keyword_mod,        //KEYWORD_MOD
+    keyword_comptime,   //KEYWORD_COMPTIME
+    keyword_as,         //KEYWORD_AS
+    keyword_static,     //KEYWORD_STATIC
+    keyword_type,       //KEYWORD_TYPE
+    keyword_const,      //KEYWORD_CONST
+    keyword_impl,       //KEYWORD_IMPL
+    keyword_when,       //KEYWORD_WHEN
+    keyword_Self,       //KEYWORD_SELF
+    keyword_where,      //KEYWORD_WHERE
+    keyword_with,       //KEYWORD_WITH
+    keyword_macro,      //KEYWORD_MACRO
+    keyword_pure,       //KEYWORD_PURE
+    keyword_true,       //KEYWORD_TRUE
+    keyword_false,      //KEYWORD_FALSE
 
 };
+//All of the builtin keywords
+pub const keywords = std.StaticStringMap(Tag).initComptime(.{ 
+    .{ "if",       .keyword_if       },
+    .{ "else",     .keyword_else     },
+    .{ "while",    .keyword_while    },
+    .{ "for",      .keyword_for      },
+    .{ "loop",     .keyword_loop     },
+    .{ "continue", .keyword_continue },
+    .{ "break",    .keyword_break    },
+    .{ "in",       .keyword_in       },
+    .{ "match",    .keyword_match    },
+    .{ "fn",       .keyword_fn       },
+    .{ "inline",   .keyword_inline   },
+    .{ "pub",      .keyword_pub      },
+    .{ "export",   .keyword_export   },
+    .{ "extern",   .keyword_extern   },
+    .{ "import",   .keyword_import   },
+    .{ "let",      .keyword_let      },
+    .{ "mut",      .keyword_mut      },
+    .{ "alias",    .keyword_alias    },
+    .{ "return",   .keyword_return   },
+    .{ "struct",   .keyword_struct   },
+    .{ "enum",     .keyword_enum     },
+    .{ "use",      .keyword_use      },
+    .{ "mod",      .keyword_mod      },
+    .{ "comptime", .keyword_comptime },
+    .{ "as",       .keyword_as       },
+    .{ "static",   .keyword_static   },
+    .{ "type",     .keyword_type     },
+    .{ "const",    .keyword_const    },
+    .{ "impl",     .keyword_impl     },
+    .{ "when",     .keyword_when     },
+    .{ "Self",     .keyword_Self     },
+    .{ "where",    .keyword_where    },
+    .{ "with",     .keyword_with     },
+    .{ "macro",    .keyword_macro    },
+    .{ "pure",     .keyword_pure     },
+    .{ "true",     .keyword_true     },
+    .{ "false",    .keyword_false    },
+});
 
 //a token consists of a span (the location in the source code the token is located)
 //and a tag (the actual type of token)
@@ -143,7 +179,7 @@ fn is_base(char: u8, base: Base) bool {
     };
 }
 
-//This function is what determines what characters can come at the beginning of an identifier
+// Check if 'char' is a valid starting character for an identifier
 fn is_id_start(char: u8) bool {
     return switch (char) {
         'a'...'z', 'A'...'Z', '_' => true,
@@ -151,9 +187,23 @@ fn is_id_start(char: u8) bool {
     };
 }
 
+// Strip any preceeding byte-order-marks (BOM)
+fn strip_bom(bytes: []const u8) []const u8 {
+    if (bytes.len >= 3 
+        and bytes[0] == 0xEF 
+        and bytes[1] == 0xBB 
+        and bytes[2] == 0xBF) {
+        return bytes[3..];
+    } else {
+        return bytes;
+    }
+     
+}
+
+
 //The overall lexer struct
 pub const Lexer = struct {
-    buffer: []const u8, //the provided source code
+     buffer: []const u8, //the provided source code
 
     //the current index
     //note that it actually stores the next character to process
@@ -161,14 +211,12 @@ pub const Lexer = struct {
     index: usize, 
 
     pub fn init(buffer: []const u8) Lexer {
+        const stripped_buffer = strip_bom(buffer);
         return .{
-            .buffer = buffer,
+            .buffer = stripped_buffer,
             .index = 0,
-            // I dont remember why I did this so I removed it for now.
-            //.index = if (std.mem.startsWith(u8, buffer, "\xEF\xBB\xBF")) 3 else 0,
         };
     }
-
     //The current state of the lexer, it is mostly used for parsing variable-width tokens such as literals and comments
     const State = enum { 
         start,
@@ -183,50 +231,6 @@ pub const Lexer = struct {
         ident 
     };
 
-    //All of the builtin keywords
-    pub const keywords = std.StaticStringMap(Tag).initComptime(.{ 
-        .{ "if", .keyword_if }, 
-        .{ "else", .keyword_else },
-        .{ "while", .keyword_while },
-        .{ "for", .keyword_for },
-        .{ "in", .keyword_in },
-        .{ "match", .keyword_match },
-        .{ "fn", .keyword_fn },
-        .{ "async", .keyword_async },
-        .{ "await", .keyword_await },
-        .{ "inline", .keyword_inline },
-        .{ "extern", .keyword_extern },
-        .{ "export", .keyword_export }, 
-        .{ "import", .keyword_import },
-        .{ "priv", .keyword_priv },
-        .{ "pub", .keyword_pub },
-        .{ "let", .keyword_let },
-        .{ "mut", .keyword_mut },
-        .{ "return", .keyword_return },
-        .{ "break", .keyword_break },
-        .{ "continue", .keyword_continue },
-        .{ "struct", .keyword_struct },
-        .{ "enum", .keyword_enum },
-        .{ "test", .keyword_test }, 
-        .{ "use", .keyword_use },
-        .{ "mod", .keyword_mod },
-        .{ "comp", .keyword_comp },
-        .{ "true", .keyword_true },
-        .{ "false", .keyword_false },
-        .{ "as", .keyword_as },
-        .{ "static", .keyword_static },
-        .{ "type", .keyword_type },
-        .{ "const", .keyword_const },
-        .{ "unsafe", .keyword_unsafe },
-        .{ "impl", .keyword_impl },
-        .{ "when", .keyword_when },
-        .{ "Self", .keyword_Self },
-        .{ "where", .keyword_where }, 
-        .{ "macro", .keyword_macro },
-        .{ "do", .keyword_do }, 
-        .{ "pure", .keyword_pure },
-        .{ "yield", .keyword_yield },
-    });
 
     //checks if the next character and the one after are the same
     fn is_double(self: *Lexer) bool {
@@ -237,7 +241,7 @@ pub const Lexer = struct {
         }
         return false;
     }
-
+    
     //checks if the next character matches next_char
     fn is_next(self: *Lexer, next_char: u8) bool {
         if (!self.has_next()) return false;
@@ -277,7 +281,6 @@ pub const Lexer = struct {
         if (self.index == 0) return self.buffer[self.index];
         return self.buffer[self.index - 1];
     }
-
     //parses a line comment (one that starts with //)
     //line comments go until it either encounters a newline character or 
     //reaches the end of the file
@@ -427,6 +430,7 @@ pub const Lexer = struct {
                 '<' => tag = if (self.next_if('=')) |_| .lteq else if (self.next_if('<')) |_| if (self.next_if('=')) |_| .lt2eq else .lt2 else .lt,
 
                 '\'' => { //parses character literals
+                          //TODO: add unicode support
                     if (self.next_if('\\')) |_| {
                         if (!self.parse_escape() or !self.is_next('\'')) {
                             tag = .invalid;
@@ -449,8 +453,16 @@ pub const Lexer = struct {
                     tag = .char_literal;
                 },
                 '\"' => { //parses string literals
+                          //TODO: ensure unicode support
                     var current = self.next();
                     while (self.has_next() and current != '\"') : (current = self.next()) {
+
+                        const code_point_length = std.unicode.utf8ByteSequenceLength(current.?) catch @panic("invalid byte");
+                        if (code_point_length > 1) {
+                            if (!std.unicode.utf8ValidateSlice(self.buffer[self.index - 1..self.index + code_point_length - 1])) {
+                                tag = .invalid;
+                            }
+                        }
                         switch (self.peek() orelse 0) {
                             '\n', 0x01...0x08, 0x0b...0x1f, 0x7f => {
                                 tag = .invalid;

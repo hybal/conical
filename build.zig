@@ -28,14 +28,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const exe_unit_tests = b.addTest(.{
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/test_main.zig"),
-    });
 
     var modules = std.StringHashMap(*std.Build.Module).init(b.allocator);
     const kvs = MODS.kvs;
+    // Create overall modules
     for (0..kvs.len) |i| {
         const name = kvs.keys[i];
         const info = kvs.values[i];
@@ -48,8 +44,9 @@ pub fn build(b: *std.Build) void {
 
         modules.put(name, mod) catch @panic("Ran out of memory");
         exe.root_module.addImport(name, mod);
-        //exe_unit_tests.root_module.addImport(name, mod);
     }
+
+    // Wire dependencies between modules
     for (0..kvs.len) |i| {
         const name = kvs.keys[i];
         const info = kvs.values[i];
@@ -61,10 +58,24 @@ pub fn build(b: *std.Build) void {
             mod.addImport(dep_name, dep_mod);
         }
     }
+
+
     modules.getPtr("bindings").?.*.link_libc = true;
 
+    // Add tests
+    const test_step = b.step("test", "Run unit tests");
+    var mod_it = modules.iterator();
+    while (mod_it.next()) |entry| {
+        const tst = b.addTest(.{
+            .target = target,
+            .optimize = optimize,
+            .root_module = entry.value_ptr.*,
+        });
+        const test_run = b.addRunArtifact(tst);
+        test_step.dependOn(&test_run.step);
+    }
     b.installArtifact(exe);
-    
+
     const run_cmd = b.addRunArtifact(exe);
 
     run_cmd.step.dependOn(b.getInstallStep());
@@ -84,10 +95,5 @@ pub fn build(b: *std.Build) void {
 
     // const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
-    
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
-    const test_step = b.step("test", "Run unit tests");
-    // test_step.dependOn(&run_lib_unit_tests.step);
-    test_step.dependOn(&run_exe_unit_tests.step);
 }

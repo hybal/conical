@@ -485,36 +485,36 @@ pub const AstBuilder = struct {
         return out;
     }
     pub fn get(self: *@This(), id: AstNodeId) struct {AstKind, *anyopaque} {
-        const node_index = self.nodes[id].index;
-        const node_kind = self.nodes[id].kind;
+        const node_index = self.nodes.items[id].index;
+        const node_kind = self.nodes.items[id].kind;
         return switch (node_kind) {
-            .poison => .{.poison, @constCast(&self.poisons[node_index])},
-            .unit => .{.unit, @constCast(&self.units[node_index])},
-            .binary_expr => .{.binary_expr, @constCast(&self.binary_exprs[node_index])},
-            .unary_expr => .{.unary_expr, @constCast(&self.unary_exprs[node_index])},
-            .terminal => .{.terminal, @constCast(&self.terminals[node_index])},
-            .type_expr => .{.type_expr, @constCast(&self.type_exprs[node_index])},
-            .type_binary_expr => .{.type_binary_expr, @constCast(&self.type_binary_exprs[node_index])},
-            .type_enum => .{.type_enum, @constCast(&self.type_enums[node_index])},
-            .type_struct => .{.type_struct, @constCast(&self.type_structs[node_index])},
-            .type_set => .{.type_set, @constCast(&self.type_sets[node_index])},
-            .type_int_range => .{.type_int_range, @constCast(&self.type_int_ranges[node_index])},
-            .assignment => .{.assignment, @constCast(&self.assignments[node_index])},
-            .if_stmt => .{.if_stmt, @constCast(&self.if_stmts[node_index])},
-            .while_loop => .{.while_loop, @constCast(&self.while_loops[node_index])},
-            .block => .{.block, @constCast(&self.blocks[node_index])},
-            .var_decl => .{.var_decl, @constCast(&self.var_decls[node_index])},
-            .fn_decl => .{.fn_decl, @constCast(&self.fn_decls[node_index])},
-            .fn_call => .{.fn_call, @constCast(&self.fn_calls[node_index])},
-            .return_stmt => .{.return_stmt, @constCast(&self.return_stmts[node_index])},
-            .type_decl => .{.type_decl, @constCast(&self.type_decls[node_index])},
-            .terminated => .{.terminated, @constCast(&self.terminateds[node_index])},
-            .intializer => .{.intializer, @constCast(&self.intializer[node_index])},
-            .access_operator => .{.access_operator, @constCast(&self.access_operators[node_index])},
-            .cast => .{.cast, @constCast(&self.casts[node_index])},
-            .path => .{.path, @constCast(&self.paths[node_index])},
-            .module_decl => .{.module_decl, @constCast(&self.module_decls[node_index])},
-            .import => .{.import, @constCast(&self.imports[node_index])},
+            .poison => .{.poison, @constCast(&self.poisons.items[node_index])},
+            .unit => .{.unit, @constCast(&self.units.items[node_index])},
+            .binary_expr => .{.binary_expr, @constCast(&self.binary_exprs.items[node_index])},
+            .unary_expr => .{.unary_expr, @constCast(&self.unary_exprs.items[node_index])},
+            .terminal => .{.terminal, @constCast(&self.terminals.items[node_index])},
+            .type_expr => .{.type_expr, @constCast(&self.type_exprs.items[node_index])},
+            .type_binary_expr => .{.type_binary_expr, @constCast(&self.type_binary_exprs.items[node_index])},
+            .type_enum => .{.type_enum, @constCast(&self.type_enums.items[node_index])},
+            .type_struct => .{.type_struct, @constCast(&self.type_structs.items[node_index])},
+            .type_set => .{.type_set, @constCast(&self.type_sets.items[node_index])},
+            .type_int_range => .{.type_int_range, @constCast(&self.type_int_ranges.items[node_index])},
+            .assignment => .{.assignment, @constCast(&self.assignments.items[node_index])},
+            .if_stmt => .{.if_stmt, @constCast(&self.if_stmts.items[node_index])},
+            .while_loop => .{.while_loop, @constCast(&self.while_loops.items[node_index])},
+            .block => .{.block, @constCast(&self.blocks.items[node_index])},
+            .var_decl => .{.var_decl, @constCast(&self.var_decls.items[node_index])},
+            .fn_decl => .{.fn_decl, @constCast(&self.fn_decls.items[node_index])},
+            .fn_call => .{.fn_call, @constCast(&self.fn_calls.items[node_index])},
+            .return_stmt => .{.return_stmt, @constCast(&self.return_stmts.items[node_index])},
+            .type_decl => .{.type_decl, @constCast(&self.type_decls.items[node_index])},
+            .terminated => .{.terminated, @constCast(&self.terminateds.items[node_index])},
+            .intializer => .{.intializer, @constCast(&self.intializer.items[node_index])},
+            .access_operator => .{.access_operator, @constCast(&self.access_operators.items[node_index])},
+            .cast => .{.cast, @constCast(&self.casts.items[node_index])},
+            .path => .{.path, @constCast(&self.paths.items[node_index])},
+            .module_decl => .{.module_decl, @constCast(&self.module_decls.items[node_index])},
+            .import => .{.import, @constCast(&self.imports.items[node_index])},
         };
     }
 
@@ -527,11 +527,11 @@ pub const AstBuilder = struct {
     }
 
     pub fn get_node(self: *@This(), id: AstNodeId) AstNode {
-        return self.nodes[id];
+        return self.nodes.items[id];
     }
 
     pub fn get_span(self: *@This(), id: AstNodeId) common.Span {
-        return self.spans[self.nodes[id].span];
+        return self.spans.items[self.nodes.items[id].span];
     }
 
     pub fn build(self: *@This()) !Ast {

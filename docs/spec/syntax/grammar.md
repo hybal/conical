@@ -3,55 +3,55 @@
 This is the formal grammar for the _syntax_ of the Conical programming language.
 It uses an extended Backus-Naur form (EBNF) with the addition of negation (`~ expression`) and unicode values (`U+XXXXXX`)
 
-## Incomplete/Todo
-
-- [ ] Pattern Matching
-- [ ] Macro declarations
-- [ ] Attribute-like macros / Function like macros
-- [ ] Builtins / Intrinsics
-
-## Comments
-
-Comments are ignored during lexing and as such do not contribute to the AST.
-There are two types of comments:
-
-1. A line comment, which starts with `//` and skips all characters until a line end character is encountered (either U+00000A or U+00000A U+00000D)
-2. A block comment starts with `/*` and ends with `*/`, any text in between is ignored including newlines. They can also be arbitrarily nested.
-
-There is, in addition, another type of ignored text which is the unix "shebang" line. This is treated the same as a line comment and starts with `#!`.
-
-## Identifiers, Keywords, and Digits
+## Standard Definitions
 
 ```ebnf
-IDENTIFIER       ::= [A-Za-z_] [A-Za-z0-9_]*
+EOF              ::= [U+000000]
+
+NEWLINE          ::= [U+00000A] | ( [U+00000A] [U+00000D] )
+
 BINARY_DIGIT     ::= [01]
 DIGIT            ::= [0-9]
 DIGIT_ONE        ::= [1-9]
 OCTAL_DIGIT      ::= [0-7]
 HEX_DIGIT        ::= [0-9a-fA-F]
+```
+## Comments
+
+Comments are ignored during lexing and as such do not contribute to the AST.
+
+```ebnf
+LINE_COMMENT ::= '//' ( ~NEWLINE )* (NEWLINE | EOF)
+```
+
+## Identifiers, Keywords, and Digits
+
+```ebnf
+IDENTIFIER       ::= [A-Za-z_] [A-Za-z0-9_]*
 KEYWORD_IF       ::= 'if'
 KEYWORD_ELSE     ::= 'else'
 KEYWORD_WHILE    ::= 'while'
 KEYWORD_FOR      ::= 'for'
+KEYWORD_LOOP     ::= 'loop'
+KEYWORD_CONTINUE ::= 'continue'
+KEYWORD_BREAK    ::= 'break'
 KEYWORD_IN       ::= 'in'
 KEYWORD_MATCH    ::= 'match'
 KEYWORD_FN       ::= 'fn'
 KEYWORD_INLINE   ::= 'inline'
 KEYWORD_PUB      ::= 'pub'
 KEYWORD_EXPORT   ::= 'export'
+KEYWORD_EXTERN   ::= 'extern'
 KEYWORD_IMPORT   ::= 'import'
 KEYWORD_LET      ::= 'let'
 KEYWORD_MUT      ::= 'mut'
 KEYWORD_ALIAS    ::= 'alias'
 KEYWORD_RETURN   ::= 'return'
-KEYWORD_BREAK    ::= 'break'
 KEYWORD_STRUCT   ::= 'struct'
 KEYWORD_ENUM     ::= 'enum'
 KEYWORD_USE      ::= 'use'
 KEYWORD_MOD      ::= 'mod'
 KEYWORD_COMPTIME ::= 'comptime'
-KEYWORD_LOOP     ::= 'loop'
-KEYWORD_CONTINUE ::= 'continue'
 KEYWORD_AS       ::= 'as'
 KEYWORD_STATIC   ::= 'static'
 KEYWORD_TYPE     ::= 'type'
@@ -114,9 +114,9 @@ DISALLOWED_CHARACTERS ::= [U+000000-U+00001F]
                         | UNICODE_NON_CHARACTERS
 
 BOOL_LITERAL          ::= KEYWORD_TRUE | KEYWORD_FALSE
-CHAR_LITERAL          ::= '\'' (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE '\''
-STRING_LITERAL        ::= '"' ( (~ DISALLOWED_CHARACTERS) | ESCAPE_SEQUENCE )* '"'
-RAW_STRING_LITERAL    ::= '`' (~ DISALLOWED_CHARACTERS)* | [U+00000A] | [U+00000D] '`'
+CHAR_LITERAL          ::= '\'' ~(DISALLOWED_CHARACTERS | NEWLINE) | ESCAPE_SEQUENCE '\''
+STRING_LITERAL        ::= '"' ( ~(DISALLOWED_CHARACTERS | NEWLINE) | ESCAPE_SEQUENCE )* '"'
+RAW_STRING_LITERAL    ::= '`' (~ DISALLOWED_CHARACTERS)* '`'
 
 SIGN                  ::= [+-]
 INTEGER_LITERAL       ::= {SIGN} DECIMAL_LITERAL | BINARY_LITERAL | OCTAL_LITERAL | HEX_LITERAL
@@ -288,7 +288,7 @@ WHILE_LOOP            ::= KEYWORD_WHILE EXPRESSION LOOP_BLOCK
 
 FOR_LOOP              ::= KEYWORD_FOR IDENTIFIER KEYWORD_IN EXPRESSION LOOP_BLOCK
 
-LOOP_BLOCK            ::= '{' (STATEMENT | LOOP_CONTINUE | LOOP_BREAK | EXPRESSION)* '}'
+LOOP_BLOCK            ::= '{' (STATEMENT | LOOP_CONTINUE | LOOP_BREAK)* '}'
 
 LOOP_CONTINUE         ::= KEYWORD_CONTINUE ';'
 
@@ -368,7 +368,7 @@ TYPE_IMPL_SUGAR                  ::= KEYWORD_IMPL '{' FUNCTION_DECLARATION+ '}'
 
 ```ebnf
 
-FUNCTION_MODIFIERS           ::= (KEYWORD_PUB | KEYWORD_EXPORT) (KEYWORD_INLINE | KEYWORD_PURE | KEYWORD_COMPTIME)*
+FUNCTION_MODIFIERS           ::= (KEYWORD_PUB {KEYWORD_EXTERN} | KEYWORD_EXPORT) {KEYWORD_INLINE} {KEYWORD_PURE} {KEYWORD_COMPTIME}
 
 FUNCTION_HEADER              ::= {FUNCTION_MODIFIERS} KEYWORD_FN IDENTIFIER
 
@@ -393,5 +393,5 @@ LAMBDA                       ::= '\\' ((GENERIC | {BINDING_MODIFIER} IDENTIFIER 
                                | '(' {BINDING_MODIFIER} IDENTIFIER { ':' TYPE_EXPRESSION } (',' {BINDING_MODIFIER} IDENTIFIER {':' TYPE_EXPRESSION })* {','} ')') 
                                { '->' TYPE_EXPRESSION } 
                                (EXPRESSION_BLOCK | EXPRESSION)
-
 ```
+

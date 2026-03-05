@@ -15,7 +15,8 @@ pub fn main() !u8 {
     return 0;
 }
 
-test "main" {
+test {
+    _ = @import("tests.zig");
     std.testing.refAllDecls(diag);
     std.testing.refAllDecls(common);
     std.testing.refAllDeclsRecursive(lex);
@@ -27,4 +28,6 @@ test "main" {
     //std.testing.refAllDeclsRecursive(bindings);
     //std.testing.refAllDeclsRecursive(driver);
 }
+
+
 
