@@ -4,7 +4,6 @@ const ast = @import("Ast.zig");
 pub const init_from_lexer = parser.init_from_lexer;
 pub const init = parser.init;
 pub const parse = parser.parse;
-pub const tests = @import("test.zig");
 
 pub const Ast = struct {
     pub const BinaryExpr = ast.BinaryExpr;
@@ -46,6 +45,6 @@ pub const Ast = struct {
 };
 
 
-comptime {
-    _ = @import("test.zig");
+test {
+    _ = @import("test/tests.zig");
 }

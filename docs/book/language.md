@@ -39,7 +39,7 @@ Most common literals will be supported.
 
 ```conical
 let a = 1; // an immutable variable
-mut b = 2; // a mutable variable
+let mut b = 2; // a mutable variable
 b += 1;
 let a: i32 = 51; // variables can have optional types, otherwised its inferred
 let a = "Hello"; // variables can be rebound, in which case the previous variable is no longer accessible
@@ -123,7 +123,7 @@ if 1 < 2 { // parenthesis are only required if you don't use a block
 
 let a = if (1 > 2) 1 else 2; // inline if statement can be used, and takes the place of a ternary operator
 
-mut c = 1;
+let mut c = 1;
 while true { // while loops work like expected
     c += 1;
 }
@@ -351,7 +351,7 @@ I am currently leaning toward an attribute marker on an associated function that
 
 ## Inference
 
-One idea for type inference is to either 1. Produce a "concrete" set and an "inferred" set, or 2. Never fully make a type concrete.
+Two ideas for type inference is to either 1. Produce a "concrete" set and an "inferred" set, or 2. Never fully make a type concrete.
 Where a concrete set represents _all_ of the possibilities that are allowed for a slot, and the inferred is all of the possibilities that are actually used for a particular instance.
 
 If they are two separate sets, then they are in-general going to be equivalent. However, when things like associated functions come into play (or just labels of any kind) the concrete set will contain all of the possible associated values / labels that the inferred existing type has. Whereas, the inferred set will only contain the thing that was actually referenced. 
@@ -361,10 +361,8 @@ On the other hand, perhaps it would be better to not separate them. This will re
 
 If this information is saved, it would allow for more optimizations, such as function specialization, as well as just better reasoning over the program - especially in things like conditionals.
 
+## Higher level abstract representation
 
-### Loop Inference
-
-The problem with loops is that they could potentially be unbounded. So if you have an induction variable it could end up being an unbounded set. 
-
-Potentially if the range of a loop can be statically determine then it may be possible to use that to infer variables within it, but again that would remain to be seen.
-It also may just be better for it to be consistent.
+An example of this is the polyhedral models for affine loops (which I still need to learn more about), but there maybe is a representation that can apply generally instead of just locally.
+One idea is modelling data / time dependencies via interaction nets and then defining optimizations as the rewrite rules. 
+An immediate problem with this is that it may make optimizations very local. Which kind of goes against the whole point of the polyhedral model, and as such the thought in general.
