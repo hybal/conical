@@ -326,8 +326,8 @@ This does not mean that it can't be more granular, instead, that is relegated to
 ## Compiler Guarantees 
 
 The way that the compiler guarantees that value sets are upheld is by making _everything_ happen via intrinsics.
-For example, all functional operators are de-sugared into function calls to associated functions (so operator overloading).
-In those associated functions the actual operation is preformed via a call to a compiler intrinsic.
+All functional operators are de-sugared into associated function calls (operator overloading).
+And, in those associated functions the actual operation is preformed via a call to a compiler intrinsic.
 As such, the only locations that the contract could be violated are intrinsics (which the compiler controls) and external functions.
 
 ## Destructors / Drop Functions
@@ -347,6 +347,7 @@ Perhaps, conical could use both.
 Where drop functions that only have a single argument of `self` will be called automatically, and more complex drop functions would require manual invocation. 
 Of course, there shouldn't be a "destructor" keyword / syntax as that makes drop code "magical".
 I am currently leaning toward an attribute marker on an associated function that marks it as a drop function, however that does mean that there is more functionality that is not able to be implemented in the language itself.
+Alternatively, there could just be an "overloaded" function that gets called for every type that has it. However, this does mean that you would have to call something like \_\_drop which doesn't really read very well.
 
 
 ## Inference
@@ -361,8 +362,22 @@ On the other hand, perhaps it would be better to not separate them. This will re
 
 If this information is saved, it would allow for more optimizations, such as function specialization, as well as just better reasoning over the program - especially in things like conditionals.
 
-## Higher level abstract representation
+Perhaps to make the inferred set even more useful, it should not just naively union every type it comes across, or alternatively there could be a separate set that represents the set of possible values for something at every point in a program. This wouldn't require all that much more computation, since it would just be the operator/function evaluation instead of just union.
+This would narrow the possibilities even more, since for constant-initialized slots as long as it is only used with pure functions the exact value is always known at every point. 
 
-An example of this is the polyhedral models for affine loops (which I still need to learn more about), but there maybe is a representation that can apply generally instead of just locally.
-One idea is modelling data / time dependencies via interaction nets and then defining optimizations as the rewrite rules. 
-An immediate problem with this is that it may make optimizations very local. Which kind of goes against the whole point of the polyhedral model, and as such the thought in general.
+## Dependent Variables
+
+An interesting idea, though how useful it is remains to be seen, is to support a limited form of dependent typing. 
+This would be achieved by allowing for a runtime value to be inserted into a type expression, and instead of trying to evaluate it or defer type checking to runtime, it can be internally treated as a kind of "superposition" of all of the values that value could be at runtime. 
+The difference between this and normal typing is that the dependent value is tied to the runtime location it came from, and cannot be changed. This means that a value with a dependent type `a` can only be assigned to `a` or something derived from it. In code that would look like:
+
+```conical
+let a: 1..10 = ...;
+let b: %a = a;
+add(5, b);
+```
+
+Where b can _only_ be assigned to a. Assigning it to anything else, like `5`, would be a type error since `%a` is the _exact_ set `a` and has no subset relation with any other type.
+Also notice that b can still be used like a normal value, it just can't be initialized to anything other than `a`.
+
+This would be interesting, as it could allow for things like bounds checking at compile time even when the bounds are runtime only. 

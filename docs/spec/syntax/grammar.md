@@ -46,6 +46,7 @@ KEYWORD_IMPORT   ::= 'import'
 KEYWORD_LET      ::= 'let'
 KEYWORD_MUT      ::= 'mut'
 KEYWORD_ALIAS    ::= 'alias'
+KEYWORD_MOVE     ::= 'move'
 KEYWORD_RETURN   ::= 'return'
 KEYWORD_STRUCT   ::= 'struct'
 KEYWORD_ENUM     ::= 'enum'
@@ -310,7 +311,7 @@ LOOP_BREAK            ::= KEYWORD_BREAK ';'
 ## Variables
 
 ```ebnf
-BINDING_MODIFIER     ::= KEYWORD_ALIAS | KEYWORD_MUT
+BINDING_MODIFIER     ::= KEYWORD_ALIAS | KEYWORD_MUT | KEYWORD_MOVE
 
 BINDING              ::= IDENTIFIER {':' TYPE_EXPRESSION} '=' EXPRESSION
 
@@ -408,13 +409,29 @@ LAMBDA                          ::= '\\' ((GENERIC | {BINDING_MODIFIER} IDENTIFI
 
 ## Macros
 
-```ebnf
-MACRO_DECLARATION  ::= { KEYWORD_PUB } KEYWORD_MACRO IDENTIFIER ( MACRO_DECLARATION_INLINE | MACRO_DECLARATION_POSTIFIX ) EXPRESSION_BLOCK
+> NOTE:
+> The argument list expression may be required in the future.
 
-MACRO_DECLARATION_INLINE ::= '(' { IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','} } ')' 
+> NOTE:
+> The global macro syntax is for using macros _anywhere_. Attributes require valid code, and function-like macros are only used in expressions.
+> However, the evaluation order for global macros has yet to be determined (though it will likely be top-down).
+
+Macros are parsed and evaluated before any other part of the program (other than their dependencies). 
+
+```ebnf
+MACRO_DECLARATION         ::= { KEYWORD_PUB } KEYWORD_MACRO IDENTIFIER ( MACRO_DECLARATION_INLINE | MACRO_DECLARATION_POSTIFIX ) EXPRESSION_BLOCK
+
+MACRO_DECLARATION_INLINE  ::= '(' { IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','} } ')'
                              { '->' TYPE_EXPRESSION }
 
-MACRO_DECLARATION_POSTFIX ::= '(' { IDENTIFIER (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','} } ')' 
+MACRO_DECLARATION_POSTFIX ::= '(' { IDENTIFIER (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','} } ')'
                               { ':' ('(' TYPE_EXPRESSION (',' TYPE_EXPRESSION)* {','} ')' | TYPE_EXPRESSION) } 
                               { '->' TYPE_EXPRESSION }
+
+MACRO_ATTRIBUTE           ::= '@' IDENTIFIER { EXPRESSION_FUNCTION_CALL }
+
+MACRO_FUNCTION            ::= IDENTIFIER '!' { EXPRESSION_FUNCTION_CALL }
+
+MACRO_GLOBAL              ::= IDENTIFIER '!!' { EXPRESSION_FUNCTION_CALL }
+
 ```
