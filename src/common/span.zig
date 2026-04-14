@@ -1,18 +1,23 @@
 pub const std = @import("std");
-pub const Path = @import("path.zig").Path;
+const Path = @import("path.zig").Path;
+
+
+
 pub const FileId = u32;
 //This represents a region in the source code
 pub const Span = struct {
     start: usize,
     end: usize, //exclusive
-    //fileid: FileId, // In-Progress
+    fileid: FileId,
 
-    pub fn init(initial: usize) @This() {
+    pub fn init(initial: usize, file: FileId) @This() {
         return .{
             .start = initial,
             .end = initial + 1,
+            .fileid = file,
         };
     }
+
 
     //provided the source code, will get the actual string that this span represents
     pub fn get_string(self: *const Span, source: []const u8) []const u8 {
@@ -28,28 +33,30 @@ pub const Span = struct {
 };
 
 
-// Will eventually also have macro expansion and other types
 pub const File = union(enum) {
      file: Path,
+     buffer: []const u8,
      _,
 };
 
 pub const FileStore = struct {
     store: std.ArrayList(File),
-    map: std.StringHashMap(FileId), //Maps fully normalized paths to fileid's
-
+    gpa: std.mem.Allocator,
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
-            .store = .init(allocator),
-            .map = .init(allocator),
+            .store = .empty,
+            .gpa = allocator,
         };
     }
 
-    pub fn put(self: *@This(), file: Path) !FileId {
+    pub fn deinit(self: *@This()) void {
+        self.store.deinit(self.gpa);
+    }
+
+    pub fn put(self: *@This(), file: File) !FileId {
         const id = self.store.items.len;
-        try self.store.append(.{ .file = file });
-        try self.map.put(file.normalize(), id);
-        return id;
+        try self.store.append(self.gpa, file);
+        return @intCast(id);
     }
 };
 

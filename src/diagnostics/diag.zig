@@ -61,11 +61,17 @@ pub const DiagnosticBuilder = struct {
             ._code = null,
             ._severity = null,
             ._message = null,
-            ._labels = .init(allocator),
-            ._notes = .init(allocator),
+            ._labels = .empty,
+            ._notes = .empty,
             ._help = null,
-            ._suggestions = .init(allocator),
+            ._suggestions = .empty,
         };
+    }
+
+    pub fn deinit(self: *@This()) void {
+        self._labels.deinit();
+        self._notes.deinit();
+        self._suggestions.deinit();
     }
 
     const BuildError = error {
@@ -108,17 +114,17 @@ pub const DiagnosticBuilder = struct {
     }
 
     pub fn add_label(self: *@This(), value: Label) !*@This() {
-        try self._labels.append(value);
+        try self._labels.append(value, self.gpa);
         return self;
     }
 
     pub fn add_note(self: *@This(), value: []const u8) !*@This() {
-        try self._notes.append(value);
+        try self._notes.append(value, self.gpa);
         return self;
     }
 
     pub fn add_suggestion(self: *@This(), value: Suggestion) !*@This() {
-        try self._suggestions.append(value);
+        try self._suggestions.append(value, self.gpa);
         return self;
     }
 
@@ -132,24 +138,29 @@ pub const ErrorId = usize;
 
 pub const ErrorStore = struct {
     errors: std.ArrayList(ErrorType),
-
-    pub fn init(allocator: std.mem.Allocator) !@This() {
+    gpa: std.mem.Allocator,
+    pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
-            .errors = .init(allocator),
+            .errors = .empty,
+            .gpa = allocator,
         };
     }
+    pub fn deinit(self: *@This()) void {
+        self.errors.deinit(self.gpa);
+    }
     pub fn push(self: *@This(), err: ErrorType) !ErrorId { 
-        try self.errors.append(err);
+        try self.errors.append(err, self.gpa);
         return self.errors.items.len;
     }
 };
 
+
 pub const ErrorType = struct {
     ptr: *anyopaque,
-    vtable: *const VTable,
+    vtable: *VTable,
 
     const VTable = struct {
-        to_diagnostic: fn ( self: *anyopaque, allocator: std.mem.Allocator) anyerror!Diagnostic,
+        to_diagnostic: *fn ( self: *anyopaque, allocator: std.mem.Allocator) anyerror!Diagnostic,
     };
 
     pub fn to_diagnostic(self: @This(), allocator: std.mem.Allocator) anyerror!Diagnostic { 

@@ -14,6 +14,7 @@ lexer: lex.Lexer,
 context: *common.Context,
 has_module: bool = false,
 builder: Ast.AstBuilder,
+file: common.FileId,
 
 
 
@@ -25,18 +26,24 @@ pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.All
         .context = context,
         .imports = .init(gpa),
         .builder = .init(gpa),
+        .file = in.file,
     };
 }
 
 /// Initialize the parser from source
-pub fn init(context: *common.Context, gpa: std.mem.Allocator) @This() {
+pub fn init(context: *common.Context, file: common.FileId, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = lex.Lexer.init(context.source),
         .gpa = gpa,
         .imports = .init(gpa),
         .context = context,
         .builder= .init(gpa),
+        .file = file,
     };
+}
+
+pub fn deinit(self: *@This()) void {
+    self.builder.deinit();
 }
 
 /// The entrypoint for the parser
@@ -79,7 +86,7 @@ fn expression(self: *@This()) anyerror!Ast.AstNodeId {
 // block = "{" stmt* "}"
 fn block(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.open_bracket})) |_| {
         span.start = self.lexer.index;
         var exprs = std.ArrayList(Ast.AstNodeId).init(self.gpa);
@@ -128,7 +135,7 @@ fn optional_block(self: *@This()) !Ast.AstNodeId {
 fn parse_type(self: *@This()) !Ast.Type { 
     self.lexer.skip_whitespace();
     var modifiers = std.ArrayList(Ast.TypeModifier).init(self.gpa);
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     while (self.lexer.consume_if_eq(&[_]lex.Tag{.amp, .amp2, .star, .open_square, .keyword_mut, .keyword_const})) |mmod| {
                 
         var mod: Ast.TypeModifier = .Ref;
@@ -284,7 +291,7 @@ fn fn_decl(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
     var decl_mod: ?Ast.GlobalDeclMod = null;
     var fn_mod: ?Ast.FnModifier = null;
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     if (try self.try_decl_mod()) |decl| {
         span.merge(.{ .start = span.start, .end = self.lexer.index });
         decl_mod = decl;
@@ -380,7 +387,7 @@ fn fn_decl(self: *@This()) !Ast.AstNodeId {
 // var_decl = ("let" | "mut") (":" type)? ("=" expression)? ";"
 fn var_decl(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.keyword_let, .keyword_mut})) |key| {
         const ident = try self.expect_ret(.ident);
@@ -422,7 +429,7 @@ fn var_decl(self: *@This()) !Ast.AstNodeId {
 
 fn type_decl(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.keyword_type})) |_| {
         const ident = try self.expect_ret(.ident);
@@ -447,7 +454,7 @@ fn type_decl(self: *@This()) !Ast.AstNodeId {
 
 fn module_decl(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.keyword_mod})) |key| {
         if (self.has_module) {
             span.merge(.{ .start = span.start, .end = self.lexer.index});
@@ -483,7 +490,7 @@ fn module_decl(self: *@This()) !Ast.AstNodeId {
 
 fn import_stmt(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.keyword_import})) |key| {
         span.merge(key.span);
@@ -505,7 +512,7 @@ fn import_stmt(self: *@This()) !Ast.AstNodeId {
 
 fn return_stmt(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.keyword_return})) |tok| {
         span.merge(tok.span);
         const expr = try self.expression();
@@ -517,7 +524,7 @@ fn return_stmt(self: *@This()) !Ast.AstNodeId {
 }
 fn ifstmt(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.keyword_if})) |tok| {
         span.merge(tok.span);
         const condition = try self.expression();
@@ -542,7 +549,7 @@ fn ifstmt(self: *@This()) !Ast.AstNodeId {
 //TODO: move this (wrong precedence)
 fn while_loop(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.keyword_while})) |tok| {
         span.merge(tok.span);
@@ -562,7 +569,7 @@ fn while_loop(self: *@This()) !Ast.AstNodeId {
 //TODO: move this (wrong precedence)
 fn assignment(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     const lval = try self.ternary();
     span.merge(lval.span);
@@ -615,7 +622,7 @@ fn assignment(self: *@This()) anyerror!Ast.AstNodeId {
 
 fn ternary(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var condition = try self.logical_or();
     span.merge(condition.span);
@@ -641,7 +648,7 @@ fn ternary(self: *@This()) !Ast.AstNodeId {
 
 fn logical_or(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.logical_and();
     span.merge(left.span);
@@ -659,7 +666,7 @@ fn logical_or(self: *@This()) !Ast.AstNodeId {
 }
 fn logical_and(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.bitwise_or();
     span.merge(left.span);
@@ -678,7 +685,7 @@ fn logical_and(self: *@This()) !Ast.AstNodeId {
 
 fn bitwise_or(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.bitwise_xor();
     span.merge(left.span);
@@ -696,7 +703,7 @@ fn bitwise_or(self: *@This()) !Ast.AstNodeId {
 }
 fn bitwise_xor(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.bitwise_and();
     span.merge(left.span);
@@ -714,7 +721,7 @@ fn bitwise_xor(self: *@This()) anyerror!Ast.AstNodeId {
 }
 fn bitwise_and(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.equality();
     span.merge(left.span);
@@ -733,7 +740,7 @@ fn bitwise_and(self: *@This()) anyerror!Ast.AstNodeId {
 
 fn equality(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.relational();
     span.merge(left.span);
@@ -752,7 +759,7 @@ fn equality(self: *@This()) anyerror!Ast.AstNodeId {
 
 fn relational(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.shift();
     span.merge(left.span);
@@ -770,7 +777,7 @@ fn relational(self: *@This()) anyerror!Ast.AstNodeId {
 }
 fn shift(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.additive();
     span.merge(left.span);
@@ -789,7 +796,7 @@ fn shift(self: *@This()) anyerror!Ast.AstNodeId {
 
 fn additive(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.multiplicative();
     span.merge(left.span);
@@ -807,7 +814,7 @@ fn additive(self: *@This()) anyerror!Ast.AstNodeId {
 }
 fn multiplicative(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     var left = try self.cast();
     span.merge(left.span);
@@ -825,7 +832,7 @@ fn multiplicative(self: *@This()) anyerror!Ast.AstNodeId {
 }
 fn cast(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     const expr = try self.unary();
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.keyword_as})) |_| {
         const ty = try self.parse_type();
@@ -843,7 +850,7 @@ fn cast(self: *@This()) anyerror!Ast.AstNodeId {
 
 fn unary(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.minus, .bang, .tilde, .star, .amp, .amp2})) |op| {
         const unry = try self.unary();
@@ -862,7 +869,7 @@ fn unary(self: *@This()) anyerror!Ast.AstNodeId {
 //TODO:
 fn fn_call(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     const left = try self.access();
     span.merge(left.span);
@@ -890,7 +897,7 @@ fn fn_call(self: *@This()) !Ast.AstNodeId {
 
 fn access(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     const left = try self.initializer();
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.dot})) |_| {
         span.merge(left.span);
@@ -908,7 +915,7 @@ fn access(self: *@This()) !Ast.AstNodeId {
 //NOTE: its possible that this syntax will change from id: to .id =, as the latter does not require lookahead / backtracking. If this does end up being the case, then it will have to be changed to be consistent in argument lists as well
 fn initializer(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.dot})) |dot_token| {
         span.merge(dot_token.span);
@@ -1069,7 +1076,7 @@ fn initializer(self: *@This()) !Ast.AstNodeId {
 
 fn parse_path(self: *@This()) !Ast.AstNodeId {
     try self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.ident})) |fid| {
         span.merge(fid.span);
         var parts = std.ArrayList(Ast.Ident).init(self.gpa);
@@ -1132,7 +1139,7 @@ fn parse_path(self: *@This()) !Ast.AstNodeId {
 /// As such this includes things like parenthesized expressions and inline blocks
 fn primary(self: *@This()) !Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
     // Sub-expression parsing
     if (self.lexer.consume_if_eq(&[_]lex.Tag{.open_paren})) |tok| { 
         span.merge(tok.span);
@@ -1177,7 +1184,7 @@ fn primary(self: *@This()) !Ast.AstNodeId {
 /// This is stuff like literals and initializers, this does *not* include parenthesized expressions.
 fn terminal(self: *@This()) anyerror!Ast.AstNodeId {
     self.lexer.skip_whitespace();
-    var span: common.Span = .init(self.lexer.index);
+    var span: common.Span = .init(self.lexer.index, self.file);
 
     if (self.lexer.is_next_token(.ident)) {
         return try self.parse_path();

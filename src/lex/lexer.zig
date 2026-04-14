@@ -210,11 +210,14 @@ pub const Lexer = struct {
     //so the current character is actually index - 1
     index: usize, 
 
-    pub fn init(buffer: []const u8) Lexer {
+    file: common.FileId,
+
+    pub fn init(buffer: []const u8, file: common.FileId) Lexer {
         const stripped_buffer = strip_bom(buffer);
         return .{
             .buffer = stripped_buffer,
             .index = 0,
+            .file = file,
         };
     }
     //The current state of the lexer, it is mostly used for parsing variable-width tokens such as literals and comments
@@ -558,7 +561,7 @@ pub const Lexer = struct {
             }
             break;
         }
-        return .{ .span = .{ .start = start, .end = self.index }, .tag = tag };
+        return .{ .span = .{ .start = start, .end = self.index, .fileid = self.file}, .tag = tag };
     }
 };
 

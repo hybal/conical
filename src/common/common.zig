@@ -8,7 +8,7 @@ const Span = span.Span;
 
 pub const DefId = u64;
 pub const TypeId = u64;
-pub const FileId = span.FileId;
+const FileId = span.FileId;
 
 pub const Ident = struct {
     span: Span,
@@ -43,11 +43,15 @@ pub const Context = struct {
     //sym_tab: std.ArrayList(SymbolTable),
     //type_tab: TypeTbl,
     source: []const u8,
-    file_path: []const u8,
     file_store: span.FileStore,
     session: diag.ErrorStore,
     //module: ?ModuleId,
     //module_store: *ModuleStore,
+
+    pub fn deinit(self: *@This()) void {
+        self.file_store.deinit();
+        self.session.deinit();
+    }
 };
 
 
