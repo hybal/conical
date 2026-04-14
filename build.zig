@@ -5,7 +5,7 @@ const ModInf = struct {
 };
 
 const MODS = std.StaticStringMap(ModInf).initComptime(.{
-    .{ "common", ModInf { .path = "src/common.zig", .deps = &.{ "diagnostics"} } },
+    .{ "common", ModInf { .path = "src/common/mod.zig", .deps = &.{ "diagnostics"} } },
     .{ "lex", ModInf { .path  = "src/lex/mod.zig", .deps = &.{"common"} } },
     .{ "parse", ModInf { .path  = "src/parse/mod.zig", .deps = &.{"common", "lex", "diagnostics"} } },
     .{ "diagnostics", ModInf { .path  = "src/diagnostics/mod.zig", .deps = &.{"common"} } },
@@ -24,9 +24,11 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "conical",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     var modules = std.StringHashMap(*std.Build.Module).init(b.allocator);
@@ -67,8 +69,6 @@ pub fn build(b: *std.Build) void {
     var mod_it = modules.iterator();
     while (mod_it.next()) |entry| {
         const tst = b.addTest(.{
-            .target = target,
-            .optimize = optimize,
             .root_module = entry.value_ptr.*,
         });
         const test_run = b.addRunArtifact(tst);

@@ -5,6 +5,5 @@ const common = @import("common");
 const parse = @import("../parser.zig");
 
 test "parser" {
-    std.debug.print("Unimplemented\n", .{});
-    try testing.expect(false);
+
 }

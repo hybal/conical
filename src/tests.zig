@@ -1,7 +1,7 @@
 const std = @import("std");
 
 test {
-    _ = @import("lex/tests.zig");
+    _ = @import("lex");
     _ = @import("parse");
     _ = @import("common");
     _ = @import("diagnostics");

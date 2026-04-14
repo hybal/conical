@@ -13,15 +13,14 @@ const parse = @import("parse");
 
 
 pub fn main() !u8 {
+    std.debug.print("Built successfully\n", .{});
+    _ = parse.parse;
     return 0;
 }
 
 test {
     _ = @import("tests.zig");
-    std.testing.refAllDecls(diag);
-    std.testing.refAllDecls(common);
-    std.testing.refAllDeclsRecursive(lex);
-    std.testing.refAllDeclsRecursive(parse);
+    _ = @import("parse");
     //try std.testing.expect(false);
     //std.testing.refAllDeclsRecursive(hir);
     //std.testing.refAllDeclsRecursive(mir);
