@@ -42,12 +42,17 @@ pub const Ident = struct {
 pub const Context = struct {
     //sym_tab: std.ArrayList(SymbolTable),
     //type_tab: TypeTbl,
-    source: []const u8,
     file_store: span.FileStore,
     session: diag.ErrorStore,
     //module: ?ModuleId,
     //module_store: *ModuleStore,
 
+    pub fn init(allocator: std.mem.Allocator) @This() {
+        return .{
+            .file_store = .init(allocator),
+            .session = .init(allocator)
+        };
+    }
     pub fn deinit(self: *@This()) void {
         self.file_store.deinit();
         self.session.deinit();

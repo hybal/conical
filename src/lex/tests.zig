@@ -19,13 +19,14 @@ test "lex/tokens" {
     var ctx: common.Context = common.Context {
         .file_store = common.span.FileStore.init(allocator),
         .session = .init(allocator),
-        .source = buffer,
     };
     defer ctx.deinit();
 
+    var reader = std.Io.Reader.fixed(buffer);
+
     const fileid = try ctx.file_store.put(.{ .buffer = buffer });
     
-    var lexer = lex.Lexer.init(buffer, fileid);
+    var lexer = lex.Lexer.init(&reader, fileid);
     try expectEqual(.plus,           lexer.next_token().tag);
     try expectEqual(.eq2,            lexer.next_token().tag);
     try expectEqual(.int_literal,    lexer.next_token().tag);
@@ -66,14 +67,14 @@ test "lex/spans" {
     var ctx = common.Context {
         .file_store = .init(allocator),
         .session = .init(allocator),
-        .source = buffer,
     };
-
     defer ctx.deinit();
+
+    var reader = std.Io.Reader.fixed(buffer);
 
     const fileid = try ctx.file_store.put(.{ .buffer = buffer });
 
-    var lexer = lex.Lexer.init(buffer, fileid);
+    var lexer = lex.Lexer.init(&reader, fileid);
 
     try expectEqual(span(1, 3, fileid),   lexer.next_token().span);
     try expectEqual(span(4, 8, fileid),   lexer.next_token().span);

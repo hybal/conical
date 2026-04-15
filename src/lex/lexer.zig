@@ -187,38 +187,23 @@ fn is_id_start(char: u8) bool {
     };
 }
 
-// Strip any preceeding byte-order-marks (BOM)
-fn strip_bom(bytes: []const u8) []const u8 {
-    if (bytes.len >= 3 
-        and bytes[0] == 0xEF 
-        and bytes[1] == 0xBB 
-        and bytes[2] == 0xBF) {
-        return bytes[3..];
-    } else {
-        return bytes;
-    }
-     
-}
 
 
-//The overall lexer struct
 pub const Lexer = struct {
-     buffer: []const u8, //the provided source code
-
-    //the current index
-    //note that it actually stores the next character to process
-    //so the current character is actually index - 1
+    reader: *std.Io.Reader,
     index: usize, 
 
     file: common.FileId,
 
-    pub fn init(buffer: []const u8, file: common.FileId) Lexer {
-        const stripped_buffer = strip_bom(buffer);
-        return .{
-            .buffer = stripped_buffer,
+    pub fn init(reader: *std.Io.Reader, file: common.FileId) Lexer {
+        var self = @This() {
+            .reader = reader,
             .index = 0,
             .file = file,
         };
+        self.strip_bom();
+        return self;
+
     }
     //The current state of the lexer, it is mostly used for parsing variable-width tokens such as literals and comments
     const State = enum { 
@@ -235,16 +220,27 @@ pub const Lexer = struct {
     };
 
 
+    // Strip any preceeding byte-order-marks (BOM)
+    fn strip_bom(self: *@This()) void {
+        const bytes = &.{1,2,3};//self.reader.peak(3) catch return;
+        if (bytes[0] == 0xEF 
+            and bytes[1] == 0xBB 
+            and bytes[2] == 0xBF) {
+            self.reader.toss(3);
+        }
+
+    }
     //checks if the next character and the one after are the same
     fn is_double(self: *Lexer) bool {
         if (!self.has_next()) return false;
-        if (self.buffer[self.index] == self.buffer[self.index + 1]) {
-            self.index += 1;
+        const bytes = self.reader.peek(2) catch return false;
+        if (bytes[0] == bytes[1]) {
+            self.reader.toss(2);
             return true;
         }
         return false;
     }
-    
+
     //checks if the next character matches next_char
     fn is_next(self: *Lexer, next_char: u8) bool {
         if (!self.has_next()) return false;
@@ -260,29 +256,25 @@ pub const Lexer = struct {
     //checks if we have reached the end of the source
     //in the future it might be wise to include checks for null characters here as well
     pub fn has_next(self: *Lexer) bool {
-        return self.index < self.buffer.len - 1;
+        _ = self.reader.peek(1) catch return false;
+        return true;
     }
 
     //gets the next character and advances
     fn next(self: *Lexer) ?u8 {
         if (!self.has_next()) return null;
-        self.index += 1;
-        return self.buffer[self.index - 1];
+        return self.reader.takeByte() catch null;
     }
     //gets the next character but does not advance
     fn peek(self: *Lexer) ?u8 {
         if (!self.has_next()) return null;
-        return self.buffer[self.index];
+        return self.reader.peekByte() catch null;
     }
     //gets the character 2 after this one
     fn peek2(self: *Lexer) ?u8 {
-        if (self.index + 1 >= self.buffer.len) return null;
-        return self.buffer[self.index + 1];
-    }
-    //gets the current character (index - 1)
-    pub fn get(self: *Lexer) u8 {
-        if (self.index == 0) return self.buffer[self.index];
-        return self.buffer[self.index - 1];
+        _ = self.reader.peek(2) catch return null;
+        self.reader.toss(1);
+        return self.reader.takeByte() catch null;
     }
     //parses a line comment (one that starts with //)
     //line comments go until it either encounters a newline character or 
@@ -303,13 +295,13 @@ pub const Lexer = struct {
     fn parse_block_comment(self: *Lexer) bool {
         var depth: usize = 0;
         while (self.has_next()) {
-            if (self.get() == '/' and self.next_if('*') != null) {
+            const c = self.next();
+            if (c == '/' and self.next_if('*') != null) {
                 depth += 1;
-            } else if (self.get() == '*' and depth > 0 and self.next_if('/') != null) {
+            } else if (c == '*' and depth > 0 and self.next_if('/') != null) {
                 depth -= 1;
                 if (depth == 0) return true;
             }
-            _ = self.next();
         }
         return false;
     }
@@ -362,7 +354,7 @@ pub const Lexer = struct {
         return out;
     }
 
-    pub fn skip_whitespace(self: *Lexer) void {
+    fn skip_whitespace(self: *Lexer) void {
         while (self.has_next()) {
             switch (self.peek() orelse 0) {
                 '\n', ' ', 0x01...0x09, 0x0b...0x1f, 0x7f => {
@@ -381,7 +373,8 @@ pub const Lexer = struct {
         var start = self.index;
         var tag: Tag = .eof;
         while (self.has_next()) {
-            switch (self.next() orelse 0) {
+            const c = self.next() orelse 0;
+            switch (c) {
                 '\n', ' ', 0x01...0x09, 0x0b...0x1f, 0x7f => { //skip whitespace
                     start = self.index;
                     continue;
@@ -390,7 +383,7 @@ pub const Lexer = struct {
                     if (self.next_if('/')) |_| {
                         self.parse_line_comment();
                         continue;
-                    } else if (self.is_next('*')) {
+                    } else if (self.next_if('*') != null) {
                         if (!self.parse_block_comment()) tag = .invalid;
                         continue;
                     } else {
@@ -460,12 +453,12 @@ pub const Lexer = struct {
                     var current = self.next();
                     while (self.has_next() and current != '\"') : (current = self.next()) {
 
-                        const code_point_length = std.unicode.utf8ByteSequenceLength(current.?) catch @panic("invalid byte");
-                        if (code_point_length > 1) {
-                            if (!std.unicode.utf8ValidateSlice(self.buffer[self.index - 1..self.index + code_point_length - 1])) {
-                                tag = .invalid;
-                            }
-                        }
+//                        const code_point_length = std.unicode.utf8ByteSequenceLength(current.?) catch @panic("invalid byte");
+//                        if (code_point_length > 1) {
+//                            if (!std.unicode.utf8ValidateSlice(self.buffer[self.index - 1..self.index + code_point_length - 1])) {
+//                                tag = .invalid;
+//                            }
+//                        }
                         switch (self.peek() orelse 0) {
                             '\n', 0x01...0x08, 0x0b...0x1f, 0x7f => {
                                 tag = .invalid;
@@ -503,7 +496,7 @@ pub const Lexer = struct {
                 '0'...'9' => { //this parses a number literal 
                     var base: Base = .b10;
                     var is_float = false;
-                    if (self.get() == '0' and self.has_next()) {
+                    if (c == '0' and self.has_next()) {
                         switch (self.peek() orelse 0) {
                             'x', 'X' => base = .b16, //the number can be prefixed with a 0 and a character that indicates the base
                             'o', 'O' => base = .b8,
@@ -544,23 +537,29 @@ pub const Lexer = struct {
                     }
                 },
                 '_', 'a'...'z', 'A'...'Z' => {
+                    var str = std.ArrayList(u8).empty;
+                    str.append(std.heap.page_allocator, c) catch unreachable;
                     while (self.has_next()) : (_ = self.next()) {
                         const next_char = self.peek() orelse 0;
+                        str.append(std.heap.page_allocator, next_char) catch unreachable;
                         if (!is_id_start(next_char) and next_char != '_' and !is_base(next_char, .b10)) {
                             break;
                         }
                     }
-                    const id = self.buffer[start..self.index];
+                    const id = str.items;
                     if (keywords.get(id)) |val| {
                         tag = val;
                     } else {
                         tag = .ident;
                     }
+                    str.deinit(std.heap.page_allocator);
                 },
                 else => tag = .invalid,
             }
             break;
         }
+        //Pre-position the lexer on the next actual token (mostly for span information)
+        self.skip_whitespace();
         return .{ .span = .{ .start = start, .end = self.index, .fileid = self.file}, .tag = tag };
     }
 };

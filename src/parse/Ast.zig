@@ -174,27 +174,21 @@ pub const TypeDecl = struct {
 //a variable decleration ast node
 pub const VarDecl = struct {
     ident: Ident,
+    modifier: ?BindingModifier,
     ty: ?AstNodeId,
-    is_mut: bool,
-    initialize: ?AstNodeId
+    initialize: AstNodeId
 };
 
-pub const GlobalDeclMod = enum {
-    Pub,
-    Extern,
-    Export,
-    PubExtern,
-    PubExport,
+pub const BindingModifier = struct {
+    span: common.Span,
+    kind: enum {
+        alias,
+        mut,
+        move,
+    },
 };
 
-pub const FnModifier = union(enum) {
-    Pure,
-    Async,
-    CompTime
-};
 pub const FnDecl = struct {
-    decl_mod: ?GlobalDeclMod,
-    fn_mod: ?FnModifier,
     ident: Ident,
     params: []Ident, 
     param_types: []AstNodeId,
@@ -202,9 +196,44 @@ pub const FnDecl = struct {
     body: ?AstNodeId,
 };
 
+pub const FnModKind = union(enum) {
+    pure,
+    @"inline",
+    @"comptime",
+};
 
-pub const ModuleDecl = struct {
-    path: AstNodeId,
+pub const FnMod = struct {
+    kind: FnModKind,
+    span: common.Span,
+};
+
+pub const Visibility = struct {
+    span: common.Span,
+    kind: enum {
+        public,
+    },
+};
+
+pub const Linkage = struct {
+    span: common.Span,
+    kind: enum {
+        @"extern",
+        @"export",
+    },
+};
+
+pub const Item = struct {
+    visibility: ?Visibility,
+    linkage: ?Linkage,
+    function_mods: ?[]FnMod,
+    item_kind: ItemKind,
+    item: AstNodeId,
+};
+
+pub const ItemKind = enum {
+    function,
+    @"type",
+    binding,
 };
 
 pub const Import = struct {
@@ -255,6 +284,14 @@ pub const Poison = struct {
 
 pub const Unit = struct {};
 
+pub const ModuleDecl = struct {
+    path: AstNodeId,
+    span: common.Span,
+};
+pub const Program = struct {
+    module: ?ModuleDecl,
+    declarations: []AstNodeId,
+};
 
 
 pub const SpanId = usize;
@@ -268,10 +305,11 @@ pub const AstNode = struct {
 
 // Is it bad that you have to change 8 things to add a new ast node, yes...
 // Am I going to make it better? Maybe...
-// Compile time stuff in zig aren't the easiest things to reason about.
+// Compile time stuff in zig isn't the easiest thing to reason about.
 pub const AstKind = enum {
     poison,
     unit,
+    item,
     binary_expr,
     unary_expr,
     terminal,
@@ -300,10 +338,12 @@ pub const AstKind = enum {
 };
 
 pub const Ast = struct {
+    program: Program,
     nodes: []const AstNode,
     poisons: []const Poison,
     spans: []const common.Span,
     units: []const Unit,
+    items: []const Item,
     binary_exprs: []const BinaryExpr,
     unary_exprs: []const UnaryExpr,
     terminals: []const Terminal,
@@ -327,7 +367,6 @@ pub const Ast = struct {
     access_operators: []const AccessOperator,
     casts: []const Cast,
     paths: []const Path,
-    module_decls: []const ModuleDecl,
     imports: []const Import,
 
     pub fn get(self: *@This(), id: AstNodeId) struct {AstKind, *anyopaque} {
@@ -336,6 +375,7 @@ pub const Ast = struct {
         return switch (node_kind) {
             .poison => .{.poison, @constCast(&self.poisons[node_index])},
             .unit => .{.unit, @constCast(&self.units[node_index])},
+            .item => .{.item, @constCast(&self.items[node_index])},
             .binary_expr => .{.binary_expr, @constCast(&self.binary_exprs[node_index])},
             .unary_expr => .{.unary_expr, @constCast(&self.unary_exprs[node_index])},
             .terminal => .{.terminal, @constCast(&self.terminals[node_index])},
@@ -359,7 +399,6 @@ pub const Ast = struct {
             .access_operator => .{.access_operator, @constCast(&self.access_operators[node_index])},
             .cast => .{.cast, @constCast(&self.casts[node_index])},
             .path => .{.path, @constCast(&self.paths[node_index])},
-            .module_decl => .{.module_decl, @constCast(&self.module_decls[node_index])},
             .import => .{.import, @constCast(&self.imports[node_index])},
         };
     }
@@ -371,15 +410,20 @@ pub const Ast = struct {
     pub fn get_span(self: *@This(), id: AstNodeId) common.Span {
         return self.spans[self.nodes[id].span];
     }
+
+    pub fn get_program(self: *@This()) Program {
+        return self.program;
+    }
 };
 
-//NOTE: an optimization here would be to use ArrayListUnmanaged instead of ArrayList
-// that way you only need to store the allocator once
 pub const AstBuilder = struct {
+    allocator: std.mem.Allocator,
+    program: ?Program,
     nodes: std.ArrayList(AstNode),
     poisons: std.ArrayList(Poison),
     spans: std.ArrayList(common.Span),
     units: std.ArrayList(Unit),
+    items: std.ArrayList(Item),
     binary_exprs: std.ArrayList(BinaryExpr),
     unary_exprs: std.ArrayList(UnaryExpr),
     terminals: std.ArrayList(Terminal),
@@ -403,44 +447,45 @@ pub const AstBuilder = struct {
     access_operators: std.ArrayList(AccessOperator),
     casts: std.ArrayList(Cast),
     paths: std.ArrayList(Path),
-    module_decls: std.ArrayList(ModuleDecl),
     imports: std.ArrayList(Import),
 
-    pub fn init(allocator: std.mem.Allocator) !AstBuilder {
+    pub fn init(allocator: std.mem.Allocator) AstBuilder {
         return .{
-            .nodes = .init(allocator),
-            .poisons = .init(allocator),
-            .spans = .init(allocator),
-            .units = .init(allocator),
-            .binary_exprs = .init(allocator),
-            .unary_exprs = .init(allocator),
-            .terminals = .init(allocator),
-            .type_exprs = .init(allocator),
-            .type_binary_exprs = .init(allocator),
-            .type_enums = .init(allocator),
-            .type_structs = .init(allocator),
-            .type_sets = .init(allocator),
-            .type_int_ranges = .init(allocator),
-            .assignments = .init(allocator),
-            .if_stmts = .init(allocator),
-            .while_loops = .init(allocator),
-            .blocks = .init(allocator),
-            .var_decls = .init(allocator),
-            .fn_decls = .init(allocator),
-            .fn_calls = .init(allocator),
-            .return_stmts = .init(allocator),
-            .type_decls = .init(allocator),
-            .terminateds = .init(allocator),
-            .intializer = .init(allocator),
-            .access_operators = .init(allocator),
-            .casts = .init(allocator),
-            .paths = .init(allocator),
-            .module_decls = .init(allocator),
-            .imports = .init(allocator),
+            .allocator = allocator,
+            .program = null,
+            .nodes = .empty,
+            .poisons = .empty,
+            .spans = .empty,
+            .units = .empty,
+            .items = .empty,
+            .binary_exprs = .empty,
+            .unary_exprs = .empty,
+            .terminals = .empty,
+            .type_exprs = .empty,
+            .type_binary_exprs = .empty,
+            .type_enums = .empty,
+            .type_structs = .empty,
+            .type_sets = .empty,
+            .type_int_ranges = .empty,
+            .assignments = .empty,
+            .if_stmts = .empty,
+            .while_loops = .empty,
+            .blocks = .empty,
+            .var_decls = .empty,
+            .fn_decls = .empty,
+            .fn_calls = .empty,
+            .return_stmts = .empty,
+            .type_decls = .empty,
+            .terminateds = .empty,
+            .intializer = .empty,
+            .access_operators = .empty,
+            .casts = .empty,
+            .paths = .empty,
+            .imports = .empty,
         };
     }
-    fn append(comptime T: type, array: std.ArrayList(T), data: T) !usize {
-        try array.append(data);
+    fn append(self: *@This(), comptime T: type, array: std.ArrayList(T), data: T) !usize {
+        try array.append(self.allocator, data);
         return array.items.len - 1;
     }
     pub fn add_node(self: *@This(), 
@@ -450,6 +495,7 @@ pub const AstBuilder = struct {
         const id = switch (kind) {
             .poison => try self.append(@TypeOf(self.poisons), self.poisons, data),
             .unit => try self.append(@TypeOf(self.units), self.units, data),
+            .item => try self.append(@TypeOf(self.items), self.items, data),
             .binary_expr => try self.append(@TypeOf(self.binary_exprs), self.binary_exprs, data),
             .unary_expr => try self.append(@TypeOf(self.unary_exprs), self.unary_exprs, data),
             .terminal => try self.append(@TypeOf(self.terminals), self.terminals, data),
@@ -473,7 +519,6 @@ pub const AstBuilder = struct {
             .access_operator => try self.append(@TypeOf(self.access_operators), self.access_operators, data),
             .cast => try self.append(@TypeOf(self.casts), self.casts, data),
             .path => try self.append(@TypeOf(self.paths), self.paths, data),
-            .module_decl => try self.append(@TypeOf(self.module_decls), self.module_decls, data),
             .import => try self.append(@TypeOf(self.imports), self.imports, data),
         };
         const spanid = try self.append(@TypeOf(self.spans), self.spans, span);
@@ -490,6 +535,7 @@ pub const AstBuilder = struct {
         return switch (node_kind) {
             .poison => .{.poison, @constCast(&self.poisons.items[node_index])},
             .unit => .{.unit, @constCast(&self.units.items[node_index])},
+            .item => .{.item, @constCast(&self.items.items[node_index])},
             .binary_expr => .{.binary_expr, @constCast(&self.binary_exprs.items[node_index])},
             .unary_expr => .{.unary_expr, @constCast(&self.unary_exprs.items[node_index])},
             .terminal => .{.terminal, @constCast(&self.terminals.items[node_index])},
@@ -513,7 +559,6 @@ pub const AstBuilder = struct {
             .access_operator => .{.access_operator, @constCast(&self.access_operators.items[node_index])},
             .cast => .{.cast, @constCast(&self.casts.items[node_index])},
             .path => .{.path, @constCast(&self.paths.items[node_index])},
-            .module_decl => .{.module_decl, @constCast(&self.module_decls.items[node_index])},
             .import => .{.import, @constCast(&self.imports.items[node_index])},
         };
     }
@@ -534,12 +579,25 @@ pub const AstBuilder = struct {
         return self.spans.items[self.nodes.items[id].span];
     }
 
+    pub fn set_program(self: *@This(), prog: Program) void {
+        self.program = prog;
+    }
+
+    pub fn get_program(self: *@This()) ?Program {
+        return self.program;
+    }
+
+    pub fn is_poison(self: *const @This(), id: AstNodeId) bool {
+        return self.nodes.items[id].kind == .poison;
+    }
+
     pub fn build(self: *@This()) !Ast {
         return .{
             .nodes = try self.nodes.toOwnedSlice(),
             .poisons = try self.poisons.toOwnedSlice(),
             .spans = try self.spans.toOwnedSlice(),
             .units = try self.units.toOwnedSlice(),
+            .items = try self.items.toOwnedSlice(),
             .binary_exprs = try self.binary_exprs.toOwnedSlice(),
             .unary_exprs = try self.unary_exprs.toOwnedSlice(),
             .terminals = try self.terminals.toOwnedSlice(),
@@ -563,7 +621,6 @@ pub const AstBuilder = struct {
             .access_operators = try self.access_operators.toOwnedSlice(),
             .casts = try self.casts.toOwnedSlice(),
             .paths = try self.paths.toOwnedSlice(),
-            .module_decls = try self.module_decls.toOwnedSlice(),
             .imports = try self.imports.toOwnedSlice(),
         };
     }

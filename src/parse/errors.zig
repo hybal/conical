@@ -196,3 +196,25 @@ pub const MalformedParamListError = struct {
         };
     }
 };
+
+pub const ExpectedModuleError = struct {
+    span: common.Span,
+
+    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
+        var builder = diag.DiagnosticBuilder.init(allocator);
+        try builder
+            .code(@intFromEnum(ParseErrorKind.expected_module))
+            .severity(.Error)
+            .span(self.span)
+            .message("Expected a module declaration");
+        return try builder.build();
+    }
+
+    pub fn get_error_type(self: *@This()) diag.ErrorType {
+        return diag.ErrorType {
+            .ptr = @ptrCast(self),
+            .vtable = &self.to_diagnostic,
+        };
+    }
+
+};

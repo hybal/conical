@@ -1,6 +1,7 @@
 const _common = @import("./common.zig");
-const _span = @import("span.zig");
+const _span = @import("./span.zig");
 const _path = @import("./path.zig");
+const _either = @import("./either.zig");
 
 
 pub const DefId = _common.DefId;
@@ -19,3 +20,5 @@ pub const span = struct {
     pub const FileId = _span.FileId;
     pub const FileStore = _span.FileStore;
 };
+
+pub const Either = _either.Either;

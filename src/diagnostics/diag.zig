@@ -139,17 +139,22 @@ pub const ErrorId = usize;
 pub const ErrorStore = struct {
     errors: std.ArrayList(ErrorType),
     gpa: std.mem.Allocator,
+    has_errors: bool,
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
             .errors = .empty,
+            .has_errors = false,
             .gpa = allocator,
         };
     }
     pub fn deinit(self: *@This()) void {
         self.errors.deinit(self.gpa);
     }
-    pub fn push(self: *@This(), err: ErrorType) !ErrorId { 
+    pub fn push(self: *@This(), severity: Severity, err: ErrorType) !ErrorId { 
         try self.errors.append(err, self.gpa);
+        if (severity == .Error) {
+            self.has_errors = true;
+        }
         return self.errors.items.len;
     }
 };

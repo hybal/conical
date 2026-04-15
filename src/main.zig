@@ -13,8 +13,11 @@ const parse = @import("parse");
 
 
 pub fn main() !u8 {
-    std.debug.print("Built successfully\n", .{});
-    _ = parse.parse;
+    const buffer = "let a = 1;";
+    var reader = std.Io.Reader.fixed(buffer);
+    var ctx = common.Context.init(std.heap.page_allocator);
+    var parser = parse.init(&ctx, &reader, 0, std.heap.page_allocator);
+    try parser.parse();
     return 0;
 }
 
