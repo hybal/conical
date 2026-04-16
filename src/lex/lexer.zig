@@ -227,6 +227,7 @@ pub const Lexer = struct {
             and bytes[1] == 0xBB 
             and bytes[2] == 0xBF) {
             self.reader.toss(3);
+            self.index += 3;
         }
 
     }
@@ -263,7 +264,9 @@ pub const Lexer = struct {
     //gets the next character and advances
     fn next(self: *Lexer) ?u8 {
         if (!self.has_next()) return null;
-        return self.reader.takeByte() catch null;
+        const out = self.reader.takeByte() catch null;
+        self.index += 1;
+        return out;
     }
     //gets the next character but does not advance
     fn peek(self: *Lexer) ?u8 {
@@ -274,7 +277,9 @@ pub const Lexer = struct {
     fn peek2(self: *Lexer) ?u8 {
         _ = self.reader.peek(2) catch return null;
         self.reader.toss(1);
-        return self.reader.takeByte() catch null;
+        const out = self.reader.takeByte() catch null;
+        self.index += 2;
+        return out;
     }
     //parses a line comment (one that starts with //)
     //line comments go until it either encounters a newline character or 

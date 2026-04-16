@@ -15,6 +15,27 @@ DIGIT            ::= [0-9]
 DIGIT_ONE        ::= [1-9]
 OCTAL_DIGIT      ::= [0-7]
 HEX_DIGIT        ::= [0-9a-fA-F]
+
+
+UNICODE_NON_CHARACTERS ::= [U+00FDD0-U+00FDEF] 
+                         | [U+00FFFE-U+00FFFF]
+                         | [U+01FFFE-U+01FFFF]
+                         | [U+02FFFE-U+02FFFF]
+                         | [U+03FFFE-U+03FFFF]
+                         | [U+04FFFE-U+04FFFF]
+                         | [U+05FFFE-U+05FFFF]
+                         | [U+06FFFE-U+06FFFF]
+                         | [U+07FFFE-U+07FFFF]
+                         | [U+08FFFE-U+08FFFF]
+                         | [U+09FFFE-U+09FFFF]
+                         | [U+0AFFFE-U+0AFFFF]
+                         | [U+0BFFFE-U+0BFFFF]
+                         | [U+0CFFFE-U+0CFFFF]
+                         | [U+0DFFFE-U+0DFFFF]
+                         | [U+0EFFFE-U+0EFFFF]
+                         | [U+0FFFFE-U+0FFFFF]
+                         | [U+10FFFE-U+10FFFF]
+
 ```
 ## Comments
 
@@ -22,6 +43,8 @@ Comments are ignored during lexing and as such do not contribute to the AST.
 
 ```ebnf
 LINE_COMMENT ::= '//' ( ~NEWLINE )* (NEWLINE | EOF)
+
+BLOCK_COMMENT ::= '/*' ( BLOCK_COMMENT | ~DISALLOWED_CHARACTERS )* '*/'
 ```
 
 ## Identifiers, Keywords, and Digits
@@ -68,11 +91,7 @@ KEYWORD_TRUE     ::= 'true'
 KEYWORD_FALSE    ::= 'false'
 ```
 
-## Top-Level
 
-```ebnf
-PROGRAM ::= MODULE_DECLARATION ITEM*
-```
 
 
 ## Escape Sequences
@@ -84,24 +103,6 @@ ESCAPE_SEQUENCE        ::= '\\' ([0ntrvfb'"\]
                          | 'u' {HEX_DIGIT, 4}
                          | 'U' {HEX_DIGIT, 8}
 
-UNICODE_NON_CHARACTERS ::= [U+00FDD0-U+00FDEF] 
-                         | [U+00FFFE-U+00FFFF]
-                         | [U+01FFFE-U+01FFFF]
-                         | [U+02FFFE-U+02FFFF]
-                         | [U+03FFFE-U+03FFFF]
-                         | [U+04FFFE-U+04FFFF]
-                         | [U+05FFFE-U+05FFFF]
-                         | [U+06FFFE-U+06FFFF]
-                         | [U+07FFFE-U+07FFFF]
-                         | [U+08FFFE-U+08FFFF]
-                         | [U+09FFFE-U+09FFFF]
-                         | [U+0AFFFE-U+0AFFFF]
-                         | [U+0BFFFE-U+0BFFFF]
-                         | [U+0CFFFE-U+0CFFFF]
-                         | [U+0DFFFE-U+0DFFFF]
-                         | [U+0EFFFE-U+0EFFFF]
-                         | [U+0FFFFE-U+0FFFFF]
-                         | [U+10FFFE-U+10FFFF]
 
 ```
 
@@ -174,6 +175,141 @@ This is the precedence table for type operators:
 | 6                        | `\|`                          | Union                                                | `A \| B`                     |
 | 7                        | `^`, `with`                   | Metadata Operators                                   | `A ^ builtin::write`        |
 
+## Top-Level
+
+```ebnf
+PROGRAM ::= MODULE_DECLARATION ITEM*
+```
+
+
+## Variables
+
+```ebnf
+LET_BINDING          ::= KEYWORD_LET {BINDING_MODIFIER} BINDING ';'
+
+BINDING_MODIFIER     ::= KEYWORD_ALIAS | KEYWORD_MUT | KEYWORD_MOVE
+
+BINDING              ::= IDENTIFIER {':' TYPE_EXPRESSION} '=' EXPRESSION
+
+
+```
+ 
+## Types
+
+> **NOTE**:
+> The precedence level of TYPE\_EXPRESSION\_PRODUCT may be changed in the future
+
+```ebnf
+TYPE_DECLARATION                 ::= KEYWORD_TYPE IDENTIFIER '=' TYPE_EXPRESSION ';'
+
+TYPE_EXPRESSION                  ::= TYPE_EXPRESSION_METADATA
+
+TYPE_EXPRESSION_METADATA         ::= TYPE_EXPRESSION_STRICT_INCLUSION { ( '^' | KEYWORD_WITH ) TYPE_EXPRESSION_STRICT_INCLUSION }
+
+TYPE_EXPRESSION_STRICT_INCLUSION ::= TYPE_EXPRESSION_INCLUSION { ( '<' | '>' ) TYPE_EXPRESSION_INCLUSION
+
+TYPE_EXPRESSION_INCLUSION        ::= TYPE_EXPRESSION_MEMBERSHIP { ( '<=' | '>=' ) TYPE_EXPRESSION_MEMBERSHIP
+
+TYPE_EXPRESSION_MEMBERSHIP       ::= TYPE_EXPRESSION_DIFFERENCE { KEYWORD_IN TYPE_EXPRESSION_DIFFERENCE }
+
+TYPE_EXPRESSION_DIFFERENCE       ::= TYPE_EXPRESSION_UNION { '-' TYPE_EXPRESSION_UNION }
+
+TYPE_EXPRESSION_UNION            ::= TYPE_EXPRESSION_INTERSECTION { '|' TYPE_EXPRESSION_INTERSECTION }
+
+TYPE_EXPRESSION_INTERSECTION     ::= TYPE_EXPRESSION_PRODUCT { '&' TYPE_EXPRESSION_PRODUCT }
+
+TYPE_EXPRESSION_PRODUCT          ::= TYPE_EXPRESSION_MODIFIERS { '*' TYPE_EXPRESSION_MODIFIERS }
+
+TYPE_EXPRESSION_MODIFIERS        ::= ( '&' | '[]' | '[' EXPRESSION ']' )* TYPE_EXPRESSION_GROUPING
+
+TYPE_EXPRESSION_GROUPING         ::= LAMBDA | '(' TYPE_EXPRESSION ')' | '{' EXPRESSION '}' | EXPRESSION_PATH | TYPE_EXPRESSION_SUGAR | TYPE_EXPRESSION_LITERAL
+
+TYPE_EXPRESSION_LABEL            ::= IDENTIFIER ':' TYPE_EXPRESSION_GROUPING
+
+
+TYPE_EXPRESSION_LITERAL          ::= INTEGER_LITERAL 
+                                   | FLOAT_LITERAL 
+                                   | STRING_LITERAL 
+                                   | CHAR_LITERAL 
+                                   | BOOL_LITERAL 
+                                   | TYPE_SET_LITERAL
+                                   | TYPE_EXPRESSION_LABEL
+                                   | KEYWORD_SELF 
+                                   | SYMBOL
+
+
+TYPE_SET_LITERAL                 ::= '.' '{' ( TYPE_EXPRESSION_LITERAL ( ',' TYPE_EXPRESSION_LITERAL 
+
+TYPE_EXPRESSION_SUGAR            ::= TYPE_STRUCT_SUGAR | TYPE_ENUM_SUGAR | TYPE_IMPL_SUGAR | RANGE_LITERAL
+
+TYPE_STRUCT_SUGAR                ::= KEYWORD_STRUCT '{' IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION)* {','} '}'
+
+TYPE_ENUM_SUGAR                  ::= KEYWORD_ENUM '{' (IDENTIFIER { ':' TYPE_EXPRESSION } (',' IDENTIFIER { ':' TYPE_EXPRESSION })*) '}'
+
+TYPE_IMPL_SUGAR                  ::= KEYWORD_IMPL '{' FUNCTION_DECLARATION+ '}'
+
+```
+
+## Functions
+
+```ebnf
+
+FUNCTION_DECLARATION            ::= (FUNCTION_DECLARATION_INLINE | FUNCTION_DECLARATION_POSTFIX) EXPRESSION_BLOCK
+
+FUNCTION_MODIFIERS              ::= KEYWORD_INLINE | KEYWORD_PURE | KEYWORD_COMPTIME
+
+FUNCTION_HEADER                 ::= FUNCTION_MODIFIERS* KEYWORD_FN IDENTIFIER
+
+GENERIC                         ::= '$' IDENTIFIER { ':' TYPE_EXPRESSION }
+
+GENERIC_LIST                    ::= GENERIC (',' GENERIC) {','}
+
+FUNCTION_PARAMETER_LIST_INLINE  ::= {GENERIC_LIST} { {BINDING_MODIFIER} IDENTIFIER ':' TYPE_EXPRESSION (',' {BINDING_MODIFIER} IDENTIFIER ':' TYPE_EXPRESSION )* {','}}
+
+FUNCTION_PARAMETER_LIST_POSTFIX ::= {GENERIC_LIST} { {BINDING_MODIFIER} IDENTIFIER (',' {BINDING_MODIFIER} IDENTIFIER) {','}}
+
+
+FUNCTION_DECLARATION_INLINE     ::= FUNCTION_HEADER '(' PARAMETER_LIST_INLINE ')'
+                                    {'->' TYPE_EXPRESSION}
+
+FUNCTION_DECLARATION_POSTFIX    ::= FUNCTION_HEADER '(' PARAMETER_LIST_POSTFIX ')'
+                                    { ':' TYPE_EXPRESSION | '(' TYPE_EXPRESSION (',' TYPE_EXPRESSION)* {','} ')'} 
+                                    { '->' TYPE_EXPRESSION }
+
+LAMBDA                          ::= '\\' ((GENERIC | {BINDING_MODIFIER} IDENTIFIER {':' TYPE_EXPRESSION })
+                                  | '(' {BINDING_MODIFIER} IDENTIFIER { ':' TYPE_EXPRESSION } (',' {BINDING_MODIFIER} IDENTIFIER {':' TYPE_EXPRESSION })* {','} ')') 
+                                    { '->' TYPE_EXPRESSION } 
+                                    (EXPRESSION_BLOCK | EXPRESSION)
+```
+
+## Macros
+
+> NOTE:
+> The argument list expression may be required in the future.
+
+> NOTE:
+> The global macro syntax is for using macros _anywhere_. Attributes require valid code, and function-like macros are only used in expressions.
+> However, the evaluation order for global macros has yet to be determined (though it will likely be top-down).
+
+Macros are parsed and evaluated before any other part of the program (other than their dependencies). 
+
+```ebnf
+MACRO_DECLARATION         ::= { KEYWORD_PUB } KEYWORD_MACRO IDENTIFIER ( MACRO_DECLARATION_INLINE | MACRO_DECLARATION_POSTIFIX ) EXPRESSION_BLOCK
+
+MACRO_DECLARATION_INLINE  ::= '(' { IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','} } ')'
+                             { '->' TYPE_EXPRESSION }
+
+MACRO_DECLARATION_POSTFIX ::= '(' { IDENTIFIER (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','} } ')'
+                              { ':' ('(' TYPE_EXPRESSION (',' TYPE_EXPRESSION)* {','} ')' | TYPE_EXPRESSION) } 
+                              { '->' TYPE_EXPRESSION }
+
+MACRO_ATTRIBUTE           ::= '@' IDENTIFIER { EXPRESSION_FUNCTION_CALL }
+
+MACRO_FUNCTION            ::= IDENTIFIER '!' { EXPRESSION_FUNCTION_CALL }
+
+MACRO_GLOBAL              ::= IDENTIFIER '!!' { EXPRESSION_FUNCTION_CALL }
+
+```
 
 ## Expressions
 
@@ -316,131 +452,3 @@ LOOP_BREAK            ::= KEYWORD_BREAK ';'
 ```
 
 
-## Variables
-
-```ebnf
-LET_BINDING          ::= KEYWORD_LET {BINDING_MODIFIER} BINDING ';'
-
-BINDING_MODIFIER     ::= KEYWORD_ALIAS | KEYWORD_MUT | KEYWORD_MOVE
-
-BINDING              ::= IDENTIFIER {':' TYPE_EXPRESSION} '=' EXPRESSION
-
-
-```
- 
-## Types
-
-> **NOTE**:
-> The precedence level of TYPE\_EXPRESSION\_PRODUCT may be changed in the future
-
-```ebnf
-TYPE_DECLARATION                 ::= KEYWORD_TYPE IDENTIFIER '=' TYPE_EXPRESSION ';'
-
-TYPE_EXPRESSION                  ::= TYPE_EXPRESSION_METADATA
-
-TYPE_EXPRESSION_METADATA         ::= TYPE_EXPRESSION_STRICT_INCLUSION { ( '^' | KEYWORD_WITH ) TYPE_EXPRESSION_STRICT_INCLUSION }
-
-TYPE_EXPRESSION_STRICT_INCLUSION ::= TYPE_EXPRESSION_INCLUSION { ( '<' | '>' ) TYPE_EXPRESSION_INCLUSION
-
-TYPE_EXPRESSION_INCLUSION        ::= TYPE_EXPRESSION_MEMBERSHIP { ( '<=' | '>=' ) TYPE_EXPRESSION_MEMBERSHIP
-
-TYPE_EXPRESSION_MEMBERSHIP       ::= TYPE_EXPRESSION_DIFFERENCE { KEYWORD_IN TYPE_EXPRESSION_DIFFERENCE }
-
-TYPE_EXPRESSION_DIFFERENCE       ::= TYPE_EXPRESSION_UNION { '-' TYPE_EXPRESSION_UNION }
-
-TYPE_EXPRESSION_UNION            ::= TYPE_EXPRESSION_INTERSECTION { '|' TYPE_EXPRESSION_INTERSECTION }
-
-TYPE_EXPRESSION_INTERSECTION     ::= TYPE_EXPRESSION_PRODUCT { '&' TYPE_EXPRESSION_PRODUCT }
-
-TYPE_EXPRESSION_PRODUCT          ::= TYPE_EXPRESSION_MODIFIERS { '*' TYPE_EXPRESSION_MODIFIERS }
-
-TYPE_EXPRESSION_MODIFIERS        ::= ( '&' | '[]' | '[' EXPRESSION ']' )* TYPE_EXPRESSION_GROUPING
-
-TYPE_EXPRESSION_GROUPING         ::= LAMBDA | '(' TYPE_EXPRESSION ')' | '{' EXPRESSION '}' | EXPRESSION_PATH | TYPE_EXPRESSION_SUGAR | TYPE_EXPRESSION_LITERAL
-
-TYPE_EXPRESSION_LABEL            ::= IDENTIFIER ':' TYPE_EXPRESSION_GROUPING
-
-
-TYPE_EXPRESSION_LITERAL          ::= INTEGER_LITERAL 
-                                   | FLOAT_LITERAL 
-                                   | STRING_LITERAL 
-                                   | CHAR_LITERAL 
-                                   | BOOL_LITERAL 
-                                   | TYPE_SET_LITERAL
-                                   | TYPE_EXPRESSION_LABEL
-                                   | KEYWORD_SELF 
-                                   | SYMBOL
-
-
-TYPE_SET_LITERAL                 ::= '.' '{' ( TYPE_EXPRESSION_LITERAL ( ',' TYPE_EXPRESSION_LITERAL 
-
-TYPE_EXPRESSION_SUGAR            ::= TYPE_STRUCT_SUGAR | TYPE_ENUM_SUGAR | TYPE_IMPL_SUGAR | RANGE_LITERAL
-
-TYPE_STRUCT_SUGAR                ::= KEYWORD_STRUCT '{' IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION)* {','} '}'
-
-TYPE_ENUM_SUGAR                  ::= KEYWORD_ENUM '{' (IDENTIFIER { ':' TYPE_EXPRESSION } (',' IDENTIFIER { ':' TYPE_EXPRESSION })*) '}'
-
-TYPE_IMPL_SUGAR                  ::= KEYWORD_IMPL '{' FUNCTION_DECLARATION+ '}'
-
-```
-
-## Functions
-
-```ebnf
-
-FUNCTION_DECLARATION            ::= (FUNCTION_DECLARATION_INLINE | FUNCTION_DECLARATION_POSTFIX) EXPRESSION_BLOCK
-
-FUNCTION_MODIFIERS              ::= KEYWORD_INLINE | KEYWORD_PURE | KEYWORD_COMPTIME
-
-FUNCTION_HEADER                 ::= FUNCTION_MODIFIERS* KEYWORD_FN IDENTIFIER
-
-GENERIC                         ::= '$' IDENTIFIER { ':' TYPE_EXPRESSION }
-
-GENERIC_LIST                    ::= GENERIC (',' GENERIC) {','}
-
-FUNCTION_PARAMETER_LIST_INLINE  ::= {GENERIC_LIST} { {BINDING_MODIFIER} IDENTIFIER ':' TYPE_EXPRESSION (',' {BINDING_MODIFIER} IDENTIFIER ':' TYPE_EXPRESSION )* {','}}
-
-FUNCTION_PARAMETER_LIST_POSTFIX ::= {GENERIC_LIST} { {BINDING_MODIFIER} IDENTIFIER (',' {BINDING_MODIFIER} IDENTIFIER) {','}}
-
-
-FUNCTION_DECLARATION_INLINE     ::= FUNCTION_HEADER '(' PARAMETER_LIST_INLINE ')'
-                                    {'->' TYPE_EXPRESSION}
-
-FUNCTION_DECLARATION_POSTFIX    ::= FUNCTION_HEADER '(' PARAMETER_LIST_POSTFIX ')'
-                                    { ':' TYPE_EXPRESSION | '(' TYPE_EXPRESSION (',' TYPE_EXPRESSION)* {','} ')'} 
-                                    { '->' TYPE_EXPRESSION }
-
-LAMBDA                          ::= '\\' ((GENERIC | {BINDING_MODIFIER} IDENTIFIER {':' TYPE_EXPRESSION })
-                                  | '(' {BINDING_MODIFIER} IDENTIFIER { ':' TYPE_EXPRESSION } (',' {BINDING_MODIFIER} IDENTIFIER {':' TYPE_EXPRESSION })* {','} ')') 
-                                    { '->' TYPE_EXPRESSION } 
-                                    (EXPRESSION_BLOCK | EXPRESSION)
-```
-
-## Macros
-
-> NOTE:
-> The argument list expression may be required in the future.
-
-> NOTE:
-> The global macro syntax is for using macros _anywhere_. Attributes require valid code, and function-like macros are only used in expressions.
-> However, the evaluation order for global macros has yet to be determined (though it will likely be top-down).
-
-Macros are parsed and evaluated before any other part of the program (other than their dependencies). 
-
-```ebnf
-MACRO_DECLARATION         ::= { KEYWORD_PUB } KEYWORD_MACRO IDENTIFIER ( MACRO_DECLARATION_INLINE | MACRO_DECLARATION_POSTIFIX ) EXPRESSION_BLOCK
-
-MACRO_DECLARATION_INLINE  ::= '(' { IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','} } ')'
-                             { '->' TYPE_EXPRESSION }
-
-MACRO_DECLARATION_POSTFIX ::= '(' { IDENTIFIER (',' IDENTIFIER ':' TYPE_EXPRESSION )* {','} } ')'
-                              { ':' ('(' TYPE_EXPRESSION (',' TYPE_EXPRESSION)* {','} ')' | TYPE_EXPRESSION) } 
-                              { '->' TYPE_EXPRESSION }
-
-MACRO_ATTRIBUTE           ::= '@' IDENTIFIER { EXPRESSION_FUNCTION_CALL }
-
-MACRO_FUNCTION            ::= IDENTIFIER '!' { EXPRESSION_FUNCTION_CALL }
-
-MACRO_GLOBAL              ::= IDENTIFIER '!!' { EXPRESSION_FUNCTION_CALL }
-
-```

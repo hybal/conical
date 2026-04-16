@@ -20,6 +20,7 @@ context: *common.Context,
 has_module: bool = false,
 builder: Ast.AstBuilder,
 file: common.FileId,
+previous_token: ?lex.Token = null,
 
 
 
@@ -85,11 +86,19 @@ fn next_if(self: *@This(), tag: lex.Tag) ?lex.Token {
 }
 
 fn next(self: *@This()) !lex.Token {
+    if (self.previous_token) |prev| {
+        self.previous_token = null;
+        return prev;
+    }
     const out = self.lexer.next_token();
     if (out.tag == .eof) {
         return error.EOF;
     }
     return out;
+}
+
+fn restore(self: *@This(), tok: lex.Token) void {
+    self.previous_token = tok;
 }
 
 fn peek(self: *@This()) ?lex.Token {
@@ -105,6 +114,8 @@ fn peek(self: *@This()) ?lex.Token {
 pub fn parse(self: *@This()) !Ast {
     return try self.program();
 }
+
+// ---- START TOP-LEVEL ----
 
 fn program(self: *@This()) !Ast {
     var span: common.Span = .init(self.lexer.index, self.file);
@@ -252,6 +263,10 @@ fn let_binding(self: *@This()) !AstNodeId {
         //ERROR: Expected '='
     }
     const expr = try self.expression();
+    const semicolon_tok = try self.expect(.semicolon);
+    if (!semicolon_tok) {
+        //ERROR: Missing semicolon
+    }
     span.merge(self.builder.get_span(expr));
     //FIXME: we somehow need access to either a reversible Reader or a fresh one or somehow recover source information.
     const node = Ast.VarDecl {
@@ -400,3 +415,291 @@ fn function_declaration(self: *@This()) !AstNodeId {
 }
 
 
+
+fn type_declaration(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const type_keyword_tok = self.expect_ret(.keyword_type);
+    _ = type_keyword_tok;
+
+    const id = try self.expect_ret(.ident);
+    if (id == null) {
+        //ERROR: Expected identifier after 'type'
+    }
+
+    const expr = try self.type_expression();
+
+    span.merge(.{ .start = span.start, .end = self.lexer.index, .fileid = self.file});
+    const node = Ast.TypeDecl {
+        .ident = .{ .span = id.?.span },
+        .ty = expr,
+    };
+
+    const nodeid = try self.builder.add_node(.type_decl, span, node);
+    return nodeid;
+}
+
+// ---- END TOP-LEVEL ----
+
+// ---- START TYPES ----
+
+fn type_expression(self: *@This()) !AstNodeId {
+    return try self.type_expression_metadata();
+}
+
+fn type_expression_metadata(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const left = try self.type_expression_strict_inclusion();
+    if ( self.is_next(.keyword_with )) {
+        const right = try self.type_expression_strict_inclusion();
+        const node = Ast.TypeMetadata {
+            .left = left,
+            .right = right,
+            .op = .associative,
+        };
+
+        span.merge(.{.start = span.start, .end = self.lexer.index, .fileid = self.file });
+        const nodeid = try self.builder.add_node(.type_metadata, span, node);
+        return nodeid;
+    }
+    return left;
+}
+
+fn type_expression_strict_inclusion(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const left = try self.type_expression_inclusion();
+    if (self.is_next_one_of(.{ .lt, .gt })) {
+        const op = self.next() catch unreachable;
+        const right = try self.type_expression_inclusion();
+
+        const node = Ast.TypeBinaryExpr {
+            .left = left,
+            .right = right,
+            .op = switch (op.tag) {
+                .lt => .StrictSubset,
+                .gt => .StrictSuperSet,
+            },
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
+        return nodeid;
+    }
+    return left;
+}
+
+fn type_expression_membership(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const left = try self.type_expression_difference();
+    if (self.is_next( .keyword_in )) {
+        const op = self.next() catch unreachable;
+        _ = op;
+        const right = try self.type_expression_difference();
+        const node = Ast.TypeBinaryExpr {
+            .left = left,
+            .right = right,
+            .op = .Membership,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
+        return nodeid;
+    }
+    return left;
+}
+
+fn type_expression_difference(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const left = try self.type_expression_union();
+    if (self.is_next( .minus )) {
+        const op = self.next() catch unreachable;
+        _ = op;
+        const right = try self.type_expression_union();
+        const node = Ast.TypeBinaryExpr {
+            .left = left,
+            .right = right,
+            .op = .Difference,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
+        return nodeid;
+    }
+    return left;
+}
+
+fn type_expression_union(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const left = try self.type_expression_intersection();
+    if (self.is_next( .pipe )) {
+        const op = self.next() catch unreachable;
+        _ = op;
+        const right = try self.type_expression_intersection();
+        const node = Ast.TypeBinaryExpr {
+            .left = left,
+            .right = right,
+            .op = .Union,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
+        return nodeid;
+    }
+    return left;
+}
+
+fn type_expression_intersection(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const left = try self.type_expression_product();
+    if (self.is_next( .pipe )) {
+        const op = self.next() catch unreachable;
+        _ = op;
+        const right = try self.type_expression_product();
+        const node = Ast.TypeBinaryExpr {
+            .left = left,
+            .right = right,
+            .op = .Intersection,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
+        return nodeid;
+    }
+    return left;
+}
+
+
+fn type_expression_product(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const left = try self.type_expression_modifiers();
+    if (self.is_next( .pipe )) {
+        const op = self.next() catch unreachable;
+        _ = op;
+        const right = try self.type_expression_modifiers();
+        const node = Ast.TypeBinaryExpr {
+            .left = left,
+            .right = right,
+            .op = .Intersection,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
+        return nodeid;
+    }
+    return left;
+}
+
+fn type_expression_modifiers(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    var mods: std.ArrayList(Ast.TypeModifierOp) = .empty;
+    while (self.is_next_one_of(.{ .amp, .amp2, .open_square })) {
+        const tok = self.next() catch unreachable;
+        
+        if (tok.tag == .open_square and !self.is_next(.close_square)) {
+            const array_expr = try self.expression();
+            if (!self.expect(.close_square)) {
+                //ERROR: Expected ]
+            }
+            try mods.append(self.allocator, .{ .Array = array_expr });
+        } else if (tok.tag == .open_square and self.is_next(.close_square)) {
+            try mods.append(self.allocator, .Slice);
+        } else if (tok.tag == .amp2) {
+            try mods.append(self.allocator, .Reference);
+            try mods.append(self.allocator, .Reference);
+        } else {
+            try mods.append(self.allocator, .Reference);
+        }
+    }
+    const expr = try self.type_expression_grouping();
+
+    const node = Ast.TypeModifier {
+        .expr = expr,
+        .mods = try mods.toOwnedSlice(),
+    };
+    span.merge(.init(self.lexer.index, self.file));
+    const nodeid = try self.builder.add_node(.type_modifier, span, node);
+    return nodeid;
+}
+
+
+fn type_expression_grouping(self: *@This()) !AstNodeId {
+    if (self.is_next(.open_paren)) {
+        _ = self.next() catch unreachable;
+        const expr = try self.type_expression();
+        if (!self.expect(.close_paren)) {
+            //ERROR: Expected ')'
+        }
+        return expr;
+    }
+
+    if (self.is_next(.open_bracket)) {
+        _ = self.next() catch unreachable;
+        const expr = try self.expression();
+        if (!self.expect(.close_bracket)) {
+            //ERROR: Expected '}'
+        }
+        return expr;
+    }
+
+    if (self.is_next(.ident)) {
+        const save = self.next() catch unreachable;
+        if (self.is_next(.colon)) {
+            self.restore(save);
+            const out = try self.type_expression_label();
+            return out;
+        }
+        self.restore(save);
+        const out = try self.expression_path();
+        return out;
+    }
+
+    if (self.is_next(.back_slash)) {
+        const lambda = try self.expression_lambda();
+        return lambda;
+    }
+
+    if (self.is_next_one_of(.{ .keyword_struct, .keyword_enum, .keyword_impl })) {
+        const expr = try self.type_expression_sugar();
+        return expr;
+    }
+
+    return try self.type_expression_literal();
+}
+
+fn type_expression_label(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const ident = try self.expect_ret(.ident);
+    if (ident == null) {
+        //ERROR: expected identifier
+    }
+    const group = try self.type_expression_grouping();
+    const node = Ast.TypeLabel {
+        .label = .{ .span = ident.?.span },
+        .expr = group,
+    };
+    span.merge(.init(self.lexer.index, self.file));
+    const nodeid = try self.builder.add_node(.type_label, span, node);
+    return nodeid;
+}
+
+
+fn type_expression_literal(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+
+    if (self.next_if(.dot)) |_| {
+        if (self.is_next(.ident)) {
+            const ident = self.next() catch unreachable;
+            _ = ident;
+        }
+    }
+
+    if (self.is_next_one_of(.{
+        .integer_literal,
+        .float_literal,
+        .string_literal,
+        .raw_string_literal,
+        .char_literal,
+        .boolean_literal,
+        .keyword_Self,
+    })) {
+        const node = Ast.Terminal {
+            .tok = self.next() catch unreachable,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.terminal, span, node);
+        return nodeid;
+    }
+}

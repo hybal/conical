@@ -49,12 +49,34 @@ pub const TypeBinaryOp = enum {
     Union,
     Product,
     Difference,
+    Intersection,
     Equality,
     Subset,
     StrictSubset,
     SuperSet,
     StrictSuperSet,
-    Inclusion
+    Membership
+};
+
+pub const TypeModifierOp = union(enum) {
+    Reference,
+    Slice,
+    Array: AstNodeId,
+};
+
+pub const TypeModifier = struct {
+    mods: []TypeModifierOp,
+    expr: AstNodeId,
+};
+
+pub const TypeMetadata = struct {
+    left: AstNodeId,
+    right: AstNodeId,
+    op: TypeMetadataOp,
+};
+
+pub const TypeMetadataOp = enum {
+    associative,
 };
 
 pub const TypeBinaryExpr = struct {
@@ -296,6 +318,9 @@ pub const AstKind = enum {
     terminal,
     type_expr,
     type_binary_expr,
+    type_metadata,
+    type_modifier,
+    type_label,
     type_enum,
     type_struct,
     type_set,
@@ -330,6 +355,9 @@ pub const Ast = struct {
     terminals: []const Terminal,
     type_exprs: []const TypeExpr,
     type_binary_exprs: []const TypeBinaryExpr,
+    type_modifiers: []const TypeModifier,
+    type_metadatas: []const TypeMetadata,
+    type_labels: []const TypeLabel,
     type_enums: []const TypeEnum,
     type_structs: []const TypeStruct,
     type_sets: []const TypeSet,
@@ -362,6 +390,9 @@ pub const Ast = struct {
             .terminal => .{.terminal, @constCast(&self.terminals[node_index])},
             .type_expr => .{.type_expr, @constCast(&self.type_exprs[node_index])},
             .type_binary_expr => .{.type_binary_expr, @constCast(&self.type_binary_exprs[node_index])},
+            .type_metadata => .{.type_metadata, @constCast(&self.type_metadatas[node_index])},
+            .type_modifier => .{.type_modifier, @constCast(&self.type_modifiers[node_index])},
+            .type_label => .{.type_label, @constCast(&self.type_labels[node_index])},
             .type_enum => .{.type_enum, @constCast(&self.type_enums[node_index])},
             .type_struct => .{.type_struct, @constCast(&self.type_structs[node_index])},
             .type_set => .{.type_set, @constCast(&self.type_sets[node_index])},
@@ -410,6 +441,9 @@ pub const AstBuilder = struct {
     terminals: std.ArrayList(Terminal),
     type_exprs: std.ArrayList(TypeExpr),
     type_binary_exprs: std.ArrayList(TypeBinaryExpr),
+    type_metadatas: std.ArrayList(TypeMetadata),
+    type_modifiers: std.ArrayList(TypeModifier),
+    type_labels: std.ArrayList(TypeLabel),
     type_enums: std.ArrayList(TypeEnum),
     type_structs: std.ArrayList(TypeStruct),
     type_sets: std.ArrayList(TypeSet),
@@ -444,6 +478,9 @@ pub const AstBuilder = struct {
             .terminals = .empty,
             .type_exprs = .empty,
             .type_binary_exprs = .empty,
+            .type_metadatas = .empty,
+            .type_modifiers = .empty,
+            .type_labels = .empty,
             .type_enums = .empty,
             .type_structs = .empty,
             .type_sets = .empty,
@@ -482,6 +519,9 @@ pub const AstBuilder = struct {
             .terminal => try self.append(@TypeOf(self.terminals), self.terminals, data),
             .type_expr => try self.append(@TypeOf(self.type_exprs), self.type_exprs, data),
             .type_binary_expr => try self.append(@TypeOf(self.type_binary_exprs), self.type_binary_exprs, data),
+            .type_metadata => try self.append(@TypeOf(self.type_metadatas), self.type_metadatas, data),
+            .type_modifier => try self.append(@TypeOf(self.type_modifiers), self.type_modifiers, data),
+            .type_label => try self.append(@TypeOf(self.type_labels), self.type_labels, data),
             .type_enum => try self.append(@TypeOf(self.type_enums), self.type_enums, data),
             .type_struct => try self.append(@TypeOf(self.type_structs), self.type_structs, data),
             .type_set => try self.append(@TypeOf(self.type_sets), self.type_sets, data),
@@ -522,6 +562,9 @@ pub const AstBuilder = struct {
             .terminal => .{.terminal, @constCast(&self.terminals.items[node_index])},
             .type_expr => .{.type_expr, @constCast(&self.type_exprs.items[node_index])},
             .type_binary_expr => .{.type_binary_expr, @constCast(&self.type_binary_exprs.items[node_index])},
+            .type_metadata => .{.type_metadata, @constCast(&self.type_metadatas.items[node_index])},
+            .type_modifier => .{.type_modifier, @constCast(&self.type_modifiers.items[node_index])},
+            .type_label => .{.type_label, @constCast(&self.type_labels.items[node_index])},
             .type_enum => .{.type_enum, @constCast(&self.type_enums.items[node_index])},
             .type_struct => .{.type_struct, @constCast(&self.type_structs.items[node_index])},
             .type_set => .{.type_set, @constCast(&self.type_sets.items[node_index])},
@@ -584,6 +627,9 @@ pub const AstBuilder = struct {
             .terminals = try self.terminals.toOwnedSlice(),
             .type_exprs = try self.type_exprs.toOwnedSlice(),
             .type_binary_exprs = try self.type_binary_exprs.toOwnedSlice(),
+            .type_metadatas = try self.type_metadatas.toOwnedSlice(),
+            .type_modifiers = try self.type_modifiers.toOwnedSlice(),
+            .type_labels = try self.type_labels.toOwnedSlice(),
             .type_enums = try self.type_enums.toOwnedSlice(),
             .type_structs = try self.type_structs.toOwnedSlice(),
             .type_sets = try self.type_sets.toOwnedSlice(),
