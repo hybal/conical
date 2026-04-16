@@ -31,36 +31,13 @@ pub const Assignment = struct {
 };
 
 
-//represents an identifier,
-//it has both a span and a value because it is included in the ast
-//which may be shared among other compilation units which wont have access to the source that it came from
-//FIXME: make sure that value is copied when it is created so that it isn't invalidated when the allocator is destroyed
 pub const Ident = struct {
     span: common.Span,
-    value: []const u8,
+};
 
-    pub fn equals(self: *const @This(), other: *const @This()) bool {
-        if (self.span.start != other.span.start or self.span.end != other.span.end) {
-            return false;
-        }
-        //technically checking "value" is redundent but is included for completness
-        if (self.value.len != other.value.len) {
-            return false;
-        }
-        for (self.value, 0..self.value.len) |val, i| {
-            if (val != other.value[i]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    pub fn hash(self: *const @This()) u64 {
-        var hasher = std.hash.Fnv1a_64.init();
-        hasher.update(self.value);
-        return hasher.final();
-    }
-
+pub const BindingId = struct {
+    id: Ident,
+    modifier: ?BindingModifier,
 };
 
 
@@ -173,8 +150,7 @@ pub const TypeDecl = struct {
 
 //a variable decleration ast node
 pub const VarDecl = struct {
-    ident: Ident,
-    modifier: ?BindingModifier,
+    id: BindingId,
     ty: ?AstNodeId,
     initialize: AstNodeId
 };
@@ -190,12 +166,17 @@ pub const BindingModifier = struct {
 
 pub const FnDecl = struct {
     ident: Ident,
-    params: []Ident, 
+    params: []BindingId, 
     param_types: []AstNodeId,
+    generics: []Generic,
     return_ty: AstNodeId,
     body: ?AstNodeId,
 };
 
+pub const Generic = struct {
+    ident: Ident,
+    expr: ?AstNodeId,
+};
 pub const FnModKind = union(enum) {
     pure,
     @"inline",
