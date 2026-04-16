@@ -222,19 +222,20 @@ TYPE_EXPRESSION_PRODUCT          ::= TYPE_EXPRESSION_MODIFIERS { '*' TYPE_EXPRES
 
 TYPE_EXPRESSION_MODIFIERS        ::= ( '&' | '[]' | '[' EXPRESSION ']' )* TYPE_EXPRESSION_GROUPING
 
-TYPE_EXPRESSION_GROUPING         ::= LAMBDA | '(' TYPE_EXPRESSION ')' | '{' EXPRESSION '}' | EXPRESSION_PATH | TYPE_EXPRESSION_SUGAR | TYPE_EXPRESSION_LITERAL
+TYPE_EXPRESSION_GROUPING         ::= LAMBDA | '(' TYPE_EXPRESSION ')' | '{' EXPRESSION '}' | EXPRESSION_PATH | TYPE_EXPRESSION_LABEL | TYPE_EXPRESSION_SUGAR | TYPE_EXPRESSION_PRIMARY
 
 TYPE_EXPRESSION_LABEL            ::= IDENTIFIER ':' TYPE_EXPRESSION_GROUPING
 
+
+TYPE_EXPRESSION_PRIMARY          ::= TYPE_EXPRESSION_LITERAL
+                                   | TYPE_SET_LITERAL
+                                   | KEYWORD_SELF 
 
 TYPE_EXPRESSION_LITERAL          ::= INTEGER_LITERAL 
                                    | FLOAT_LITERAL 
                                    | STRING_LITERAL 
                                    | CHAR_LITERAL 
                                    | BOOL_LITERAL 
-                                   | TYPE_SET_LITERAL
-                                   | TYPE_EXPRESSION_LABEL
-                                   | KEYWORD_SELF 
                                    | SYMBOL
 
 

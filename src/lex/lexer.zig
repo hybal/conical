@@ -89,6 +89,7 @@ pub const Tag = enum {
     keyword_let,        //KEYWORD_LET
     keyword_mut,        //KEYWORD_MUT
     keyword_alias,      //KEYWORD_ALIAS
+    keyword_move,       //KEYWORD_MOVE
     keyword_return,     //KEYWORD_RETURN
     keyword_struct,     //KEYWORD_STRUCT
     keyword_enum,       //KEYWORD_ENUM

@@ -36,7 +36,7 @@ pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.All
 }
 
 /// Initialize the parser from source
-pub fn init(context: *common.Context, reader: *std.io.Reader, file: common.FileId, gpa: std.mem.Allocator) @This() {
+pub fn init(context: *common.Context, reader: *std.Io.Reader, file: common.FileId, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = lex.Lexer.init(reader, file),
         .allocator = gpa,
@@ -52,15 +52,15 @@ pub fn deinit(self: *@This()) void {
 
 
 fn expect_ret(self: *@This(), tag: lex.Tag) !?lex.Token {
-    if (!self.lexer.is_next_token(tag)) {
+    if (!self.is_next(tag)) {
         return null;
     }
-    return try self.lexer.next_token();
+    return try self.next();
 }
 
 fn expect(self: *@This(), tag: lex.Tag) !bool {
     const out = try self.expect_ret(tag);
-    if (out) return true;
+    if (out) |_| return true;
     return false;
 }
 
@@ -121,10 +121,10 @@ fn program(self: *@This()) !Ast {
     var span: common.Span = .init(self.lexer.index, self.file);
     // Every source file requires a module declaration as the first thing in the file.
     const mod = try self.module_declaration();
-    span.merge(self.builder.get_span(mod.path));
+    span.merge(self.builder.get_span(mod.?.path));
     var decls = std.ArrayList(AstNodeId).empty;
     while (self.lexer.has_next()) {
-        const decl = try self.declaration();
+        const decl = try self.item();
         span.merge(self.builder.get_span(decl));
         try decls.append(self.allocator, decl);
     }
@@ -155,6 +155,7 @@ fn module_declaration(self: *@This()) !?Ast.ModuleDecl {
     }
     return .{
         .path = path,
+        .span = span,
     };
 
 }
@@ -168,10 +169,11 @@ fn item(self: *@This()) !AstNodeId {
     if (peek_tok == null) {
         return error.EOF;
     }
-    const kind = switch (peek_tok.tag) {
+    const kind = switch (peek_tok.?.tag) {
         .keyword_fn => .{.function, try self.function_declaration()},
         .keyword_let => .{.binding, try self.let_binding()},
         .keyword_type => .{.@"type", try self.type_declaration()},
+        else => unreachable,
     };
 
     if (link) |l| span.merge(l.span);
@@ -234,10 +236,11 @@ fn function_modifiers(self: *@This()) ![]Ast.FnMod {
             .keyword_inline => .@"inline",
             .keyword_pure => .pure,
             .keyword_comptime => .@"comptime",
+            else => unreachable,
         };
         try mods.append(self.allocator, .{ .kind = kind, .span = tok.span });
     }
-    return try mods.toOwnedSlice();
+    return try mods.toOwnedSlice(self.allocator);
 }
 
 fn let_binding(self: *@This()) !AstNodeId {
@@ -466,10 +469,10 @@ fn type_expression_metadata(self: *@This()) !AstNodeId {
 
 fn type_expression_strict_inclusion(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.type_expression_inclusion();
+    const left = try self.type_expression_membership();
     if (self.is_next_one_of(.{ .lt, .gt })) {
         const op = self.next() catch unreachable;
-        const right = try self.type_expression_inclusion();
+        const right = try self.type_expression_membership();
 
         const node = Ast.TypeBinaryExpr {
             .left = left,
@@ -656,7 +659,7 @@ fn type_expression_grouping(self: *@This()) !AstNodeId {
         return expr;
     }
 
-    return try self.type_expression_literal();
+    return try self.type_expression_primary();
 }
 
 fn type_expression_label(self: *@This()) !AstNodeId {
@@ -676,15 +679,50 @@ fn type_expression_label(self: *@This()) !AstNodeId {
 }
 
 
+fn type_expression_primary(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    if (self.next_if(.dot)) |_| {
+        if (self.next_if(.open_bracket)) |_| {
+            var elems: std.ArrayList(AstNodeId) = .empty;
+            while (!self.is_next(.close_bracket)) {
+                const elem = try self.type_expression_literal();
+                try elems.append(self.allocator, elem);
+            }
+            if (!try self.expect(.close_bracket)) {
+                //This should never be executed
+                unreachable;
+            }
+        }
+    }
+
+    if (self.next_if(.keyword_Self)) |_| {
+        const node = Ast.TypeLiteral {
+            .self,
+        };
+
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.type_literal, span, node);
+        return nodeid;
+    }
+    return try self.type_expression_literal();
+
+}
+
 fn type_expression_literal(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
 
     if (self.next_if(.dot)) |_| {
         if (self.is_next(.ident)) {
             const ident = self.next() catch unreachable;
-            _ = ident;
+            const node = Ast.TypeLiteral {
+                .symbol = .{ .span = ident.span },
+            };
+            span.merge(.init(self.lexer.index, self.file));
+            const nodeid = try self.builder.add_node(.type_literal, span, node);
+            return nodeid;
         }
-    }
+
+            }
 
     if (self.is_next_one_of(.{
         .integer_literal,
@@ -693,13 +731,138 @@ fn type_expression_literal(self: *@This()) !AstNodeId {
         .raw_string_literal,
         .char_literal,
         .boolean_literal,
-        .keyword_Self,
     })) {
-        const node = Ast.Terminal {
-            .tok = self.next() catch unreachable,
+        const tok = self.next() catch unreachable;
+        const node = Ast.TypeLiteral {
+            .value = tok
         };
         span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.terminal, span, node);
+        const nodeid = try self.builder.add_node(.type_literal, span, node);
         return nodeid;
     }
+}
+
+fn type_expression_sugar(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const peek_tok = self.peek();
+    if (peek_tok == null) {
+        return error.EOF;
+    }
+
+    const out = switch (peek_tok.?.tag) {
+        .keyword_struct => try self.type_struct_sugar(),
+        .keyword_enum => try self.type_enum_sugar(),
+        .keyword_impl => try self.type_impl_sugar(),
+        else => null,
+    };
+
+    if (out == null) {
+        const left = try self.type_expression_literal();
+        if (self.is_next_one_of(.{ .dot2, .bang })) {
+            const tok = self.next() catch unreachable;
+            var left_exclude = false;
+            if (tok.tag == .bang) {
+                left_exclude = true;
+                if (!try self.expect(.dot2)) {
+                    unreachable;
+                }
+            }
+            const right = try self.type_expression_literal();
+            const right_exclude = self.next_if(.bang) != null;
+
+            const node = Ast.TypeRange {
+                .start = left,
+                .end = right,
+                .start_inclusive = !left_exclude,
+                .end_inclusive = !right_exclude,
+            };
+            span.merge(.init(self.lexer.index, self.file));
+            const nodeid = try self.builder.add_node(.type_range, span, node);
+            return nodeid;
+        }
+        return left;
+    }
+    return out;
+
+}
+
+fn type_struct_sugar(self: *@This()) !AstNodeId {
+    const span: common.Span = .init(self.lexer.index, self.file);
+    const keyword = try self.expect(.keyword_struct);
+    if (!keyword) unreachable;
+    if (!self.expect(.open_bracket)) {
+        //ERROR: expected '{'
+    }
+
+    var idents: std.ArrayList(Ast.Ident) = .empty;
+    var exprs: std.ArrayList(AstNodeId) = .empty;
+    while (!self.is_next(.close_bracket)) {
+        const ident = try self.expect_ret(.ident);
+        if (!self.expect(.colon)) {
+            //ERROR: expected ':'
+        }
+
+        const expr = try self.type_expression();
+
+        _ = self.next_if(.comma);
+
+        try idents.append(self.allocator, .{ .span = ident.?.span });
+        try exprs.append(self.allocator, expr);
+    }
+
+    const node = Ast.TypeStruct {
+        .field_labels = try idents.toOwnedSlice(self.allocator),
+        .field_exprs = try exprs.toOwnedSlice(self.allocator),
+    };
+    
+    span.merge(.init(self.lexer.index, self.file));
+    
+    const nodeid = try self.builder.add_node(.type_struct, span, node);
+    return nodeid;
+}
+
+fn type_enum_sugar(self: *@This()) !AstNodeId {
+    const span: common.Span = .init(self.lexer.index, self.file);
+    const keyword = try self.expect(.keyword_enum);
+    if (!keyword) unreachable;
+    if (!self.expect(.open_bracket)) {
+        //ERROR: expected '{'
+    }
+    var exprs: std.ArrayList(AstNodeId) = .empty;
+    while (!self.is_next(.close_bracket)) {
+        const expr = try self.type_expression_literal();
+        _ = self.next_if(.comma);
+        try exprs.append(self.allocator, expr);
+    }
+
+    const node = Ast.TypeEnum {
+        .variants = try exprs.toOwnedSlice(self.allocator),
+    };
+
+    span.merge(.init(self.lexer.index, self.file));
+    
+    const nodeid = try self.builder.add_node(.type_enum, span, node);
+    return nodeid;
+}
+
+fn type_impl_sugar(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const keyword = try self.expect(.keyword_impl);
+    if (!keyword) unreachable;
+    if (!self.expect(.open_bracket)) {
+        //ERROR: expected '{'
+    }
+    var decs: std.ArrayList(AstNodeId) = .empty;
+    while (!self.is_next(.close_bracket)) {
+        const dec = try self.item();
+        try decs.append(self.allocator, dec);
+    }
+
+    const node = Ast.TypeImpl {
+        .declarations = try decs.toOwnedSlice(self.allocator),
+    };
+
+    span.merge(.init(self.lexer.index, self.file));
+    const nodeid = try self.builder.add_node(.type_impl, span, node);
+    return nodeid;
 }
