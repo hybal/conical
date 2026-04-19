@@ -15,6 +15,7 @@ pub const Tag = enum {
     char_literal,       //'.'
     ident,              // [a-zA-Z_] [a-zA-Z_0-9]*
     //Symbols
+    underscore,         //_
     plus,               //+
     pluseq,             //+=
     plus2,              //++
@@ -38,6 +39,7 @@ pub const Tag = enum {
     question,           //?
     question2,          //??
     pipe,               //|
+    pipearrow,          //|>
     pipeeq,             //|=
     pipe2,              //||
     hash,               //#
@@ -421,7 +423,7 @@ pub const Lexer = struct {
                 },
                 '+' => tag = if (self.next_if('+')) |_| .plus2 else if (self.next_if('=')) |_| .pluseq else .plus,
                 '?' => tag = if (self.next_if('?')) |_| .question2 else .question,
-                '|' => tag = if (self.next_if('|')) |_| .pipe2 else if (self.next_if('=')) |_| .pipeeq else .pipe,
+                '|' => tag = if (self.next_if('|')) |_| .pipe2 else if (self.next_if('=')) |_| .pipeeq else if (self.next_if('>')) |_| .pipearrow else .pipe,
                 '.' => tag = if (self.next_if('.')) |_| .dot2 else .dot,
                 ':' => tag = if (self.next_if(':')) |_| .colon2 else .colon,
                 '&' => tag = if (self.next_if('&')) |_| .amp2 else if (self.next_if('=')) |_| .ampeq else .amp,
@@ -545,6 +547,7 @@ pub const Lexer = struct {
                 '_', 'a'...'z', 'A'...'Z' => {
                     var str = std.ArrayList(u8).empty;
                     str.append(std.heap.page_allocator, c) catch unreachable;
+                    defer str.deinit(std.heap.page_allocator);
                     while (self.has_next()) : (_ = self.next()) {
                         const next_char = self.peek() orelse 0;
                         str.append(std.heap.page_allocator, next_char) catch unreachable;
@@ -553,12 +556,15 @@ pub const Lexer = struct {
                         }
                     }
                     const id = str.items;
-                    if (keywords.get(id)) |val| {
-                        tag = val;
+                    if (id.len == 1 and id[0] == '_') {
+                        tag = .underscore;
                     } else {
-                        tag = .ident;
+                        if (keywords.get(id)) |val| {
+                            tag = val;
+                        } else {
+                            tag = .ident;
+                        }
                     }
-                    str.deinit(std.heap.page_allocator);
                 },
                 else => tag = .invalid,
             }

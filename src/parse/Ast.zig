@@ -17,10 +17,21 @@ pub const UnaryExpr = struct {
     expr: AstNodeId //the operation its applied to
 };
 
-/// Represents a field or method access, has the form: expr . ident
+/// Represents a field or method access, has the form: expr.(ident | integer)
 pub const AccessOperator = struct {
     left: AstNodeId,
-    right: Ident,
+    right: Token,
+};
+
+pub const SliceOp = struct {
+    expr: AstNodeId,
+    left: AstNodeId,
+    right: ?AstNodeId,
+};
+
+pub const IndexOp = struct {
+    expr: AstNodeId,
+    index: AstNodeId,
 };
 
 /// Represents an assignment operaton including compound assignment operations like += or *=
@@ -160,18 +171,23 @@ pub const Path = struct {
 
 };
 
+pub const TerminalType = union(enum) {
+    value: Token,
+    symbol: Ident,
+};
+
 pub const Terminal = struct {
-    tok: Token,
+    span: common.Span,
+    termtype: TerminalType,
 };
 
 pub const InitializerField = struct {
-    id: Ident,
+    id: ?Ident,
     value: AstNodeId,
 };
 pub const Initializer = struct {
     ty: ?AstNodeId,
     fields: []InitializerField,
-    //expr: ?AstNodeId,
 };
 
 pub const TypeDecl = struct {
@@ -187,13 +203,14 @@ pub const VarDecl = struct {
     initialize: AstNodeId
 };
 
+pub const BindingModifierKind = enum {
+    alias,
+    mut,
+    move,
+};
 pub const BindingModifier = struct {
     span: common.Span,
-    kind: enum {
-        alias,
-        mut,
-        move,
-    },
+    kind: BindingModifierKind,
 };
 
 pub const FnDecl = struct {
@@ -261,17 +278,64 @@ pub const Terminated = struct {
     expr: AstNodeId,
 };
 
-pub const ParamList = struct {
+pub const FnArg = struct {
+    id: ?Ident,
+    val: AstNodeId,
+    is_generic: bool,
+};
+pub const FnCall = struct {
     left: AstNodeId,
-    params: []AstNodeId,
-    //add generics here
+    params: []FnArg,
 };
 
+pub const LambdaParam = struct {
+    mod: ?BindingModifier,
+    ident: Ident,
+    ty: ?AstNodeId,
+    //default: ?AstNodeId,
+};
+
+pub const Lambda = struct {
+    params: []LambdaParam,
+    generics: []Generic,
+    ret_ty: ?AstNodeId,
+    expr: AstNodeId,
+};
+
+pub const Refinement = struct {
+    a: Ident,
+    b: ?Ident,
+};
 pub const IfStmt = struct {
     condition: AstNodeId,
     block: AstNodeId,
-    else_block: ?AstNodeId
+    else_block: ?AstNodeId,
+    refinements: ?[]Refinement,
 };
+
+pub const Match = struct {
+    arms: []AstNodeId,
+    expr: AstNodeId,
+};
+
+pub const MatchArm = struct {
+    patterns: ?[]AstNodeId,
+    captures: ?[]Ident,
+    block: AstNodeId,
+};
+
+pub const Pattern = union(enum) {
+    literal: AstNodeId,
+    range: AstNodeId,
+    compound: AstNodeId,
+    catch_all,
+};
+
+pub const MatchCompoundLiteral = struct {
+    ids: []Ident,
+    values: []AstNodeId,
+};
+
 
 pub const WhileLoop = struct {
     condition: AstNodeId,
@@ -339,16 +403,23 @@ pub const AstKind = enum {
     type_range,
     assignment,
     if_stmt,
+    match,
+    match_arm,
+    match_pattern,
+    match_compound_literal,
     while_loop,
     block,
     var_decl,
     fn_decl,
     fn_call,
+    lambda,
     return_stmt,
     type_decl,
     terminated,
-    intializer,
+    initializer,
     access_operator,
+    index,
+    slice,
     cast,
     path,
     module_decl,
@@ -378,16 +449,23 @@ pub const Ast = struct {
     type_ranges: []const TypeRange,
     assignments: []const Assignment,
     if_stmts: []const IfStmt,
+    matchs: []const Match,
+    match_arms: []const MatchArm,
+    match_patterns: []const Pattern,
+    match_compound_literals: []const MatchCompoundLiteral,
     while_loops: []const WhileLoop,
     blocks: []const Block,
     var_decls: []const VarDecl,
     fn_decls: []const FnDecl,
-    fn_calls: []const ParamList,
+    fn_calls: []const FnCall,
+    lambdas: []const Lambda,
     return_stmts: []const ReturnStmt,
     type_decls: []const TypeDecl,
     terminateds: []const Terminated,
-    intializers: []const Initializer,
+    initializers: []const Initializer,
     access_operators: []const AccessOperator,
+    indexs: []const IndexOp,
+    slices: []const SliceOp,
     casts: []const Cast,
     paths: []const Path,
     imports: []const Import,
@@ -395,39 +473,56 @@ pub const Ast = struct {
     pub fn get(self: *@This(), id: AstNodeId) struct {AstKind, *anyopaque} {
         const node_index = self.nodes[id].index;
         const node_kind = self.nodes[id].kind;
-        return switch (node_kind) {
-            .poison => .{.poison, @constCast(&self.poisons[node_index])},
-            .unit => .{.unit, @constCast(&self.units[node_index])},
-            .item => .{.item, @constCast(&self.items[node_index])},
-            .binary_expr => .{.binary_expr, @constCast(&self.binary_exprs[node_index])},
-            .unary_expr => .{.unary_expr, @constCast(&self.unary_exprs[node_index])},
-            .terminal => .{.terminal, @constCast(&self.terminals[node_index])},
-            .type_expr => .{.type_expr, @constCast(&self.type_exprs[node_index])},
-            .type_binary_expr => .{.type_binary_expr, @constCast(&self.type_binary_exprs[node_index])},
-            .type_metadata => .{.type_metadata, @constCast(&self.type_metadatas[node_index])},
-            .type_modifier => .{.type_modifier, @constCast(&self.type_modifiers[node_index])},
-            .type_label => .{.type_label, @constCast(&self.type_labels[node_index])},
-            .type_enum => .{.type_enum, @constCast(&self.type_enums[node_index])},
-            .type_struct => .{.type_struct, @constCast(&self.type_structs[node_index])},
-            .type_impl => .{.type_impl, @constCast(&self.type_impls[node_index])},
-            .type_set => .{.type_set, @constCast(&self.type_sets[node_index])},
-            .type_range => .{.type_range, @constCast(&self.type_ranges[node_index])},
-            .assignment => .{.assignment, @constCast(&self.assignments[node_index])},
-            .if_stmt => .{.if_stmt, @constCast(&self.if_stmts[node_index])},
-            .while_loop => .{.while_loop, @constCast(&self.while_loops[node_index])},
-            .block => .{.block, @constCast(&self.blocks[node_index])},
-            .var_decl => .{.var_decl, @constCast(&self.var_decls[node_index])},
-            .fn_decl => .{.fn_decl, @constCast(&self.fn_decls[node_index])},
-            .fn_call => .{.fn_call, @constCast(&self.fn_calls[node_index])},
-            .return_stmt => .{.return_stmt, @constCast(&self.return_stmts[node_index])},
-            .type_decl => .{.type_decl, @constCast(&self.type_decls[node_index])},
-            .terminated => .{.terminated, @constCast(&self.terminateds[node_index])},
-            .intializer => .{.intializer, @constCast(&self.intializers[node_index])},
-            .access_operator => .{.access_operator, @constCast(&self.access_operators[node_index])},
-            .cast => .{.cast, @constCast(&self.casts[node_index])},
-            .path => .{.path, @constCast(&self.paths[node_index])},
-            .import => .{.import, @constCast(&self.imports[node_index])},
-        };
+//        return switch (node_kind) {
+//            .poison => .{.poison, @constCast(&self.poisons[node_index])},
+//            .unit => .{.unit, @constCast(&self.units[node_index])},
+//            .item => .{.item, @constCast(&self.items[node_index])},
+//            .binary_expr => .{.binary_expr, @constCast(&self.binary_exprs[node_index])},
+//            .unary_expr => .{.unary_expr, @constCast(&self.unary_exprs[node_index])},
+//            .terminal => .{.terminal, @constCast(&self.terminals[node_index])},
+//            .type_expr => .{.type_expr, @constCast(&self.type_exprs[node_index])},
+//            .type_binary_expr => .{.type_binary_expr, @constCast(&self.type_binary_exprs[node_index])},
+//            .type_metadata => .{.type_metadata, @constCast(&self.type_metadatas[node_index])},
+//            .type_modifier => .{.type_modifier, @constCast(&self.type_modifiers[node_index])},
+//            .type_label => .{.type_label, @constCast(&self.type_labels[node_index])},
+//            .type_enum => .{.type_enum, @constCast(&self.type_enums[node_index])},
+//            .type_struct => .{.type_struct, @constCast(&self.type_structs[node_index])},
+//            .type_impl => .{.type_impl, @constCast(&self.type_impls[node_index])},
+//            .type_set => .{.type_set, @constCast(&self.type_sets[node_index])},
+//            .type_range => .{.type_range, @constCast(&self.type_ranges[node_index])},
+//            .assignment => .{.assignment, @constCast(&self.assignments[node_index])},
+//            .if_stmt => .{.if_stmt, @constCast(&self.if_stmts[node_index])},
+//            .while_loop => .{.while_loop, @constCast(&self.while_loops[node_index])},
+//            .block => .{.block, @constCast(&self.blocks[node_index])},
+//            .var_decl => .{.var_decl, @constCast(&self.var_decls[node_index])},
+//            .fn_decl => .{.fn_decl, @constCast(&self.fn_decls[node_index])},
+//            .fn_call => .{.fn_call, @constCast(&self.fn_calls[node_index])},
+//            .return_stmt => .{.return_stmt, @constCast(&self.return_stmts[node_index])},
+//            .type_decl => .{.type_decl, @constCast(&self.type_decls[node_index])},
+//            .terminated => .{.terminated, @constCast(&self.terminateds[node_index])},
+//            .intializer => .{.intializer, @constCast(&self.intializers[node_index])},
+//            .access_operator => .{.access_operator, @constCast(&self.access_operators[node_index])},
+//            .cast => .{.cast, @constCast(&self.casts[node_index])},
+//            .path => .{.path, @constCast(&self.paths[node_index])},
+//            .import => .{.import, @constCast(&self.imports[node_index])},
+//        };
+
+        inline for (std.meta.tags(AstKind)) |tag| {
+            if (node_kind == tag) {
+                const field_name = comptime @tagName(tag) ++ "s";
+
+                comptime {
+                    if (!@hasField(@This(), field_name)) {
+                        @compileError("Missing field " ++ field_name);
+                    }
+                }
+
+                return .{
+                    tag,
+                    @constCast(&@field(self, field_name)[node_index]),
+                };
+            }
+        }
     }
 
     pub fn get_node(self: *@This(), id: AstNodeId) AstNode {
@@ -498,19 +593,26 @@ fn _AstBuilder() type {
             return .{ .Self = out, .allocator = allocator, };
         }
 
+        fn append(self: *@This(), array: anytype, data: anytype) !usize {
+            try array.append(self.allocator, data);
+            return array.items.len - 1;
+        }
 
         pub fn add_node(self: *@This(),
             comptime kind: AstKind,
             span: common.Span,
             data: anytype) !AstNodeId {
             const id_name = @tagName(kind) ++ "s";
-            const id = try self.append(@TypeOf(@field(self.Self, id_name)), @field(self.Self, id_name), data);
-            const spanid = try self.append(@TypeOf(self.Self.spans), self.Self.spans, span);
+            var ids = @field(self.Self, id_name);
+            const id = try self.append(&ids, data);
+            var spans = self.Self.spans;
+            const spanid = try self.append(&spans, span);
 
-            const out = try self.append(AstNode, self.Self.nodes, .{
+            var nodes = self.Self.nodes;
+            const out = try self.append(&nodes, AstNode {
                 .kind = kind,
-                .spanid = spanid,
-                .id = id,
+                .span = spanid,
+                .index = id,
             });
             return out;
         }
@@ -533,7 +635,7 @@ fn _AstBuilder() type {
 
                     return .{
                         tag,
-                        @constCast(&@field(self, field_name).items[node_index]),
+                        @constCast(&@field(self.Self, field_name).items[node_index]),
                     };
                 }
 
