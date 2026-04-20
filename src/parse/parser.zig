@@ -25,16 +25,16 @@ previous_token: ?lex.Token = null,
 
 
 
-/// Initialize the parser from an already existing Lexer instance
-pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
-    return .{
-        .lexer = in,
-        .allocator = gpa,
-        .context = context,
-        .builder = .init(gpa),
-        .file = in.file,
-    };
-}
+    /// Initialize the parser from an already existing Lexer instance
+    pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
+        return .{
+            .lexer = in,
+            .allocator = gpa,
+            .context = context,
+            .builder = .init(gpa),
+            .file = in.file,
+        };
+    }
 
 /// Initialize the parser from source
 pub fn init(context: *common.Context, reader: *std.Io.Reader, file: common.FileId, gpa: std.mem.Allocator) @This() {
@@ -53,16 +53,18 @@ pub fn deinit(self: *@This()) void {
 
 
 fn expect_ret(self: *@This(), tag: lex.Tag) !?lex.Token {
-    if (!self.is_next(tag)) {
-        return null;
+    if (self.is_next(tag)) {
+        return try self.next();
     }
-    return try self.next();
+    return null;
 }
 
 fn expect(self: *@This(), tag: lex.Tag) !bool {
-    const out = try self.expect_ret(tag);
-    if (out) |_| return true;
-    return false;
+    if (!self.is_next(tag)) {
+        return false;
+    }
+    _ = try self.next();
+    return true;
 }
 
 fn is_next_one_of(self: *@This(), comptime values: anytype) bool {
@@ -112,21 +114,18 @@ fn peek(self: *@This()) ?lex.Token {
 
 
 /// The entrypoint for the parser
-pub fn parse(self: *@This()) !Ast {
+pub fn parse(self: *@This()) !Ast.Ast {
     return try self.program();
 }
 
 // ---- START TOP-LEVEL ----
 
-fn program(self: *@This()) !Ast {
-    var span: common.Span = .init(self.lexer.index, self.file);
+fn program(self: *@This()) anyerror!Ast.Ast {
     // Every source file requires a module declaration as the first thing in the file.
     const mod = try self.module_declaration();
-    span.merge(self.builder.get_span(mod.?.path));
     var decls = std.ArrayList(AstNodeId).empty;
     while (self.lexer.has_next()) {
         const decl = try self.item();
-        span.merge(self.builder.get_span(decl));
         try decls.append(self.allocator, decl);
     }
     const prog = Ast.Program {
@@ -136,24 +135,25 @@ fn program(self: *@This()) !Ast {
 
     self.builder.set_program(prog);
     defer self.deinit();
-    return try self.builder.build();
+    return self.builder.build();
 }
 
-fn module_declaration(self: *@This()) !?Ast.ModuleDecl {
+fn module_declaration(self: *@This()) !Ast.ModuleDecl {
     var span: common.Span = .init(self.lexer.index, self.file);
-    if (!self.is_next(.keyword_mod)) {
+    if (!(try self.expect(.keyword_mod))) {
         //ERROR: expected module declaration
-        return null;
+        return error.ParseError;
     }
-    span.merge(self.lexer.next_token().span);
     const path = try self.expression_path();
     if (self.builder.is_poison(path)) {
         //ERROR: malformed path in module declaration
-        return null;
+        return error.ParseError;
     }
     if(!try self.expect(.semicolon)) {
         //ERROR: Expected semicolon
+        return error.ParseError;
     }
+    span.merge(.init(self.lexer.index, self.file));
     return .{
         .path = path,
         .span = span,
@@ -170,8 +170,8 @@ fn item(self: *@This()) !AstNodeId {
     if (peek_tok == null) {
         return error.EOF;
     }
-    const kind = switch (peek_tok.?.tag) {
-        .keyword_fn => .{.function, try self.function_declaration()},
+    const kind: struct {Ast.ItemKind, AstNodeId }= switch (peek_tok.?.tag) {
+        .keyword_fn => .{ .function, try self.function_declaration()},
         .keyword_let => .{.binding, try self.let_binding()},
         .keyword_type => .{.@"type", try self.type_declaration()},
         else => unreachable,
@@ -179,16 +179,14 @@ fn item(self: *@This()) !AstNodeId {
 
     if (link) |l| span.merge(l.span);
     if (vis) |v| span.merge(v.span);
-    if (function_mods) |ms| {
-        for (ms) |i| {
-            span.merge(i.span);
-        }
+    for (function_mods) |i| {
+        span.merge(i.span);
     }
 
-    span.merge(self.builder.get_span(kind));
+    span.merge(.init(self.lexer.index, self.file));
     const node = Ast.Item {
-        .item = kind,
-        .item_kind = kind[0],
+        .item = kind.@"1",
+        .item_kind = kind.@"0",
         .linkage = link,
         .visibility = vis,
         .function_mods = function_mods,
@@ -200,7 +198,7 @@ fn item(self: *@This()) !AstNodeId {
         node,
     );
     return nodeid;
-        
+
 }
 
 fn visibility(self: *@This()) !?Ast.Visibility {
@@ -249,35 +247,42 @@ fn let_binding(self: *@This()) !AstNodeId {
     const let_keyword = try self.expect_ret(.keyword_let);
     if (let_keyword == null) {
         //FATAL: This should never be null, there is a problem in the compiler
+        return error.FatalError;
     }
-    
+
     const modifier = try self.binding_modifier();
 
     const ident = try self.expect_ret(.ident);
 
     if (ident == null) {
         //ERROR: Expected identifier before '='
+        return error.ParseError;
     }
-    var typeexpr: Ast.TypeExpr = null;
+    var typeexpr: ?AstNodeId = null;
     if (self.next_if(.colon)) |tok| {
         span.merge(tok.span);
         typeexpr = try self.type_expression();
     }
     if (!try self.expect(.eq)) {
         //ERROR: Expected '='
+        return error.ParseError;
     }
     const expr = try self.expression();
     const semicolon_tok = try self.expect(.semicolon);
     if (!semicolon_tok) {
         //ERROR: Missing semicolon
+        return error.ParseError;
     }
-    span.merge(self.builder.get_span(expr));
+    span.merge(.init(self.lexer.index, self.file));
+    const binding_id = Ast.BindingId {
+        .id = .{ .span = ident.?.span },
+        .modifier = modifier,
+    };
     //FIXME: we somehow need access to either a reversible Reader or a fresh one or somehow recover source information.
     const node = Ast.VarDecl {
-        .ident = .{ .span = ident.a.span },
+        .id = binding_id,
         .initialize = expr,
         .ty = typeexpr,
-        .modifier = modifier,
     };
 
     const nodeid = try self.builder.add_node(.var_decl, span, node);
@@ -303,57 +308,61 @@ fn function_declaration(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     if (!try self.expect(.keyword_fn)) {
         //FATAL: This should never be null
+        return error.FatalError;
     }
 
     const fn_ident = try self.expect_ret(.ident);
     if (fn_ident == null) {
         //ERROR: Expected identifier after 'fn'
+        return error.ParseError;
     }
 
     if (!try self.expect(.open_paren)) {
         //ERROR: Expected open parenthesis after identifier
+        return error.ParseError;
     }
     var is_inline: bool = false;
     var param_tys: std.ArrayList(AstNodeId) = .empty;
     var param_ids: std.ArrayList(Ast.BindingId) = .empty;
     var generics: std.ArrayList(Ast.Generic) = .empty;
     var ret_ty: ?AstNodeId = null;
-    while (!self.is_next(.close_paren)) {
-        if (self.is_next(.dollar)) {
-            const dollar_tok = self.next() catch unreachable;
-            _ = dollar_tok;
-            const id = try self.expect_ret(.ident);
-            var expr: ?AstNodeId = null;
-            if (id == null) {
-                //ERROR: Expected identifier after '$'
-            }
-            if (self.is_next(.colon)) {
-                const colon_tok = self.next() catch unreachable;
-                _ = colon_tok;
-                expr = try self.type_expression();
-            }
-            const generic = Ast.Generic {
-                .ident = .{ .span = id.?.span },
-                .expr = expr,
-            };
-
-            try generics.append(self.allocator, generic);
-        } else {
-            //Not really sure if this is even possible
-            //probably:
-            //ERROR: Unexpected token
+    while (self.is_next(.dollar)) {
+        const dollar_tok = self.next() catch unreachable;
+        _ = dollar_tok;
+        const id = try self.expect_ret(.ident);
+        var expr: ?AstNodeId = null;
+        if (id == null) {
+            //ERROR: Expected identifier after '$'
+            return error.ParseError;
         }
-        _ = self.next_if(.comma);
-        if (!self.is_next(.dollar)) break; //Just in case
+        if (self.is_next(.colon)) {
+            const colon_tok = self.next() catch unreachable;
+            _ = colon_tok;
+            expr = try self.type_expression();
+        }
+        const generic = Ast.Generic {
+            .ident = .{ .span = id.?.span },
+            .expr = expr,
+        };
+
+        try generics.append(self.allocator, generic);
+        const comma = self.next_if(.comma);
+        if (!self.is_next(.close_paren) and comma == null) {
+            //ERROR: Expectected comma
+            return error.ParseError;
+        }
     }
-    _ = self.expect(.close_paren) catch unreachable;
 
     while (!self.is_next(.close_paren)) {
         const modifier = try self.binding_modifier();
 
-        const param_ident = try self.next();
+        const param_ident = try self.expect_ret(.ident);
+        if (param_ident == null) {
+            //ERROR: Expected identifier
+            return error.ParseError;
+        }
 
-        try param_ids.append(self.allocator, .{ .id = .{ .span = param_ident.span }, .modifier = modifier });
+        try param_ids.append(self.allocator, .{ .id = .{ .span = param_ident.?.span }, .modifier = modifier });
 
         if (self.next_if(.colon)) |colon_token| {
             span.merge(colon_token.span);
@@ -362,20 +371,13 @@ fn function_declaration(self: *@This()) !AstNodeId {
             try param_tys.append(self.allocator, ty);
         } else if (is_inline) {
             //ERROR: Cannot mix inline and postifx in function declaration
+            return error.ParseError;
         }
         const has_comma = self.next_if(.comma);
-        if (self.is_next_one_of(.{
-            .keyword_alias,
-            .keyword_move,
-            .keyword_mut,
-            .ident,
-        })) {
-            if (has_comma == null) {
-                //ERROR: Expected comma in-between paramaters
-            }
-        } else if (!self.is_next(.close_paren)) {
-            //ERROR: Unexpected token
-        }
+        if (!self.is_next(.close_paren) and has_comma == null) {
+            //ERROR: Expected comma in-between paramaters
+            return error.ParseError;
+        }  
     }
     _ = self.expect(.close_paren) catch unreachable;
     if (self.is_next(.colon)) {
@@ -383,6 +385,7 @@ fn function_declaration(self: *@This()) !AstNodeId {
         _ = colon_tok;
         if (is_inline) {
             //ERROR: Cannot mix inline and postfix in function declaration
+            return error.ParseError;
         }
 
         if (self.is_next(.open_paren)) {
@@ -411,13 +414,13 @@ fn function_declaration(self: *@This()) !AstNodeId {
     span.merge(.{ .start = span.start, .end = self.lexer.index, .fileid = self.file });
     const node = Ast.FnDecl {
         .body = body,
-        .ident = fn_ident.?,
+        .ident = .{ .span = fn_ident.?.span},
         .return_ty = ret_ty,
         .param_types = try param_tys.toOwnedSlice(self.allocator),
         .params = try param_ids.toOwnedSlice(self.allocator),
         .generics = try generics.toOwnedSlice(self.allocator),
     };
-    
+
     const nodeid = try self.builder.add_node(.fn_decl, span, node);
     return nodeid;
 }
@@ -426,12 +429,13 @@ fn function_declaration(self: *@This()) !AstNodeId {
 
 fn type_declaration(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const type_keyword_tok = self.expect_ret(.keyword_type);
+    const type_keyword_tok = try self.expect_ret(.keyword_type);
     _ = type_keyword_tok;
 
     const id = try self.expect_ret(.ident);
     if (id == null) {
         //ERROR: Expected identifier after 'type'
+        return error.ParseError;
     }
 
     const expr = try self.type_expression();
@@ -596,11 +600,12 @@ fn type_expression_modifiers(self: *@This()) !AstNodeId {
     var mods: std.ArrayList(Ast.TypeModifierOp) = .empty;
     while (self.is_next_one_of(.{ .amp, .amp2, .open_square })) {
         const tok = self.next() catch unreachable;
-        
+
         if (tok.tag == .open_square and !self.is_next(.close_square)) {
             const array_expr = try self.expression();
             if (!try self.expect(.close_square)) {
                 //ERROR: Expected ]
+                return error.ParseError;
             }
             try mods.append(self.allocator, .{ .Array = array_expr });
         } else if (tok.tag == .open_square and self.is_next(.close_square)) {
@@ -630,6 +635,7 @@ fn type_expression_grouping(self: *@This()) anyerror!AstNodeId {
         const expr = try self.type_expression();
         if (!try self.expect(.close_paren)) {
             //ERROR: Expected ')'
+            return error.ParseError;
         }
         return expr;
     }
@@ -639,6 +645,7 @@ fn type_expression_grouping(self: *@This()) anyerror!AstNodeId {
         const expr = try self.expression();
         if (!try self.expect(.close_bracket)) {
             //ERROR: Expected '}'
+            return error.ParseError;
         }
         return expr;
     }
@@ -673,6 +680,7 @@ fn type_expression_label(self: *@This()) !AstNodeId {
     const ident = try self.expect_ret(.ident);
     if (ident == null) {
         //ERROR: expected identifier
+        return error.ParseError;
     }
     const group = try self.type_expression_grouping();
     const node = Ast.TypeLabel {
@@ -696,15 +704,12 @@ fn type_expression_primary(self: *@This()) !AstNodeId {
             }
             if (!try self.expect(.close_bracket)) {
                 //This should never be executed
-                unreachable;
             }
         }
     }
 
     if (self.next_if(.keyword_Self)) |_| {
-        const node = Ast.TypeLiteral {
-            .self,
-        };
+        const node: Ast.TypeLiteral = .self;
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.type_literal, span, node);
@@ -728,15 +733,16 @@ fn type_expression_literal(self: *@This()) !AstNodeId {
             return nodeid;
         }
 
-            }
+    }
 
     if (self.is_next_one_of(.{
-        .integer_literal,
+        .int_literal,
         .float_literal,
         .string_literal,
         .raw_string_literal,
         .char_literal,
-        .boolean_literal,
+        .keyword_true,
+        .keyword_false
     })) {
         const tok = self.next() catch unreachable;
         const node = Ast.TypeLiteral {
@@ -746,6 +752,9 @@ fn type_expression_literal(self: *@This()) !AstNodeId {
         const nodeid = try self.builder.add_node(.type_literal, span, node);
         return nodeid;
     }
+
+    //ERROR: Unexpected token
+    return error.ParseError;
 }
 
 fn type_expression_sugar(self: *@This()) !AstNodeId {
@@ -770,7 +779,6 @@ fn type_expression_sugar(self: *@This()) !AstNodeId {
             if (tok.tag == .bang) {
                 left_exclude = true;
                 if (!try self.expect(.dot2)) {
-                    unreachable;
                 }
             }
             const right = try self.type_expression_literal();
@@ -788,24 +796,26 @@ fn type_expression_sugar(self: *@This()) !AstNodeId {
         }
         return left;
     }
-    return out;
+    return out.?;
 
 }
 
 fn type_struct_sugar(self: *@This()) !AstNodeId {
-    const span: common.Span = .init(self.lexer.index, self.file);
+    var span: common.Span = .init(self.lexer.index, self.file);
     const keyword = try self.expect(.keyword_struct);
-    if (!keyword) unreachable;
-    if (!self.expect(.open_bracket)) {
+    if (!keyword) return error.ParseError;
+    if (!try self.expect(.open_bracket)) {
         //ERROR: expected '{'
+        return error.ParseError;
     }
 
     var idents: std.ArrayList(Ast.Ident) = .empty;
     var exprs: std.ArrayList(AstNodeId) = .empty;
     while (!self.is_next(.close_bracket)) {
         const ident = try self.expect_ret(.ident);
-        if (!self.expect(.colon)) {
+        if (!try self.expect(.colon)) {
             //ERROR: expected ':'
+            return error.ParseError;
         }
 
         const expr = try self.type_expression();
@@ -821,19 +831,20 @@ fn type_struct_sugar(self: *@This()) !AstNodeId {
         .field_labels = try idents.toOwnedSlice(self.allocator),
         .field_exprs = try exprs.toOwnedSlice(self.allocator),
     };
-    
+
     span.merge(.init(self.lexer.index, self.file));
-    
+
     const nodeid = try self.builder.add_node(.type_struct, span, node);
     return nodeid;
 }
 
 fn type_enum_sugar(self: *@This()) !AstNodeId {
-    const span: common.Span = .init(self.lexer.index, self.file);
+    var span: common.Span = .init(self.lexer.index, self.file);
     const keyword = try self.expect(.keyword_enum);
-    if (!keyword) unreachable;
-    if (!self.expect(.open_bracket)) {
+    if (!keyword) return error.ParseError;
+    if (!try self.expect(.open_bracket)) {
         //ERROR: expected '{'
+        return error.ParseError;
     }
     var exprs: std.ArrayList(AstNodeId) = .empty;
     while (!self.is_next(.close_bracket)) {
@@ -848,7 +859,7 @@ fn type_enum_sugar(self: *@This()) !AstNodeId {
     };
 
     span.merge(.init(self.lexer.index, self.file));
-    
+
     const nodeid = try self.builder.add_node(.type_enum, span, node);
     return nodeid;
 }
@@ -856,9 +867,10 @@ fn type_enum_sugar(self: *@This()) !AstNodeId {
 fn type_impl_sugar(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const keyword = try self.expect(.keyword_impl);
-    if (!keyword) unreachable;
-    if (!self.expect(.open_bracket)) {
+    if (!keyword) return error.ParseError;
+    if (!try self.expect(.open_bracket)) {
         //ERROR: expected '{'
+        return error.ParseError;
     }
     var decs: std.ArrayList(AstNodeId) = .empty;
     while (!self.is_next(.close_bracket)) {
@@ -907,16 +919,18 @@ fn expression_if(self: *@This()) !AstNodeId {
         if (open_paren != null) {
             if (!try self.expect(.close_paren)) {
                 //ERROR: Expected ')'
+                return error.ParseError;
             }
         }
         var refinements: std.ArrayList(Ast.Refinement) = .empty;
         if (self.next_if(.pipe)) |_| {
             while (!self.is_next(.pipe)) {
                 const ident = try self.expect_ret(.ident);
-               if (ident == null) {
+                if (ident == null) {
                     //ERROR: Expected identifier
+                    return error.ParseError;
                 }
-               var refinement = Ast.Refinement {
+                var refinement = Ast.Refinement {
                     .a = .{ .span = ident.?.span },
                     .b = null,
                 };
@@ -924,6 +938,7 @@ fn expression_if(self: *@This()) !AstNodeId {
                     const maps_to = try self.expect_ret(.ident);
                     if (maps_to == null) {
                         //ERROR: expected identifier after '='
+                        return error.ParseError;
                     }
                     refinement.b = .{ .span = maps_to.?.span };
                 }
@@ -982,17 +997,18 @@ fn expression_optional_block(self: *@This()) !AstNodeId {
 
 fn expression_match(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    if (self.next_if(.keyword_match)) {
+    if (self.next_if(.keyword_match)) |_| {
         const expr = try self.expression();
-        if (!self.expect(.open_bracket)) {
+        if (!try self.expect(.open_bracket)) {
             //ERROR: expected '{'
+            return error.ParseError;
         }
         var match_arms: std.ArrayList(AstNodeId) = .empty;
         while (!self.is_next(.close_bracket)) {
-            var patterns: std.ArrayList(Ast.Pattern) = .empty;
+            var patterns: std.ArrayList(AstNodeId) = .empty;
             while (!self.is_next(.fat_arrow)) {
                 const pattern = try self.match_pattern();
-                _ = try self.next_if(.comma);
+                _ = self.next_if(.comma);
                 try patterns.append(self.allocator, pattern);
             }
             _ = self.expect(.fat_arrow) catch unreachable;
@@ -1003,7 +1019,7 @@ fn expression_match(self: *@This()) !AstNodeId {
                     if (ident == null) {
                         //Expected identifier
                     }
-                    try captures.append(self.allocator, ident);
+                    try captures.append(self.allocator, .{ .span = ident.?.span });
                 }
                 _ = self.expect(.pipe) catch unreachable;
             }
@@ -1023,7 +1039,7 @@ fn expression_match(self: *@This()) !AstNodeId {
         _ = self.expect(.close_paren) catch unreachable;
 
         const node = Ast.Match {
-            .arms = match_arms.toOwnedSlice(self.allocator),
+            .arms = try match_arms.toOwnedSlice(self.allocator),
             .expr = expr,
         };
 
@@ -1035,11 +1051,11 @@ fn expression_match(self: *@This()) !AstNodeId {
 }
 
 fn match_pattern(self: *@This()) !AstNodeId {
-    var span: common.Span = .empty;
+    var span: common.Span = .init(self.lexer.index, self.file);
     if (self.is_next(.dot)) {
-        if (!self.expect(.open_bracket)) {
+        if (!try self.expect(.open_bracket)) {
             //ERROR: Expected '{'
-            unreachable;
+            return error.ParseError;
         }
         var ids: std.ArrayList(Ast.Ident) = .empty;
         var vals: std.ArrayList(AstNodeId) = .empty;
@@ -1047,20 +1063,20 @@ fn match_pattern(self: *@This()) !AstNodeId {
             const ident = try self.expect_ret(.ident);
             if (ident == null) {
                 //ERROR: Expected identifier
-                unreachable;
+                return error.ParseError;
             }
 
-            if (!self.expect(.colon)) {
+            if (!try self.expect(.colon)) {
                 //ERROR: Expected ':'
-                unreachable;
+                return error.ParseError;
             }
             const expr = try self.match_pattern();
-            _ = try self.next_if(.comma);
+            _ = self.next_if(.comma);
             try ids.append(self.allocator, .{ .span = ident.?.span });
             try vals.append(self.allocator, expr);
         }
 
-        if (!try self.expect(.close_bracket)) unreachable;
+        if (!try self.expect(.close_bracket)) return error.ParseError;
         const node = Ast.MatchCompoundLiteral {
             .ids = try ids.toOwnedSlice(self.allocator),
             .values = try vals.toOwnedSlice(self.allocator)
@@ -1314,13 +1330,13 @@ fn expression_postfix(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const expr = try self.expression_sequence();
 
-    if (self.next_if(.open_paren)) {
+    if (self.next_if(.open_paren)) |_| {
         _ = self.next() catch unreachable;
 
         var args: std.ArrayList(Ast.FnArg) = .empty;
         while (!self.is_next(.close_paren)) {
             var is_generic = false;
-            var ident: Ast.Ident = null;
+            var ident: ?lex.Token = null;
             if (self.next_if(.dot)) |_| {
                 if (self.next_if(.dollar)) |_| {
                     is_generic = true;
@@ -1328,13 +1344,13 @@ fn expression_postfix(self: *@This()) !AstNodeId {
                 ident = try self.expect_ret(.ident);
                 if (ident == null) {
                     //ERROR: expected identifier
-                    unreachable;
+                    return error.ParseError;
                 }
             }
             const val = try self.expression();
             _ = self.next_if(.comma);
             try args.append(self.allocator, Ast.FnArg {
-                .id = ident,
+                .id = .{ .span = ident.?.span },
                 .is_generic = is_generic,
                 .val = val,
             });
@@ -1350,7 +1366,7 @@ fn expression_postfix(self: *@This()) !AstNodeId {
         return nodeid;
     }
 
-    if (self.next_if(.open_square)) {
+    if (self.next_if(.open_square)) |_| {
         _ = self.next() catch unreachable;
 
         const left = try self.expression();
@@ -1359,9 +1375,9 @@ fn expression_postfix(self: *@This()) !AstNodeId {
             if (!self.is_next(.close_square)) {
                 right = try self.expression();
             }
-            if (!self.expect(.close_square)) |_| {
+            if (!try self.expect(.close_square)) {
                 //ERROR: Expected ']'
-                unreachable;
+                return error.ParseError;
             }
             const node = Ast.SliceOp {
                 .expr = expr,
@@ -1373,9 +1389,9 @@ fn expression_postfix(self: *@This()) !AstNodeId {
             const nodeid = try self.builder.add_node(.slice, span, node);
             return nodeid;
         }
-        if (!self.expect(.close_square)) |_| {
+        if (!try self.expect(.close_square)) {
             //ERROR: Expected ']'
-            unreachable;
+            return error.ParseError;
         }
 
         const node = Ast.IndexOp {
@@ -1388,12 +1404,12 @@ fn expression_postfix(self: *@This()) !AstNodeId {
         return nodeid;
     }
 
-    if (self.next_if(.dot)) {
+    if (self.next_if(.dot)) |_| {
         _ = self.next() catch unreachable;
-        const ident = if (self.is_next_one_of(.{ .ident, .integer_literal })) self.next() catch unreachable else null;
+        const ident = if (self.is_next_one_of(.{ .ident, .int_literal })) self.next() catch unreachable else null;
         if (ident == null) {
             //ERROR: Expected identifier
-            unreachable;
+            return error.ParseError;
         }
 
         const node = Ast.AccessOperator {
@@ -1411,16 +1427,17 @@ fn expression_postfix(self: *@This()) !AstNodeId {
 fn expression_sequence(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const expr = try self.expression_initializer();
-    if (self.next_if(.pipearrow)) |_| {
+    if (self.next_if(.pipearrow)) |tok| {
         const right = try self.expression();
 
-        const node = Ast.Sequence {
+        const node = Ast.BinaryExpr {
             .left = expr,
             .right = right,
+            .op = tok,
         };
 
         span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.sequence, span, node);
+        const nodeid = try self.builder.add_node(.binary_expr, span, node);
         return nodeid;
     }
     return expr;
@@ -1432,53 +1449,54 @@ fn expression_initializer(self: *@This()) !AstNodeId {
         var ty: ?AstNodeId = null;
         if (self.next_if(.open_paren)) |_| {
             ty = try self.type_expression();
-            if (!self.expect(.close_paren)) {
+            if (!try self.expect(.close_paren)) {
                 //ERROR: Expected ')'
-                unreachable;
+                return error.ParseError;
             }
         }
-        if (!self.expect(.open_bracket)) {
+        if (!try self.expect(.open_bracket)) {
             //ERROR: Expected '{'
-            unreachable;
+            return error.ParseError;
         }
         var fields: std.ArrayList(Ast.InitializerField) = .empty;
         while (!self.is_next(.close_bracket)) {
             var ident: ?Ast.Ident = null;
             if (self.next_if(.dot)) |_| {
-                ident = try self.expect_ret(.ident);
-                if (ident == null) {
+                const id = try self.expect_ret(.ident);
+                if (id == null) {
                     //ERROR: Expected identifier
-                    unreachable;
+                    return error.ParseError;
                 }
-                if (!self.expect(.eq)) {
+                ident = .{ .span = id.?.span };
+                if (!try self.expect(.eq)) {
                     //ERROR: Expected =
-                    unreachable;
+                    return error.ParseError;
                 }
             }
 
-            const comma = try self.next_if(.comma);
+            const comma = self.next_if(.comma);
             if (comma == null and !self.is_next(.close_bracket)) {
                 //ERROR: Expected }
-                unreachable;
-            }
-            const expr = try self.expression();
-            try fields.append(Ast.InitializerField {
-                .id = ident,
-                .value = expr,
-            });
+                return error.ParseError;
         }
-        _ = try self.expect(.close_bracket);
-
-        const node = Ast.Initializer {
-            .ty = ty,
-            .fields = try fields.toOwnedSlice(self.allocator),
-        };
-
-        span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.initializer, span, node);
-        return nodeid;
+        const expr = try self.expression();
+        try fields.append(self.allocator, Ast.InitializerField {
+            .id = ident,
+            .value = expr,
+        });
     }
-    return try self.expression_primary();
+    _ = try self.expect(.close_bracket);
+
+    const node = Ast.Initializer {
+        .ty = ty,
+        .fields = try fields.toOwnedSlice(self.allocator),
+    };
+
+    span.merge(.init(self.lexer.index, self.file));
+    const nodeid = try self.builder.add_node(.initializer, span, node);
+    return nodeid;
+}
+return try self.expression_primary();
 }
 
 fn expression_primary(self: *@This()) !AstNodeId {
@@ -1486,7 +1504,7 @@ fn expression_primary(self: *@This()) !AstNodeId {
         const expr = try self.expression();
         if (!try self.expect(.close_paren)) {
             //ERROR: Expected ')'
-            unreachable;
+            return error.ParseError;
         }
         return expr;
     }
@@ -1506,7 +1524,7 @@ fn expression_lambda(self: *@This()) !AstNodeId {
 
     if (!try self.expect(.back_slash)) {
         //FATAL: Should never be called without a leading backslash
-        unreachable;
+        return error.FatalError;
     }
     var is_multi = false;
     var is_inline = false;
@@ -1524,7 +1542,7 @@ fn expression_lambda(self: *@This()) !AstNodeId {
             const id = try self.expect_ret(.ident);
             if (id == null) {
                 //ERROR: Expected identifier
-                unreachable;
+                return error.ParseError;
             }
             var gen_expr: ?AstNodeId = null;
             if (self.next_if(.colon)) |_| {
@@ -1539,14 +1557,14 @@ fn expression_lambda(self: *@This()) !AstNodeId {
             const id = try self.expect_ret(.ident);
             if (id == null) {
                 //ERROR: Expected identifier
-                unreachable;
+                return error.ParseError;
             }
 
             var ty: ?AstNodeId = null;
             if (self.next_if(.colon)) |_| {
                 if (is_inline) {
                     //ERROR: cannot mix inline and postfix
-                    unreachable;
+                    return error.ParseError;
                 }
                 is_inline = is_multi;
                 ty = try self.type_expression();
@@ -1566,7 +1584,7 @@ fn expression_lambda(self: *@This()) !AstNodeId {
         const comma = self.next_if(.comma);
         if (comma == null and !self.is_next(.close_paren)) {
             //ERROR: Expected ')'
-            unreachable;
+            return error.ParseError;
         }
         if (self.next_if(.close_paren)) |_| break;
     }
@@ -1579,7 +1597,7 @@ fn expression_lambda(self: *@This()) !AstNodeId {
                     const id = try self.expect_ret(.ident);
                     if (id == null) {
                         //ERROR: Expected identifier
-                        unreachable;
+                        return error.ParseError;
                     }
                     var expr: ?AstNodeId = null;
                     if (self.next_if(.colon)) |_| {
@@ -1600,7 +1618,7 @@ fn expression_lambda(self: *@This()) !AstNodeId {
                 const comma = self.next_if(.comma);
                 if (comma == null and !self.is_next(.close_paren)) {
                     //ERROR: Expected ')'
-                    unreachable;
+                    return error.ParseError;
                 }
             }
             _ = try self.expect(.close_bracket);
@@ -1615,7 +1633,7 @@ fn expression_lambda(self: *@This()) !AstNodeId {
     }
     if (param_tys.items.len != params.items.len) {
         //ERROR: Type list does not match parameter list
-        unreachable;
+        return error.ParseError;
     }
 
     if (self.next_if(.thin_arrow)) |_| {
@@ -1628,7 +1646,7 @@ fn expression_lambda(self: *@This()) !AstNodeId {
 
     if (!try self.expect(.fat_arrow)) {
         //ERROR: Expected => after lambda declaration
-        unreachable;
+        return error.ParseError;
     }
 
     const expr = try self.expression_optional_block();
@@ -1656,12 +1674,25 @@ fn expression_terminal(self: *@This()) !AstNodeId {
 fn expression_path(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     var idents: std.ArrayList(Ast.Ident) = .empty;
-    while (self.next_if(.ident)) |id| {
-        try idents.append(self.allocator, .{ .span = id.span });
+    const first_id = try self.expect_ret(.ident);
+    if (first_id == null) {
+        std.debug.print("ERROR: Expected identifier\n", .{});
+        std.debug.print("DEBUG: {any}\n", .{self.next() catch unreachable});
+        return error.ParseError;
+    }
+    try idents.append(self.allocator, .{ .span = first_id.?.span });
+    while (self.next_if(.colon2)) |_| {
+        const id = try self.expect_ret(.ident);
+        if (id == null) {
+            std.debug.print("ERROR: Expected identifier after ::\n", .{});
+            return error.ParseError;
+        }
+        try idents.append(self.allocator, .{ .span = id.?.span });
+
     }
     if (idents.items.len == 0) {
-        //FATAL: Should never be 0
-        unreachable;
+        std.debug.print("FATAL: Should never be 0\n", .{});
+        return error.FatalError;
     }
     const node = Ast.Path {
         .parts = try idents.toOwnedSlice(self.allocator),
@@ -1675,15 +1706,20 @@ fn expression_path(self: *@This()) !AstNodeId {
 fn expression_literal(self: *@This()) anyerror!AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     if (self.is_next_one_of(.{
-        .integer_literal,
+        .int_literal,
         .string_literal,
         .raw_string_literal, //NOTE: Should be removed from the lexer
         .float_literal,
         .char_literal,
-        .bool_literal,
+        .keyword_true,
+        .keyword_false,
     })) {
+        const tok = self.next() catch unreachable;
         const node = Ast.Terminal {
-            .value = self.next() catch unreachable,
+            .termtype = .{
+                .value = tok,
+            },
+            .span = tok.span,
         };
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.terminal, span, node);
@@ -1694,11 +1730,14 @@ fn expression_literal(self: *@This()) anyerror!AstNodeId {
         const ident = try self.expect_ret(.ident);
         if (ident == null) {
             //ERROR: Expected identifier
-            unreachable;
+            return error.ParseError;
         }
 
         const node = Ast.Terminal {
-            .symbol = .{ .span = ident.?.span },
+            .span = ident.?.span,
+            .termtype = .{
+                .symbol = .{ .span = ident.?.span },
+            }
         };
 
         span.merge(.init(self.lexer.index, self.file));
@@ -1707,7 +1746,7 @@ fn expression_literal(self: *@This()) anyerror!AstNodeId {
     }
 
     //ERROR: Unexpected token
-    unreachable;
+    return error.ParseError;
 }
 
 // ---- END EXPRESSIONS ---- //
@@ -1715,9 +1754,176 @@ fn expression_literal(self: *@This()) anyerror!AstNodeId {
 // ---- START STATEMENTS ---- //
 
 
+//TODO: This should be changed to a precedence based approach instead of dispatch
+fn statement(self: *@This()) anyerror!AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    if (self.is_next_one_of(.{ 
+        .keyword_loop,
+        .keyword_while,
+        .keyword_for,
+    })) {
+        return try self.loop();
+    }
+
+    if (self.is_next_one_of(.{
+        .keyword_let,
+        .keyword_fn,
+        .keyword_type,
+        .keyword_export,
+        .keyword_pub,
+        .keyword_extern,
+    })) {
+        return try self.item();
+    }
+
+    const left = try self.expression();
+
+    if (self.is_next(.semicolon)) {
+        const node = Ast.Terminated {
+            .expr = left,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.terminated, span, node);
+        return nodeid;
+    }
+
+    if (self.is_next_one_of(.{
+        .eq,
+        .pluseq,
+        .minuseq,
+        .stareq,
+        .slasheq,
+        .percenteq,
+        .lt2eq,
+        .gt2eq,
+        .ampeq,
+        .pipeeq,
+        .careteq,
+        .amp2eq,
+        .pipe2eq,
+    })) {
+        const tok = self.next() catch unreachable;
+        const expr = try self.expression();
+        const node = Ast.Assignment {
+            .expr = expr,
+            .lvalue = left,
+            .op = tok,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.assignment, span, node);
+        return nodeid;
+    }
+    return left;
+}
 
 
+fn loop(self: *@This()) !AstNodeId {
+    if (self.is_next(.keyword_while)) {
+        return try self.while_loop();
+    }
 
+    if (self.is_next(.keyword_for)) {
+        return try self.for_loop();
+    }
+    var span: common.Span = .init(self.lexer.index, self.file);
+    if (self.next_if(.keyword_loop)) |_| {
+        const block = try self.loop_block();
+        const node = Ast.Loop {
+            .block = block,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.loop, span, node);
+        return nodeid;
+    }
+    //FATAL: Should not be called without a known loop type
+    return error.FatalError;
+}
 
+fn loop_block(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    if (!try self.expect(.open_bracket)) {
+        //ERROR: Expected {
+        return error.ParseError;
+    }
+    var stmts: std.ArrayList(AstNodeId) = .empty;
+    while (!self.is_next(.close_bracket)) {
+        if (self.is_next_one_of(.{ .keyword_break, .keyword_continue })) {
+            const tok = self.next() catch unreachable;
+            const cont: Ast.LoopControlType = if (tok.tag == .keyword_break) .@"break" else .@"continue";
+            const node = Ast.LoopControl {
+                .control = cont,
+            };
 
+            const nodeid = try self.builder.add_node(.loop_control, span, node);
+            try stmts.append(self.allocator, nodeid);
+        } else {
+            try stmts.append(self.allocator, try self.statement());
+        }
+    }
 
+    if (self.next() catch null == null) {
+        //ERROR: EOF
+        return error.ParseError;
+    }
+
+    const node = Ast.Block {
+        .exprs = try stmts.toOwnedSlice(self.allocator),
+    };
+    span.merge(.init(self.lexer.index, self.file));
+    const nodeid = try self.builder.add_node(.block, span, node);
+    return nodeid;
+
+    }
+
+    fn while_loop(self: *@This()) !AstNodeId {
+        var span: common.Span = .init(self.lexer.index, self.file);
+        if (!try self.expect(.keyword_while)) {
+            //FATAL: Called without a known while loop
+            return error.FatalError;
+        }
+
+        const cond = try self.expression();
+        const block = try self.loop_block();
+
+        const node = Ast.WhileLoop {
+            .block = block,
+            .condition = cond,
+        };
+
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.while_loop, span, node);
+        return nodeid;
+    }
+
+    fn for_loop(self: *@This()) !AstNodeId {
+        var span: common.Span = .init(self.lexer.index, self.file);
+        if (!try self.expect(.keyword_for)) {
+            //FATAL: Called without a known for loop
+            return error.FatalError;
+        }
+
+        const ident = try self.expect_ret(.ident);
+        if (ident == null) {
+            //ERROR: Expected identifier
+            return error.ParseError;
+        }
+
+        if (!try self.expect(.keyword_in)) {
+            //ERROR: Expected 'in'
+            return error.ParseError;
+        }
+
+        const expr = try self.expression();
+
+        const block = try self.loop_block();
+
+        const node = Ast.ForLoop {
+            .expr = expr,
+            .ident = .{ .span = ident.?.span },
+            .block = block
+        };
+
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.for_loop, span, node);
+        return nodeid;
+    }

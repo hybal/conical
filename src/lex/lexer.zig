@@ -42,6 +42,7 @@ pub const Tag = enum {
     pipearrow,          //|>
     pipeeq,             //|=
     pipe2,              //||
+    pipe2eq,            //||=
     hash,               //#
     bang,               // !
     bangeq,             // !=
@@ -49,6 +50,7 @@ pub const Tag = enum {
     amp,                //&
     ampeq,              //&=
     amp2,               //&&
+    amp2eq,             //&&=
     eq,                 //=
     eq2,                //==
     gt,                 //>
@@ -195,7 +197,7 @@ fn is_id_start(char: u8) bool {
 pub const Lexer = struct {
     reader: *std.Io.Reader,
     index: usize, 
-
+    _peeked: ?Token = null,
     file: common.FileId,
 
     pub fn init(reader: *std.Io.Reader, file: common.FileId) Lexer {
@@ -239,7 +241,6 @@ pub const Lexer = struct {
         if (!self.has_next()) return false;
         const bytes = self.reader.peek(2) catch return false;
         if (bytes[0] == bytes[1]) {
-            self.reader.toss(2);
             return true;
         }
         return false;
@@ -278,11 +279,11 @@ pub const Lexer = struct {
     }
     //gets the character 2 after this one
     fn peek2(self: *Lexer) ?u8 {
-        _ = self.reader.peek(2) catch return null;
-        self.reader.toss(1);
-        const out = self.reader.takeByte() catch null;
-        self.index += 2;
-        return out;
+        const arr = self.reader.peekArray(2) catch null;
+        if (arr) |ar| {
+            return ar[1];
+        }
+        return null;
     }
     //parses a line comment (one that starts with //)
     //line comments go until it either encounters a newline character or 
@@ -301,7 +302,7 @@ pub const Lexer = struct {
     //parses a block comment
     //block comments start with /* and end with */ and can be nested
     fn parse_block_comment(self: *Lexer) bool {
-        var depth: usize = 0;
+        var depth: usize = 1;
         while (self.has_next()) {
             const c = self.next();
             if (c == '/' and self.next_if('*') != null) {
@@ -334,32 +335,13 @@ pub const Lexer = struct {
         }
         return true;
     }
-    //this is meant to be used outside of the lexer
-    //it checks if one of the array of Tags matches the next token 
-    //and if so it will consume and return it.
-    //if not it will backtrack and return null
-    pub fn consume_if_eq(self: *Lexer, one_of: []const Tag) ?Token {
-        const save = self.index;
-        const next_tok = self.next_token();
-        for (one_of) |tok| {
-            if (next_tok.tag == tok) {
-                return next_tok;
-            }
-        }
-        self.index = save;
-        return null;
-    }
-
-    //This just checks if the next token matches 'tag', it does not consume it
-    pub fn is_next_token(self: *Lexer, tag: Tag) bool {
-        return self.peek_token().tag == tag;
-    }
     //This returns the next token but does not advance
     pub fn peek_token(self: *Lexer) Token {
-        const saved = self.index;
-        const out = self.next_token();
-        self.index = saved;
-        return out;
+        const saved_index = self.index;
+        const tok = self.next_token();
+        self._peeked = tok;
+        self.index = saved_index;
+        return tok;
     }
 
     fn skip_whitespace(self: *Lexer) void {
@@ -378,6 +360,12 @@ pub const Lexer = struct {
     //This lexer is "lazy" meaning it does not tokenize the whole source
     //but instead relies on whatever is using it to drive it.
     pub fn next_token(self: *Lexer) Token {
+        if (self._peeked) |tok| {
+            self.index = tok.span.end;
+            self._peeked = null;
+            return tok;
+        }
+        self.skip_whitespace();
         var start = self.index;
         var tag: Tag = .eof;
         while (self.has_next()) {
@@ -423,10 +411,10 @@ pub const Lexer = struct {
                 },
                 '+' => tag = if (self.next_if('+')) |_| .plus2 else if (self.next_if('=')) |_| .pluseq else .plus,
                 '?' => tag = if (self.next_if('?')) |_| .question2 else .question,
-                '|' => tag = if (self.next_if('|')) |_| .pipe2 else if (self.next_if('=')) |_| .pipeeq else if (self.next_if('>')) |_| .pipearrow else .pipe,
+                '|' => tag = if (self.next_if('|')) |_| if (self.next_if('=')) |_| .pipe2eq else .pipe2 else if (self.next_if('=')) |_| .pipeeq else if (self.next_if('>')) |_| .pipearrow else .pipe,
                 '.' => tag = if (self.next_if('.')) |_| .dot2 else .dot,
                 ':' => tag = if (self.next_if(':')) |_| .colon2 else .colon,
-                '&' => tag = if (self.next_if('&')) |_| .amp2 else if (self.next_if('=')) |_| .ampeq else .amp,
+                '&' => tag = if (self.next_if('&')) |_| if (self.next_if('=')) |_| .amp2eq else .amp2 else .amp,
                 '=' => tag = if (self.next_if('=')) |_| .eq2 else if (self.next_if('>')) |_| .fat_arrow else .eq,
                 '-' => tag = if (self.next_if('-')) |_| .minus2 else if (self.next_if('>')) |_| .thin_arrow else .minus,
                 '!' => tag = if (self.next_if('=')) |_| .bangeq else if (self.next_if('!')) |_| .bang2 else .bang,
@@ -458,16 +446,11 @@ pub const Lexer = struct {
                 },
                 '\"' => { //parses string literals
                           //TODO: ensure unicode support
-                    var current = self.next();
-                    while (self.has_next() and current != '\"') : (current = self.next()) {
 
-//                        const code_point_length = std.unicode.utf8ByteSequenceLength(current.?) catch @panic("invalid byte");
-//                        if (code_point_length > 1) {
-//                            if (!std.unicode.utf8ValidateSlice(self.buffer[self.index - 1..self.index + code_point_length - 1])) {
-//                                tag = .invalid;
-//                            }
-//                        }
-                        switch (self.peek() orelse 0) {
+                    //Increment by 1 to skip "
+                    var current = self.next();
+                    while (self.has_next() and current != '\"') {
+                        switch (current orelse 0) {
                             '\n', 0x01...0x08, 0x0b...0x1f, 0x7f => {
                                 tag = .invalid;
                                 _ = self.next();
@@ -475,7 +458,7 @@ pub const Lexer = struct {
                             },
                             else => {},
                         }
-                        if (self.next_if('\\')) |_| {
+                        if (current == '\\') {
                             if (!self.parse_escape()) {
                                 tag = .invalid;
                             }
@@ -484,6 +467,7 @@ pub const Lexer = struct {
                             tag = .invalid;
                             break;
                         }
+                        current = self.next();
                     }
                     if (tag != .invalid) {
                         tag = .string_literal;
@@ -516,51 +500,60 @@ pub const Lexer = struct {
                         }
                     }
                     while (self.has_next()) : (_ = self.next()) {
-                        const next_digit = self.peek() orelse 0;
-                        if (next_digit == '_') { //numbers can contain underscores (_) as optional seperators
+                        const n = self.peek() orelse 0;
+                        if (n == '_') { //numbers can contain underscores (_) as optional seperators
                             continue;
                         }
-                        if (next_digit == '.') {
+                        if (n == '.') {
                             if (self.peek2() orelse 0 == '.') {
+                                //..
+                                tag = .dot2;
+                                _ = self.next();
+                                _ = self.next();
                                 break;
                             }
                             if (self.peek2()) |val| {
+                                //1.a is access not float, identifier
                                 if (is_id_start(val)) {
                                     break;
                                 }
                             }
                             if (is_float) {
+                                //Multiple '.' in float literal
                                 break;
                             }
                             is_float = true;
                             continue;
                         }
-                        if (!is_base(next_digit, base)) {
+                        if (!is_base(n, base)) {
                             break;
                         }
                     }
 
-                    if (tag != .invalid) {
+                    if (tag != .invalid and tag != .dot2) {
                         tag = if (is_float) .float_literal else .int_literal;
                     }
                 },
                 '_', 'a'...'z', 'A'...'Z' => {
-                    var str = std.ArrayList(u8).empty;
-                    str.append(std.heap.page_allocator, c) catch unreachable;
-                    defer str.deinit(std.heap.page_allocator);
-                    while (self.has_next()) : (_ = self.next()) {
+                    var id: [256]u8 = undefined;
+                    id[0] = c;
+                    var i: usize = 1;
+                    while (self.has_next()) {
                         const next_char = self.peek() orelse 0;
-                        str.append(std.heap.page_allocator, next_char) catch unreachable;
                         if (!is_id_start(next_char) and next_char != '_' and !is_base(next_char, .b10)) {
                             break;
                         }
+                        if (i < 256) {
+                            id[i] = next_char;
+                            i += 1;
+                        }
+                        _ = self.next();
                     }
-                    const id = str.items;
-                    if (id.len == 1 and id[0] == '_') {
+                    if (i == 1 and id[0] == '_') {
                         tag = .underscore;
                     } else {
-                        if (keywords.get(id)) |val| {
-                            tag = val;
+                        if (i < 255 and keywords.get(id[0..i]) != null) {
+                            tag = keywords.get(id[0..i]).?;
                         } else {
                             tag = .ident;
                         }
@@ -571,7 +564,6 @@ pub const Lexer = struct {
             break;
         }
         //Pre-position the lexer on the next actual token (mostly for span information)
-        self.skip_whitespace();
         return .{ .span = .{ .start = start, .end = self.index, .fileid = self.file}, .tag = tag };
     }
 };

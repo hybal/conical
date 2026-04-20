@@ -17,7 +17,7 @@ pub fn main() !u8 {
     var reader = std.Io.Reader.fixed(buffer);
     var ctx = common.Context.init(std.heap.page_allocator);
     var parser = parse.init(&ctx, &reader, 0, std.heap.page_allocator);
-    try parser.parse();
+    _ = try parser.parse();
     return 0;
 }
 
