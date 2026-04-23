@@ -39,6 +39,7 @@ pub const File = union(enum) {
      _,
 };
 
+
 pub const FileStore = struct {
     store: std.ArrayList(File),
     gpa: std.mem.Allocator,

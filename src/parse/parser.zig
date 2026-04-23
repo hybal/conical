@@ -26,15 +26,15 @@ previous_token: ?lex.Token = null,
 
 
     /// Initialize the parser from an already existing Lexer instance
-    pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
-        return .{
-            .lexer = in,
-            .allocator = gpa,
-            .context = context,
-            .builder = .init(gpa),
-            .file = in.file,
-        };
-    }
+pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
+    return .{
+        .lexer = in,
+        .allocator = gpa,
+        .context = context,
+        .builder = .init(gpa),
+        .file = in.file,
+    };
+}
 
 /// Initialize the parser from source
 pub fn init(context: *common.Context, reader: *std.Io.Reader, file: common.FileId, gpa: std.mem.Allocator) @This() {
@@ -265,7 +265,13 @@ fn let_binding(self: *@This()) !AstNodeId {
     }
     if (!try self.expect(.eq)) {
         //ERROR: Expected '='
-        return error.ParseError;
+        const err = errors.ExpectedTokenError {
+            .expected = .eq,
+            .found = self.peek().?,
+            .span = self.peek().?.span,
+        };
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        _ = errid;
     }
     const expr = try self.expression();
     const semicolon_tok = try self.expect(.semicolon);
@@ -1630,10 +1636,6 @@ fn expression_lambda(self: *@This()) !AstNodeId {
                 try param_tys.append(self.tmp_allocator, try self.type_expression());
             }
         }
-    }
-    if (param_tys.items.len != params.items.len) {
-        //ERROR: Type list does not match parameter list
-        return error.ParseError;
     }
 
     if (self.next_if(.thin_arrow)) |_| {

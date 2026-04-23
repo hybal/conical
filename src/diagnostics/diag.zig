@@ -65,7 +65,9 @@ pub const DiagnosticBuilder = struct {
             ._notes = .empty,
             ._help = null,
             ._suggestions = .empty,
+            ._span = null,
         };
+
     }
 
     pub fn deinit(self: *@This()) void {
@@ -86,10 +88,10 @@ pub const DiagnosticBuilder = struct {
             .severity = self._severity orelse return error.MissingSeverity,
             .message = self._message orelse return error.MissingMessage,
             .span = self._span orelse return error.MissingSpan,
-            .labels = try self._labels.toOwnedSlice(),
+            .labels = try self._labels.toOwnedSlice(self.allocator),
             .help = self._help,
-            .notes = try self._notes.toOwnedSlice(),
-            .suggestions = try self._suggestions.toOwnedSlice(),
+            .notes = try self._notes.toOwnedSlice(self.allocator),
+            .suggestions = try self._suggestions.toOwnedSlice(self.allocator),
         };
     }
 
@@ -139,33 +141,84 @@ pub const ErrorId = usize;
 pub const ErrorStore = struct {
     errors: std.ArrayList(ErrorType),
     gpa: std.mem.Allocator,
-    has_errors: bool,
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
             .errors = .empty,
-            .has_errors = false,
             .gpa = allocator,
         };
     }
     pub fn deinit(self: *@This()) void {
         self.errors.deinit(self.gpa);
     }
-    pub fn push(self: *@This(), severity: Severity, err: ErrorType) !ErrorId { 
-        try self.errors.append(err, self.gpa);
-        if (severity == .Error) {
-            self.has_errors = true;
-        }
+    pub fn push(self: *@This(), err: ErrorType) !ErrorId { 
+        try self.errors.append(self.gpa, err);
         return self.errors.items.len;
     }
+
+    pub fn emit(self: *@This(), context: *common.Context, io: std.Io, writer: *std.Io.Writer) !void {
+        for (self.errors.items) |err| {
+            const diag = try err.to_diagnostic(self.gpa);
+            try self.emit_diag(diag, context, io, writer);
+        }
+    }
+
+
+    fn emit_diag(self: *@This(), diag: Diagnostic, context: *common.Context, io: std.Io, writer: *std.Io.Writer) !void {
+        const file = context.file_store.store.items[diag.span.fileid];
+        var reader = if (file == .buffer)
+            std.Io.Reader.fixed(file.buffer)
+            else
+                try file.file.make_reader(io, self.gpa);
+
+        const file_path = if (file == .file) 
+            file.file.normalize()
+            else "buffer";
+        const loc = try span_to_line_col(diag.span, &reader);
+        const code = diag.code;
+        const msg = diag.message;
+        try common.color.Color.RED.print(writer);
+        try writer.print("Error(E{x})[{s}:{}] {s}\n", .{ code, file_path, loc.line_start, msg });
+        try common.color.Color.RESET.print(writer);
+    }
+
+
+    //For now this only includes line information since the source file is not currently required to be utf-8, 
+    // in the future this should also include columns that respect both utf-8 and tabs
+    const SpanLoc = struct {
+        line_start: usize,
+        line_end: usize,
+    };
+    fn span_to_line_col(span: common.Span, reader: *std.Io.Reader) !SpanLoc {
+        var line_start: usize = 1;
+        var line_end = line_start;
+        // While index < span.start iterate tracking line_start + col_start
+        // While index >= span.start && index < span.end track line_end, col_end
+        var index: usize = 0;
+        while (index < span.end) {
+            const c = reader.takeByte() catch |e| if (e == std.Io.Reader.Error.EndOfStream) null else return e;
+            if (c == null) {
+                break;
+            }
+            if (c.? == '\n') {
+                if (index < span.start) line_start += 1;
+                if (index == span.start) line_end = line_start;
+                if (index > span.start) line_end += 1;
+            }
+            index += 1;
+        }
+        return .{ .line_start = line_start, .line_end = line_end };
+    }
+
+    
 };
 
 
 pub const ErrorType = struct {
     ptr: *anyopaque,
-    vtable: *VTable,
+    vtable: VTable,
 
     const VTable = struct {
-        to_diagnostic: *fn ( self: *anyopaque, allocator: std.mem.Allocator) anyerror!Diagnostic,
+        to_diagnostic: *const fn ( self: *anyopaque, allocator: std.mem.Allocator) anyerror!Diagnostic,
     };
 
     pub fn to_diagnostic(self: @This(), allocator: std.mem.Allocator) anyerror!Diagnostic { 
@@ -182,6 +235,4 @@ pub const TYPE_INFER_ERROR_RANGE = .{ 0x0300, 0x0699 };
 pub const GENERAL_SEMA_ERROR_RANGE = .{ 0x0700, 0x0799 };
 
 
-pub const ErrorCode = enum(u16) {
-    
-};
+pub const ErrorCode = u16;

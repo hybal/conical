@@ -2,19 +2,22 @@ const std = @import("std");
 const diag = @import("diagnostics");
 const common = @import("common");
 const lex = @import("lex");
+const ast = @import("Ast.zig");
+const fmt = std.fmt.allocPrint;
 
 const ParseErrorKind = enum(u16) {
     unexpected_token = diag.PARSE_ERROR_RANGE.@"0",
-    unmatched_delimeter,
+    expected_declaration,
+    unexpected_declaration,
     expected_expression,
-    expected_block,
-    expected_token,
     unexpected_expression,
-    unexpected_statement,
-    invalid_expression,
-    malformed_path,
-    malformed_initializer,
-    malformed_argument_list,
+    expected_token,
+    malformed_expression,
+    malformed_declaration,
+    malformed_statement,
+    unmatched_delimeter,
+    eof,
+
 };
 
 comptime {
@@ -40,181 +43,90 @@ pub const UnexpectedTokenError = struct {
         return try builder.build();
     }
 
-    pub fn get_error_type(self: *@This()) diag.ErrorType {
+    pub fn get_error_type(self: *const @This()) diag.ErrorType {
         return diag.ErrorType {
-            .ptr = @ptrCast(self),
+            .ptr = @constCast(self),
             .vtable = &self.to_diagnostic,
         };
     }
 };
 
+pub const ExpectedDeclarationError = struct {
+    ty: enum {
+        expected_module,
+    },
+    span: common.Span,
 
+    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
+        var builder = diag.DiagnosticBuilder.init(allocator);
 
-pub const ExpectedExpressionError = struct {
+        const msg = switch (self.ty) {
+            .expected_module => "Expected module declaration",
+        };
+
+        try builder
+            .code(@intFromEnum(ParseErrorKind.expected_declaration))
+            .severity(.Error)
+            .span(self.span)
+            .message(msg);
+        return try builder.build();
+    }
+
+    pub fn get_error_type(self: *const @This()) diag.ErrorType {
+        return diag.ErrorType {
+            .ptr = @constCast(self),
+            .vtable = &self.to_diagnostic,
+        };
+    }
+};
+
+pub const UnexpectedDeclarationError = struct {
+    span: common.Span,
+    ty: ast.AstKind,
+
+    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
+        var builder = diag.DiagnosticBuilder.init(allocator);
+        const msg = try std.fmt.allocPrint(allocator, "Unexpected declaration '{s}'", .{ @tagName(self.ty) });
+        try builder
+            .code(@intFromEnum(ParseErrorKind.unexpected_declaration))
+            .severity(.Error)
+            .span(self.span)
+            .message(msg);
+        return try builder.build();
+    }
+    pub fn get_error_type(self: *const @This()) diag.ErrorType {
+        return diag.ErrorType {
+            .ptr = @constCast(self),
+            .vtable = &self.to_diagnostic,
+        };
+    }
+};
+pub fn to_diagnostic(_self: *anyopaque, allocator: std.mem.Allocator) !diag.Diagnostic {
+        const self: *ExpectedTokenError = @ptrCast(@alignCast(_self));
+        var builder = diag.DiagnosticBuilder.init(allocator);
+        const msg = try fmt(allocator, "Expected token '{s}', found '{s}'",
+            .{
+                @tagName(self.expected),
+                @tagName(self.found.tag)
+            });
+        std.debug.print("DEBUG: {}\n", .{self.span.fileid});
+        _ = builder
+            .code(@intFromEnum(ParseErrorKind.expected_token))
+            .severity(.Error)
+            .span(self.span)
+            .message(msg);
+        return try builder.build();
+    }
+
+pub const ExpectedTokenError = struct {
+    span: common.Span,
+    expected: lex.Tag,
     found: lex.Token,
 
-    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
-        var builder = diag.DiagnosticBuilder.init(allocator);
-        try builder
-            .code(@intFromEnum(ParseErrorKind.expected_expression))
-            .severity(.Error)
-            .span(self.found.span)
-            .message("Expected expression")
-            .add_label(diag.Label {
-                .message = "Found this",
-                .span = self.found.span,
-                .style = .primary
-            });
-        return try builder.build();
-    }
-
-    pub fn get_error_type(self: *@This()) diag.ErrorType {
+    pub fn get_error_type(self: *const @This(), allocator: std.mem.Allocator) !diag.ErrorType {
         return diag.ErrorType {
-            .ptr = @ptrCast(self),
-            .vtable = &self.to_diagnostic,
+            .ptr = try common.createWith(allocator, self.*),
+            .vtable = .{ .to_diagnostic = &to_diagnostic},
         };
     }
-
-};
-
-pub const UnmatchedDelimeterError = struct {
-    start_delim: lex.Token,
-    expected_delim: lex.Tag,
-    span: common.Span,
-
-    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
-        var builder = diag.DiagnosticBuilder.init(allocator);
-        try builder
-            .code(@intFromEnum(ParseErrorKind.unmatched_delimeter))
-            .severity(.Error)
-            .span(self.span)
-            .message("Unmatched delimeter")
-            .add_label(diag.Label {
-                .message = "Delimeter started here",
-                .span = self.start_delim.span,
-                .style = .primary
-            });
-        return try builder.build();
-    }
-    pub fn get_error_type(self: *@This()) diag.ErrorType {
-        return diag.ErrorType {
-            .ptr = @ptrCast(self),
-            .vtable = &self.to_diagnostic,
-        };
-    }
-
-};
-
-pub const MalformedPathError = struct {
-    kind: enum {
-        trailing,
-        consecutive,
-        empty,
-        single_colon,
-    },
-    span: common.Span,
-    malformed_span: common.Span,
-
-    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
-        var builder = diag.DiagnosticBuilder.init(allocator);
-        const label_message = switch(self.kind) {
-            .trailing => "Trailing '::'",
-            .consecutive => "Multiple consecutive '::'",
-            .empty => "Single '::'",
-            .single_colon => "Expected '::'",
-        };
-
-        const note_message = switch(self.kind) {
-            .trailing => "A path cannot end with a '::'",
-            .consecutive => "Identifiers must appear between '::'",
-            .empty => "A path must start with an identifier",
-            .single_colon => "A path can only contain '::' and identifiers",
-        };
-    
-        try builder
-            .code(@intFromEnum(ParseErrorKind.malformed_path))
-            .severity(.Error)
-            .span(self.span)
-            .message("Malformed path literal")
-            .add_label(label_message, self.malformed_span)
-            .add_note(note_message);
-        return try builder.build();
-
-    }
-    pub fn get_error_type(self: *@This()) diag.ErrorType {
-        return diag.ErrorType {
-            .ptr = @ptrCast(self),
-            .vtable = &self.to_diagnostic,
-        };
-    }
-
-};
-
-pub const MalformedInitializerError = struct {
-    kind: enum {
-        duplicate_field,
-        missing_comma,
-        missing_bracket,
-        missing_ident,
-        missing_colon,
-    },
-    span: common.Span,
-    previous_field: ?common.Span,
-
-    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
-        _ = self;
-        _ = allocator;
-        @compileError("TODO: this function has not been implemented yet");
-    }
-    pub fn get_error_type(self: *@This()) diag.ErrorType {
-        return diag.ErrorType {
-            .ptr = @ptrCast(self),
-            .vtable = &self.to_diagnostic,
-        };
-    }
-
-};
-
-//NOTE: This may be removed in favor of expected_token
-pub const MalformedParamListError = struct {
-    kind: enum {
-        missing_comma,
-    },
-    span: common.Span,
-    param_list_span: common.Span,
-
-    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
-        _ = self;
-        _ = allocator;
-        @compileError("TODO: this function has not been implemented yet");
-    }
-
-    pub fn get_error_type(self: *@This()) diag.ErrorType {
-        return diag.ErrorType {
-            .ptr = @ptrCast(self),
-            .vtable = &self.to_diagnostic,
-        };
-    }
-};
-
-pub const ExpectedModuleError = struct {
-    span: common.Span,
-
-    pub fn to_diagnostic(self: *@This(), allocator: std.mem.Allocator) !diag.Diagnostic {
-        var builder = diag.DiagnosticBuilder.init(allocator);
-        try builder
-            .code(@intFromEnum(ParseErrorKind.expected_module))
-            .severity(.Error)
-            .span(self.span)
-            .message("Expected a module declaration");
-        return try builder.build();
-    }
-
-    pub fn get_error_type(self: *@This()) diag.ErrorType {
-        return diag.ErrorType {
-            .ptr = @ptrCast(self),
-            .vtable = &self.to_diagnostic,
-        };
-    }
-
 };

@@ -1,5 +1,6 @@
 const std = @import("std");
 const common = @import("common");
+const iter = common.iter;
 
 
 
@@ -174,7 +175,7 @@ const Base = enum {
 
 //Returns whether or not 'char' is a certain base (one of b2, b8, b10, b16, or b64)
 //this is used when parsing integer literals
-fn is_base(char: u8, base: Base) bool {
+fn is_base(char: u21, base: Base) bool {
     return switch (base) {
         .b2 => char == '0' or char == '1',
         .b8 => char >= '0' and char <= '7',
@@ -185,74 +186,72 @@ fn is_base(char: u8, base: Base) bool {
 }
 
 // Check if 'char' is a valid starting character for an identifier
-fn is_id_start(char: u8) bool {
+fn is_id_start(char: u21) bool {
     return switch (char) {
         'a'...'z', 'A'...'Z', '_' => true,
         else => false,
     };
 }
 
+fn is_hex(char: u21) bool {
+    return switch (char) {
+        '0'...'9', 'A'...'F', 'a'...'f' => true,
+        else => false,
+    };
+}
 
 
 pub const Lexer = struct {
-    reader: *std.Io.Reader,
+    source: []const u8,
+    iterator: iter.Iterator,
     index: usize, 
     _peeked: ?Token = null,
     file: common.FileId,
 
-    pub fn init(reader: *std.Io.Reader, file: common.FileId) Lexer {
-        var self = @This() {
-            .reader = reader,
-            .index = 0,
+    pub fn init(source: []const u8, file: common.FileId) iter.UnicodeError!Lexer {
+        const stripped_source = strip_bom(source);
+        const self = @This() {
+            .source = stripped_source,
+            .iterator = try .init(stripped_source),
+            .index = if (stripped_source.len < source.len) 3 else 0,
             .file = file,
         };
-        self.strip_bom();
         return self;
 
     }
-    //The current state of the lexer, it is mostly used for parsing variable-width tokens such as literals and comments
-    const State = enum { 
-        start,
-        end,
-        escape_char,
-        string_literal,
-        raw_string_literal,
-        char_literal,
-        number_literal,
-        line_comment,
-        block_comment, 
-        ident 
-    };
 
 
     // Strip any preceeding byte-order-marks (BOM)
-    fn strip_bom(self: *@This()) void {
-        const bytes = &.{1,2,3};//self.reader.peak(3) catch return;
+    fn strip_bom(source: []const u8) []const u8 {
+        const bytes = source[0..3];
         if (bytes[0] == 0xEF 
             and bytes[1] == 0xBB 
             and bytes[2] == 0xBF) {
-            self.reader.toss(3);
-            self.index += 3;
+            return source[3..];
         }
+        return source;
 
     }
     //checks if the next character and the one after are the same
     fn is_double(self: *Lexer) bool {
-        if (!self.has_next()) return false;
-        const bytes = self.reader.peek(2) catch return false;
-        if (bytes[0] == bytes[1]) {
+        self.iterator.save();
+        defer self.iterator.restore();
+        const a = self.iterator.next();
+        const b = self.iterator.next();
+        if (a == null or b == null) return false;
+        if (a == b) {
             return true;
         }
         return false;
     }
 
     //checks if the next character matches next_char
-    fn is_next(self: *Lexer, next_char: u8) bool {
+    fn is_next(self: *Lexer, next_char: u21) bool {
         if (!self.has_next()) return false;
         return self.peek() orelse 0 == next_char;
     }
     //checks if the next character matches and if so advances the lexer
-    fn next_if(self: *Lexer, next_char: u8) ?u8 {
+    fn next_if(self: *Lexer, next_char: u21) ?u21 {
         if (self.peek() orelse 0 == next_char) {
             return self.next();
         }
@@ -261,29 +260,31 @@ pub const Lexer = struct {
     //checks if we have reached the end of the source
     //in the future it might be wise to include checks for null characters here as well
     pub fn has_next(self: *Lexer) bool {
-        _ = self.reader.peek(1) catch return false;
-        return true;
+        return self.iterator.has_next();
     }
 
     //gets the next character and advances
-    fn next(self: *Lexer) ?u8 {
+    fn next(self: *Lexer) ?u21 {
         if (!self.has_next()) return null;
-        const out = self.reader.takeByte() catch null;
-        self.index += 1;
+        const len = self.iterator.ncLength();
+        const out = self.iterator.next();
+        self.index += len;
         return out;
     }
     //gets the next character but does not advance
-    fn peek(self: *Lexer) ?u8 {
+    fn peek(self: *Lexer) ?u21 {
         if (!self.has_next()) return null;
-        return self.reader.peekByte() catch null;
+        return self.iterator.peek();
     }
     //gets the character 2 after this one
-    fn peek2(self: *Lexer) ?u8 {
-        const arr = self.reader.peekArray(2) catch null;
-        if (arr) |ar| {
-            return ar[1];
-        }
-        return null;
+    fn peek2(self: *Lexer) ?u21 {
+        const saved_index = self.index;
+        defer self.index = saved_index;
+        self.iterator.save();
+        defer self.iterator.restore();
+        _ = self.next();
+
+        return self.peek();
     }
     //parses a line comment (one that starts with //)
     //line comments go until it either encounters a newline character or 
@@ -304,7 +305,7 @@ pub const Lexer = struct {
     fn parse_block_comment(self: *Lexer) bool {
         var depth: usize = 1;
         while (self.has_next()) {
-            const c = self.next();
+            const c = self.next() orelse 0;
             if (c == '/' and self.next_if('*') != null) {
                 depth += 1;
             } else if (c == '*' and depth > 0 and self.next_if('/') != null) {
@@ -329,7 +330,7 @@ pub const Lexer = struct {
             else => return false,
         }
         while (size > 0) : (size -= 1) {
-            if (!self.has_next() or !std.ascii.isHex(self.next() orelse 0)) {
+            if (!self.has_next() or !is_hex(self.next() orelse 0)) {
                 return false;
             }
         }
@@ -361,26 +362,26 @@ pub const Lexer = struct {
     //but instead relies on whatever is using it to drive it.
     pub fn next_token(self: *Lexer) Token {
         if (self._peeked) |tok| {
-            self.index = tok.span.end;
             self._peeked = null;
             return tok;
         }
+        var tag: Tag = .eof;
         self.skip_whitespace();
         var start = self.index;
-        var tag: Tag = .eof;
         while (self.has_next()) {
+            self.skip_whitespace();
+            start = self.index;
             const c = self.next() orelse 0;
             switch (c) {
-                '\n', ' ', 0x01...0x09, 0x0b...0x1f, 0x7f => { //skip whitespace
-                    start = self.index;
-                    continue;
-                },
                 '/' => {
                     if (self.next_if('/')) |_| {
                         self.parse_line_comment();
                         continue;
                     } else if (self.next_if('*') != null) {
-                        if (!self.parse_block_comment()) tag = .invalid;
+                        if (!self.parse_block_comment()) {
+                            std.debug.print("DEBUG Z\n", .{});
+                            tag = .invalid;
+                        }
                         continue;
                     } else {
                         tag = .slash;
@@ -425,6 +426,7 @@ pub const Lexer = struct {
                           //TODO: add unicode support
                     if (self.next_if('\\')) |_| {
                         if (!self.parse_escape() or !self.is_next('\'')) {
+                            std.debug.print("DEBUG A\n", .{});
                             tag = .invalid;
                             break;
                         }
@@ -452,6 +454,7 @@ pub const Lexer = struct {
                     while (self.has_next() and current != '\"') {
                         switch (current orelse 0) {
                             '\n', 0x01...0x08, 0x0b...0x1f, 0x7f => {
+                                std.debug.print("DEBUG B\n", .{});
                                 tag = .invalid;
                                 _ = self.next();
                                 break;
@@ -460,11 +463,13 @@ pub const Lexer = struct {
                         }
                         if (current == '\\') {
                             if (!self.parse_escape()) {
+                                std.debug.print("DEBUG C\n", .{});
                                 tag = .invalid;
                             }
                         }
                         if (!self.has_next()) {
                             tag = .invalid;
+                            std.debug.print("DEBUG D\n", .{});
                             break;
                         }
                         current = self.next();
@@ -476,6 +481,7 @@ pub const Lexer = struct {
                 '`' => { //parses literal string literals, which can span multiple lines but will treat escape sequences literally
                     while (self.has_next() and !self.is_next('`')) : (_ = self.next()) {
                         if (!self.has_next()) {
+                            std.debug.print("DEBUG E\n", .{});
                             tag = .invalid;
                             break;
                         }
@@ -500,70 +506,58 @@ pub const Lexer = struct {
                         }
                     }
                     while (self.has_next()) : (_ = self.next()) {
-                        const n = self.peek() orelse 0;
-                        if (n == '_') { //numbers can contain underscores (_) as optional seperators
+                        const next_digit = self.peek() orelse 0;
+                        if (next_digit == '_') { //numbers can contain underscores (_) as optional seperators
                             continue;
                         }
-                        if (n == '.') {
+                        if (next_digit == '.') {
                             if (self.peek2() orelse 0 == '.') {
-                                //..
-                                tag = .dot2;
-                                _ = self.next();
-                                _ = self.next();
                                 break;
                             }
                             if (self.peek2()) |val| {
-                                //1.a is access not float, identifier
                                 if (is_id_start(val)) {
                                     break;
                                 }
                             }
                             if (is_float) {
-                                //Multiple '.' in float literal
                                 break;
                             }
                             is_float = true;
                             continue;
                         }
-                        if (!is_base(n, base)) {
+                        if (!is_base(next_digit, base)) {
                             break;
                         }
                     }
-
-                    if (tag != .invalid and tag != .dot2) {
+                    if (tag != .invalid) {
                         tag = if (is_float) .float_literal else .int_literal;
                     }
                 },
                 '_', 'a'...'z', 'A'...'Z' => {
-                    var id: [256]u8 = undefined;
-                    id[0] = c;
-                    var i: usize = 1;
                     while (self.has_next()) {
                         const next_char = self.peek() orelse 0;
                         if (!is_id_start(next_char) and next_char != '_' and !is_base(next_char, .b10)) {
                             break;
                         }
-                        if (i < 256) {
-                            id[i] = next_char;
-                            i += 1;
-                        }
                         _ = self.next();
                     }
-                    if (i == 1 and id[0] == '_') {
-                        tag = .underscore;
+                    const id = self.source[start..self.index];
+                    if (keywords.get(id)) |val| {
+                        tag = val;
                     } else {
-                        if (i < 255 and keywords.get(id[0..i]) != null) {
-                            tag = keywords.get(id[0..i]).?;
-                        } else {
-                            tag = .ident;
-                        }
+                        tag = .ident;
+                        if (id.len == 1 and id[0] == '_') {
+                            tag = .underscore;
+                        } 
                     }
                 },
-                else => tag = .invalid,
+                else => {
+                    std.debug.print("DEBUG F: {}\n", .{c});
+                    tag = .invalid;
+                },
             }
             break;
         }
-        //Pre-position the lexer on the next actual token (mostly for span information)
         return .{ .span = .{ .start = start, .end = self.index, .fileid = self.file}, .tag = tag };
     }
 };

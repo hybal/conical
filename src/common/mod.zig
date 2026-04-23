@@ -2,6 +2,8 @@ const _common = @import("./common.zig");
 const _span = @import("./span.zig");
 const _path = @import("./path.zig");
 const _either = @import("./either.zig");
+const _color = @import("./colors.zig");
+const _iter = @import("./iter.zig");
 
 
 pub const DefId = _common.DefId;
@@ -10,6 +12,8 @@ pub const Ident = _common.Ident;
 pub const FileId = _span.FileId;
 pub const Span = _span.Span;
 pub const Context = _common.Context;
+
+pub const createWith = _common.createWith;
 
 pub const path = struct {
    pub const Path = _path.Path;
@@ -22,3 +26,7 @@ pub const span = struct {
 };
 
 pub const Either = _either.Either;
+
+pub const color = _color;
+
+pub const iter = _iter;

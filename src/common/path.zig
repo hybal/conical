@@ -18,7 +18,13 @@ pub const Path = struct {
         };
     }
 
-    pub fn normalize(self: *@This()) []const u8 {
+    pub fn normalize(self: *const @This()) []const u8 {
         return self.normalized;
+    }
+
+    pub fn make_reader(self: *const @This(), io: std.Io, allocator: std.mem.Allocator) !std.Io.Reader {
+        const fl = try std.Io.Dir.cwd().openFile(io, self.normalized, .{});
+        const reader_buffer = try allocator.alloc(u8, 4096);
+        return fl.reader(io, reader_buffer).interface;
     }
 };

@@ -7,12 +7,12 @@ const expectEqual = std.testing.expectEqual;
 const allocator = std.testing.allocator_instance.allocator();
 
 test "lex/tokens" {
-    const buffer = \\ 
+    const buffer = \\
         \\ + ==    1 1. 1.0 -2 0xFF 0b1010 0o1230 let ident _ident2 _ "string" 'c' 'abc "\\n\"" 
         \\ " Δx "
         \\ //Single line comment
         \\ /* muliline comment */
-        \\
+        \\ < << <= <<=
     ;
 
     var ctx: common.Context = common.Context {
@@ -21,17 +21,14 @@ test "lex/tokens" {
     };
     defer ctx.deinit();
 
-    var reader = std.Io.Reader.fixed(buffer);
-
     const fileid = try ctx.file_store.put(.{ .buffer = buffer });
     
-    var lexer = lex.Lexer.init(&reader, fileid);
+    var lexer = try lex.Lexer.init(buffer, fileid);
     try expectEqual(.plus,           lexer.next_token().tag);
     try expectEqual(.eq2,            lexer.next_token().tag);
     try expectEqual(.int_literal,    lexer.next_token().tag);
     try expectEqual(.float_literal,  lexer.next_token().tag);
     try expectEqual(.float_literal,  lexer.next_token().tag);
-    //FIXME: The minus sign should be merged with the int literal
     try expectEqual(.minus,          lexer.next_token().tag);
     try expectEqual(.int_literal,    lexer.next_token().tag);
     try expectEqual(.int_literal,    lexer.next_token().tag);
@@ -47,6 +44,11 @@ test "lex/tokens" {
     try expectEqual(.ident,          lexer.next_token().tag);
     try expectEqual(.string_literal, lexer.next_token().tag);
     try expectEqual(.string_literal, lexer.next_token().tag); 
+    try expectEqual(.lt,             lexer.next_token().tag); 
+    try expectEqual(.lt2,            lexer.next_token().tag); 
+    try expectEqual(.lteq,           lexer.next_token().tag); 
+    try expectEqual(.lt2eq,          lexer.next_token().tag); 
+    
     try expectEqual(.eof,            lexer.next_token().tag);
 
     //TODO: add negative tests
@@ -70,11 +72,10 @@ test "lex/spans" {
     };
     defer ctx.deinit();
 
-    var reader = std.Io.Reader.fixed(buffer);
 
     const fileid = try ctx.file_store.put(.{ .buffer = buffer });
 
-    var lexer = lex.Lexer.init(&reader, fileid);
+    var lexer = try lex.Lexer.init(buffer, fileid);
 
     try expectEqual(span(1, 3, fileid),   lexer.next_token().span);
     try expectEqual(span(4, 8, fileid),   lexer.next_token().span);
