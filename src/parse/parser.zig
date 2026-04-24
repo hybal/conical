@@ -21,7 +21,8 @@ context: *common.Context,
 has_module: bool = false,
 builder: Ast.AstBuilder,
 file: common.FileId,
-previous_token: ?lex.Token = null,
+saved_token: ?lex.Token = null,
+previous_token: lex.Token = undefined,
 
 
 
@@ -37,9 +38,9 @@ pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.All
 }
 
 /// Initialize the parser from source
-pub fn init(context: *common.Context, reader: *std.Io.Reader, file: common.FileId, gpa: std.mem.Allocator) @This() {
+pub fn init(context: *common.Context, buffer: []const u8, file: common.FileId, gpa: std.mem.Allocator) !@This() {
     return .{
-        .lexer = lex.Lexer.init(reader, file),
+        .lexer = try lex.Lexer.init(buffer, file),
         .allocator = gpa,
         .context = context,
         .builder= .init(gpa),
@@ -89,26 +90,29 @@ fn next_if(self: *@This(), tag: lex.Tag) ?lex.Token {
 }
 
 fn next(self: *@This()) !lex.Token {
-    if (self.previous_token) |prev| {
-        self.previous_token = null;
+    if (self.saved_token) |prev| {
+        self.saved_token = null;
+        self.previous_token = prev;
         return prev;
     }
     const out = self.lexer.next_token();
     if (out.tag == .eof) {
         return error.EOF;
     }
+    self.previous_token = out;
     return out;
 }
 
 fn restore(self: *@This(), tok: lex.Token) void {
-    self.previous_token = tok;
+    self.saved_token = tok;
+    self.lexer.index = tok.span.start;
 }
 
 fn peek(self: *@This()) ?lex.Token {
-    const next_tok = self.lexer.peek_token();
-    if (next_tok.tag == .eof) {
-        return null;
+    if (self.saved_token) |prev| {
+        return prev;
     }
+    const next_tok = self.lexer.peek_token();
     return next_tok;
 }
 
@@ -141,17 +145,22 @@ fn program(self: *@This()) anyerror!Ast.Ast {
 fn module_declaration(self: *@This()) !Ast.ModuleDecl {
     var span: common.Span = .init(self.lexer.index, self.file);
     if (!(try self.expect(.keyword_mod))) {
-        //ERROR: expected module declaration
+        const err = errors.ExpectedDeclarationError {
+            .span = span,
+            .ty = .expected_module,
+        };
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        _ = errid;
         return error.ParseError;
     }
     const path = try self.expression_path();
-    if (self.builder.is_poison(path)) {
-        //ERROR: malformed path in module declaration
-        return error.ParseError;
-    }
     if(!try self.expect(.semicolon)) {
-        //ERROR: Expected semicolon
-        return error.ParseError;
+        const err = errors.ExpectedTokenError {
+            .expected = .semicolon,
+            .span = .init(self.builder.get_span(path).end-1, self.file),
+        };
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        _ = errid;
     }
     span.merge(.init(self.lexer.index, self.file));
     return .{
@@ -174,7 +183,9 @@ fn item(self: *@This()) !AstNodeId {
         .keyword_fn => .{ .function, try self.function_declaration()},
         .keyword_let => .{.binding, try self.let_binding()},
         .keyword_type => .{.@"type", try self.type_declaration()},
-        else => unreachable,
+        else => {
+            unreachable;
+        },
     };
 
     if (link) |l| span.merge(l.span);
@@ -249,26 +260,26 @@ fn let_binding(self: *@This()) !AstNodeId {
         //FATAL: This should never be null, there is a problem in the compiler
         return error.FatalError;
     }
-
+    span.merge(let_keyword.?.span);
     const modifier = try self.binding_modifier();
 
     const ident = try self.expect_ret(.ident);
-
     if (ident == null) {
         //ERROR: Expected identifier before '='
         return error.ParseError;
     }
+    span.merge(ident.?.span);
     var typeexpr: ?AstNodeId = null;
     if (self.next_if(.colon)) |tok| {
         span.merge(tok.span);
         typeexpr = try self.type_expression();
+        span.merge(self.builder.get_span(typeexpr.?));
     }
     if (!try self.expect(.eq)) {
         //ERROR: Expected '='
         const err = errors.ExpectedTokenError {
             .expected = .eq,
-            .found = self.peek().?,
-            .span = self.peek().?.span,
+            .span = .init(self.previous_token.span.end, self.file),
         };
         const errid = try self.context.session.push(try err.get_error_type(self.allocator));
         _ = errid;
@@ -1679,7 +1690,6 @@ fn expression_path(self: *@This()) !AstNodeId {
     const first_id = try self.expect_ret(.ident);
     if (first_id == null) {
         std.debug.print("ERROR: Expected identifier\n", .{});
-        std.debug.print("DEBUG: {any}\n", .{self.next() catch unreachable});
         return error.ParseError;
     }
     try idents.append(self.allocator, .{ .span = first_id.?.span });

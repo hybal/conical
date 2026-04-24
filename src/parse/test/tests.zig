@@ -9,14 +9,13 @@ const format = @import("../serialize_json.zig");
 test "parser" {
     const code = \\ mod a;
                  \\ fn main() {
-                 \\     let a = 1;
+                 \\     let a  1;
                  \\ }
     ;
 
     var ctx = common.Context.init(std.heap.page_allocator);
     const file = try ctx.file_store.put(.{ .buffer = code });
-    var reader = std.Io.Reader.fixed(code);
-    var parser = parse.init(&ctx, &reader, file, std.heap.page_allocator);
+    var parser = try parse.init(&ctx, code, file, std.heap.page_allocator);
     const ast = try parser.parse();
     _ = ast;
     //defer ast.deinit(std.heap.page_allocator);

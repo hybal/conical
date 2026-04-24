@@ -13,6 +13,10 @@ test "lex/tokens" {
         \\ //Single line comment
         \\ /* muliline comment */
         \\ < << <= <<=
+        \\ mod a;
+        \\ fn main() {
+        \\  let a = 1;
+        \\ }
     ;
 
     var ctx: common.Context = common.Context {
@@ -48,7 +52,21 @@ test "lex/tokens" {
     try expectEqual(.lt2,            lexer.next_token().tag); 
     try expectEqual(.lteq,           lexer.next_token().tag); 
     try expectEqual(.lt2eq,          lexer.next_token().tag); 
-    
+    try expectEqual(.keyword_mod,    lexer.next_token().tag);
+    try expectEqual(.ident,          lexer.next_token().tag);
+    try expectEqual(.semicolon,      lexer.next_token().tag);
+    try expectEqual(.keyword_fn,     lexer.next_token().tag);
+    try expectEqual(.ident,          lexer.next_token().tag);
+    try expectEqual(.open_paren,     lexer.next_token().tag);
+    try expectEqual(.close_paren,    lexer.next_token().tag);
+    try expectEqual(.open_bracket,   lexer.next_token().tag);
+    try expectEqual(.keyword_let,    lexer.next_token().tag);
+    try expectEqual(.ident,          lexer.next_token().tag);
+    try expectEqual(.eq,             lexer.next_token().tag);
+    try expectEqual(.int_literal,    lexer.next_token().tag);
+    try expectEqual(.semicolon,      lexer.next_token().tag);
+    try expectEqual(.close_bracket,  lexer.next_token().tag);
+
     try expectEqual(.eof,            lexer.next_token().tag);
 
     //TODO: add negative tests

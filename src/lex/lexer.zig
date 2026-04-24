@@ -15,7 +15,7 @@ pub const Tag = enum {
     raw_string_literal, //`...`
     char_literal,       //'.'
     ident,              // [a-zA-Z_] [a-zA-Z_0-9]*
-    //Symbols
+                        //Symbols
     underscore,         //_
     plus,               //+
     pluseq,             //+=
@@ -75,7 +75,7 @@ pub const Tag = enum {
     colon,              //:
     colon2,             //::
     single_quote,       //'
-    //keywords
+                        //keywords
     keyword_if,         //KEYWORD_IF
     keyword_else,       //KEYWORD_ELSE
     keyword_while,      //KEYWORD_WHILE
@@ -114,6 +114,119 @@ pub const Tag = enum {
     keyword_pure,       //KEYWORD_PURE
     keyword_true,       //KEYWORD_TRUE
     keyword_false,      //KEYWORD_FALSE
+
+    pub fn to_string(self: *const @This()) []const u8 {
+        return switch (self.*) {
+            .invalid            => "<INVALID>",
+            .eof                => "<EOF>",
+            .int_literal        => "integer literal",
+            .float_literal      => "float literal",
+            .string_literal     => "string literal",
+            .raw_string_literal => "raw string literal",
+            .char_literal       => "character literal",
+            .ident              => "identifier",
+            .underscore         => "_",
+            .plus               => "+",
+            .pluseq             => "+=",
+            .plus2              => "++",
+            .minus              => "-",
+            .minuseq            => "-=",
+            .minus2             => "--",
+            .slash              => "/",
+            .slasheq            => "/=",
+            .back_slash         => "\\",
+            .star               => "*",
+            .stareq             => "*=",
+            .caret              => "^",
+            .careteq            => "^=",
+            .tilde              => "~",
+            .percent            => "%",
+            .percenteq          => "%=",
+            .at                 => "@",
+            .dollar             => "$",
+            .semicolon          => ";",
+            .comma              => ",",
+            .question           => "?",
+            .question2          => "??",
+            .pipe               => "|",
+            .pipearrow          => "|>",
+            .pipeeq             => "|=",
+            .pipe2              => "||",
+            .pipe2eq            => "||=",
+            .hash               => "#",
+            .bang               => "!",
+            .bangeq             => "!=",
+            .bang2              => "!!",
+            .amp                => "&",
+            .ampeq              => "&=",
+            .amp2               => "&&",
+            .amp2eq             => "&&=",
+            .eq                 => "=",
+            .eq2                => "==",
+            .gt                 => ">",
+            .lt                 => "<",
+            .lteq               => "<=",
+            .gteq               => ">=",
+            .lt2                => "<<",
+            .lt2eq              => "<<=",
+            .gt2                => ">>",
+            .gt2eq              => ">>=",
+            .open_bracket       => "{",
+            .close_bracket      => "}",
+            .open_paren         => "(",
+            .close_paren        => ")",
+            .open_square        => "[",
+            .close_square       => "]",
+            .thin_arrow         => "->",
+            .fat_arrow          => "=>",
+            .dot                => ".",
+            .dot2               => "..",
+            .colon              => ":",
+            .colon2             => "::",
+            .single_quote       => "'",
+            //keywords
+            .keyword_if         => "if",
+            .keyword_else       => "else",
+            .keyword_while      => "while",
+            .keyword_for        => "for",
+            .keyword_loop       => "loop",
+            .keyword_continue   => "continue",
+            .keyword_break      => "break",
+            .keyword_in         => "in",
+            .keyword_match      => "match",
+            .keyword_fn         => "fn",
+            .keyword_inline     => "inline",
+            .keyword_pub        => "pub",
+            .keyword_export     => "export",
+            .keyword_extern     => "extern",
+            .keyword_import     => "import",
+            .keyword_let        => "let",
+            .keyword_mut        => "mut",
+            .keyword_alias      => "alias",
+            .keyword_move       => "move",
+            .keyword_return     => "return",
+            .keyword_struct     => "struct",
+            .keyword_enum       => "enum",
+            .keyword_use        => "use",
+            .keyword_mod        => "mod",
+            .keyword_comptime   => "comptime",
+            .keyword_as         => "as",
+            .keyword_static     => "static",
+            .keyword_type       => "type",
+            .keyword_const      => "const",
+            .keyword_impl       => "impl",
+            .keyword_when       => "when",
+            .keyword_Self       => "self",
+            .keyword_where      => "where",
+            .keyword_with       => "with",
+            .keyword_macro      => "macro",
+            .keyword_pure       => "pure",
+            .keyword_true       => "true",
+            .keyword_false      => "false",
+
+        };
+    }
+
 
 };
 //All of the builtin keywords
@@ -162,6 +275,14 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
 pub const Token = struct {
     span: common.Span,
     tag: Tag,
+
+    pub fn to_string(self: *const @This(), source: []const u8) []const u8 {
+        return switch (self.*.tag) {
+            .ident, .int_literal, .float_literal, .raw_string_literal,
+            .string_literal, .char_literal => self.span.get_string(source),
+            else => self.tag.to_string(),
+        };
+    }
 };
 
 
@@ -339,8 +460,9 @@ pub const Lexer = struct {
     //This returns the next token but does not advance
     pub fn peek_token(self: *Lexer) Token {
         const saved_index = self.index;
+        self.iterator.save();
         const tok = self.next_token();
-        self._peeked = tok;
+        self.iterator.restore();
         self.index = saved_index;
         return tok;
     }
@@ -361,10 +483,6 @@ pub const Lexer = struct {
     //This lexer is "lazy" meaning it does not tokenize the whole source
     //but instead relies on whatever is using it to drive it.
     pub fn next_token(self: *Lexer) Token {
-        if (self._peeked) |tok| {
-            self._peeked = null;
-            return tok;
-        }
         var tag: Tag = .eof;
         self.skip_whitespace();
         var start = self.index;

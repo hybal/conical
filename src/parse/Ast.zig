@@ -611,13 +611,10 @@ fn _AstBuilder() type {
             span: common.Span,
             data: anytype) !AstNodeId {
             const id_name = @tagName(kind) ++ "s";
-            var ids = @field(self.Self, id_name);
-            const id = try self.append(&ids, data);
-            var spans = self.Self.spans;
-            const spanid = try self.append(&spans, span);
+            const id = try self.append(&@field(self.Self, id_name), data);
+            const spanid = try self.append(&self.Self.spans, span);
 
-            var nodes = self.Self.nodes;
-            const out = try self.append(&nodes, AstNode {
+            const out = try self.append(&self.Self.nodes, AstNode {
                 .kind = kind,
                 .span = spanid,
                 .index = id,

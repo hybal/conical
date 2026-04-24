@@ -165,20 +165,26 @@ pub const ErrorStore = struct {
 
     fn emit_diag(self: *@This(), diag: Diagnostic, context: *common.Context, io: std.Io, writer: *std.Io.Writer) !void {
         const file = context.file_store.store.items[diag.span.fileid];
-        var reader = if (file == .buffer)
-            std.Io.Reader.fixed(file.buffer)
-            else
-                try file.file.make_reader(io, self.gpa);
+        const buffer = try file.get_source(io, self.gpa);
 
         const file_path = if (file == .file) 
             file.file.normalize()
-            else "buffer";
-        const loc = try span_to_line_col(diag.span, &reader);
+            else try std.fmt.allocPrint(self.gpa, "buffer@{}", .{diag.span.fileid});
+        const loc = try span_to_line_col(diag.span, buffer);
+        const line = get_line(loc.line_end, buffer);
+        const line_buf = buffer[line.@"0"..line.@"1"];
+        const stripped_line = strip(line_buf);
+        const lines = line_buf[stripped_line.@"0"..stripped_line.@"1"];
+        const line_start = line.@"0" + stripped_line.@"0";
         const code = diag.code;
         const msg = diag.message;
-        try common.color.Color.RED.print(writer);
-        try writer.print("Error(E{x})[{s}:{}] {s}\n", .{ code, file_path, loc.line_start, msg });
-        try common.color.Color.RESET.print(writer);
+        try writer.print("[", .{});
+        try writer.print("\x1B[0;3;90m{s}\x1B[0m", .{file_path});
+        try writer.print(":{}] ", .{loc.line_start});
+        try writer.print("\x1B[1;91m(E{x}) error: \x1B[0m", .{ code });
+        try writer.print("\x1B[1;37m{s}\x1B[0m\n", .{msg});
+        try writer.print("\x1B[32m  |    \x1B[0m{s}\n", .{lines});
+        try writer.print("\x1B[32m{s}\x1B[0m\n", .{try get_caret_line(diag.span, line_start, 7 , self.gpa)});
     }
 
 
@@ -188,29 +194,79 @@ pub const ErrorStore = struct {
         line_start: usize,
         line_end: usize,
     };
-    fn span_to_line_col(span: common.Span, reader: *std.Io.Reader) !SpanLoc {
+    fn span_to_line_col(span: common.Span, source: []const u8) !SpanLoc {
         var line_start: usize = 1;
         var line_end = line_start;
         // While index < span.start iterate tracking line_start + col_start
         // While index >= span.start && index < span.end track line_end, col_end
         var index: usize = 0;
         while (index < span.end) {
-            const c = reader.takeByte() catch |e| if (e == std.Io.Reader.Error.EndOfStream) null else return e;
-            if (c == null) {
-                break;
-            }
-            if (c.? == '\n') {
+            const c = source[index];
+            if (c == '\n') {
                 if (index < span.start) line_start += 1;
-                if (index == span.start) line_end = line_start;
                 if (index > span.start) line_end += 1;
             }
+            if (index == span.start) line_end = line_start;
             index += 1;
         }
         return .{ .line_start = line_start, .line_end = line_end };
     }
 
+    fn get_lines(line_start: usize, line_end: usize, source: []const u8) []const u8 {
+        const start = get_line(line_start, source);
+        const end = get_line(line_end, source);
+        return source[start.@"0"..end.@"1"];
+    }
+
+    fn get_line(line: usize, source: []const u8) struct {usize, usize }{
+        var ln: usize = 1;
+        var start: usize = 0;
+        var end: usize = 0;
+        var index: usize = 0;
+        while (index < source.len) {
+            const c = source[index];
+            if (c == '\n') {
+                ln += 1;
+            }
+            if (ln < line) {
+                start += 1;
+            }
+
+            if (ln == line) {
+                end += 1;
+            }
+
+            if (ln > line) break;
+            index += 1;
+        }
+        return .{ start, start + end };
+    }
+
+    fn get_caret_line(span: common.Span, line_start: usize, adjustment: usize, allocator: std.mem.Allocator) ![]const u8 {
+        const end_adj = span.end - line_start;
+        var line: std.ArrayList(u8) = .empty;
+        try line.appendNTimes(allocator, ' ', end_adj - 1 + adjustment);
+        try line.append(allocator, '^');
+        return try line.toOwnedSlice(allocator);
+    }
     
 };
+
+fn strip(in: []const u8) struct {usize, usize} {
+    var start: usize = 0;
+    var c = in[start];
+    while (std.ascii.isWhitespace(c)) {
+        start += 1;
+        c = in[start];
+    }
+    var end = in.len - 1;
+    c = in[end];
+    while (std.ascii.isWhitespace(c)) {
+        end -= 1;
+        c = in[end];
+    }
+    return .{ start, end + 1};
+}
 
 
 pub const ErrorType = struct {

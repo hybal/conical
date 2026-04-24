@@ -19,6 +19,7 @@ pub const Span = struct {
     }
 
 
+
     //provided the source code, will get the actual string that this span represents
     pub fn get_string(self: *const Span, source: []const u8) []const u8 {
         return source[self.start..self.end];
@@ -37,6 +38,21 @@ pub const File = union(enum) {
      file: Path,
      buffer: []const u8,
      _,
+
+     pub fn get_source(self: *const @This(), io: std.Io, allocator: std.mem.Allocator) ![]const u8 {
+         switch (self.*) {
+             .file => |path| {
+                 var reader = try path.make_reader(io, allocator);
+                 const out = try reader.allocRemaining( allocator, .unlimited);
+                 return out;
+                 
+             },
+             .buffer => |buf| {
+                 return buf;
+             },
+             else => return "",
+         }
+     }
 };
 
 
