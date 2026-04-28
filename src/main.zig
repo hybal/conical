@@ -16,7 +16,7 @@ pub fn main(init: std.process.Init) !u8 {
     const buffer = 
         \\mod a;
         \\fn main() {
-        \\  let a = 1;
+        \\  let  = 1;
         \\ }
     ;
     var ctx = common.Context.init(std.heap.page_allocator);

@@ -43,7 +43,7 @@ pub const Assignment = struct {
 
 
 pub const Ident = struct {
-    span: common.Span,
+    span: common.Either(common.Span, ErrorId),
 };
 
 pub const BindingId = struct {

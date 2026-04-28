@@ -142,7 +142,7 @@ fn program(self: *@This()) anyerror!Ast.Ast {
     return self.builder.build();
 }
 
-fn module_declaration(self: *@This()) !Ast.ModuleDecl {
+fn module_declaration(self: *@This()) !?Ast.ModuleDecl {
     var span: common.Span = .init(self.lexer.index, self.file);
     if (!(try self.expect(.keyword_mod))) {
         const err = errors.ExpectedDeclarationError {
@@ -151,7 +151,10 @@ fn module_declaration(self: *@This()) !Ast.ModuleDecl {
         };
         const errid = try self.context.session.push(try err.get_error_type(self.allocator));
         _ = errid;
-        return error.ParseError;
+        while (self.is_next_one_of(.{ .ident, .colon2, .semicolon })) {
+            _ = try self.next();
+        }
+        return null;
     }
     const path = try self.expression_path();
     if(!try self.expect(.semicolon)) {
@@ -183,6 +186,20 @@ fn item(self: *@This()) !AstNodeId {
         .keyword_fn => .{ .function, try self.function_declaration()},
         .keyword_let => .{.binding, try self.let_binding()},
         .keyword_type => .{.@"type", try self.type_declaration()},
+        .keyword_mod => {
+            const decl = try self.module_declaration();
+            const sp: common.Span = .init(decl.?.span.start+1, self.file);
+            const err = errors.UnexpectedDeclarationError {
+                .span = sp,
+                .ty = .module_decl,
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            const poison_node = Ast.Poison {
+                .error_id = errid,
+            };
+            const poisonid = try self.builder.add_node(.poison, sp, poison_node);
+            return poisonid;
+        },
         else => {
             unreachable;
         },
@@ -263,12 +280,20 @@ fn let_binding(self: *@This()) !AstNodeId {
     span.merge(let_keyword.?.span);
     const modifier = try self.binding_modifier();
 
-    const ident = try self.expect_ret(.ident);
-    if (ident == null) {
+    const ident_tmp = try self.expect_ret(.ident);
+    var ident: common.Either(common.Span, diag.ErrorId) = undefined;
+    if (ident_tmp == null) {
         //ERROR: Expected identifier before '='
-        return error.ParseError;
+        const err = errors.ExpectedTokenError {
+            .expected = .ident,
+            .span = .init(self.previous_token.span.end, self.file),
+        };
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        ident = .make(errid);
+    } else {
+        span.merge(ident.?.span);
+        ident = .make(.{ .span = ident_tmp.?.span });
     }
-    span.merge(ident.?.span);
     var typeexpr: ?AstNodeId = null;
     if (self.next_if(.colon)) |tok| {
         span.merge(tok.span);
@@ -292,7 +317,7 @@ fn let_binding(self: *@This()) !AstNodeId {
     }
     span.merge(.init(self.lexer.index, self.file));
     const binding_id = Ast.BindingId {
-        .id = .{ .span = ident.?.span },
+        .id = ident,
         .modifier = modifier,
     };
     //FIXME: we somehow need access to either a reversible Reader or a fresh one or somehow recover source information.

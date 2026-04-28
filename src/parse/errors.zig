@@ -101,7 +101,7 @@ pub const UnexpectedDeclarationError = struct {
     pub fn to_diagnostic(self: *const @This(), allocator: std.mem.Allocator) !diag.Diagnostic {
         var builder = diag.DiagnosticBuilder.init(allocator);
         const msg = try std.fmt.allocPrint(allocator, "Unexpected declaration `{s}`", .{ @tagName(self.ty) });
-        try builder
+        _ = builder
             .code(@intFromEnum(ParseErrorKind.unexpected_declaration))
             .severity(.Error)
             .span(self.span)
