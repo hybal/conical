@@ -4,4 +4,8 @@ The High-Level Intermediate Representation (HIR) is a subset of the Conical lang
 
 The following rules are defined to lower between [AST](../AST/overview.md) and HIR.
 
-- $ \forall a,b. \, a + b \mapsto \, \quad overload(+) a b $
+1. For a defined binary operator ($\circ$) and compiler-recognized overload function $\text{overload}$:
+
+   $` \forall a,b. \, a \circ b \mapsto \, \text{a.overload}(\circ) \, a \, b `$
+
+

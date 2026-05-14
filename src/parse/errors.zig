@@ -144,7 +144,7 @@ pub const ExpectedTokenError = struct {
     pub fn get_error_type(self: *const @This(), allocator: std.mem.Allocator) !diag.ErrorType {
         const vtable = struct {
             pub fn to_diagnostic(_self: *const anyopaque, _allocator: std.mem.Allocator) !diag.Diagnostic {
-                return ExpectedTokenError.to_diagnostic(@alignCast(@ptrCast(_self)), _allocator);
+                return @This().to_diagnostic(@alignCast(@ptrCast(_self)), _allocator);
             }
         };
 
@@ -153,5 +153,104 @@ pub const ExpectedTokenError = struct {
             .ptr = try common.createWith(allocator, self.*),
             .vtable = .{ .to_diagnostic = &vtable.to_diagnostic},
         };
+    }
+};
+
+pub const ExpressionType = enum {
+    type_expression,
+    expression,
+
+    pub fn to_string(self: @This()) []const u8 {
+        return switch(self) {
+            .expression => "expression",
+            .type_expression => "type expression",
+        };
+    }
+};
+
+pub const ExpectedExpressionError = struct {
+    span: common.Span,
+    expected: ExpressionType,
+    notes: ?std.ArrayList([]const u8),
+
+    pub fn to_diagnostic(self: *const @This(), allocator: std.mem.Allocator) !diag.Diagnostic {
+        var builder = diag.DiagnosticBuilder.init(allocator);
+        const msg = try fmt(allocator, "expected `{s}`",
+            .{
+                self.expected.to_string(),
+            });
+        var out = builder
+            .code(@intFromEnum(ParseErrorKind.expected_expression))
+            .severity(.Error)
+            .span(self.span)
+            .message(msg);
+        if (self.notes) |notes| {
+            for (notes.items) |note| {
+                _ = try out.add_note(note);
+            }
+        }
+
+        return try builder.build();
+    }
+
+
+    pub fn get_error_type(self: *const @This(), allocator: std.mem.Allocator) !diag.ErrorType {
+        const vtable = struct {
+            pub fn to_diagnostic(_self: *const anyopaque, _allocator: std.mem.Allocator) !diag.Diagnostic {
+                return ExpectedExpressionError.to_diagnostic(@alignCast(@ptrCast(_self)), _allocator);
+            }
+        };
+
+        return diag.ErrorType {
+
+            .ptr = try common.createWith(allocator, self.*),
+            .vtable = .{ .to_diagnostic = &vtable.to_diagnostic},
+        };
+    }
+};
+
+
+pub const MalformedDeclarationError = struct {
+    span: common.Span,
+    ty: MalformedDeclarationErrorType,
+
+    pub fn to_diagnostic(self: *const @This(), allocator: std.mem.Allocator) !diag.Diagnostic {
+        const d = switch (self.ty) {
+            .function => |fnc| try fnc.to_diagnostic(allocator),
+        };
+        return d;
+    }
+
+
+    pub fn get_error_type(self: *const @This(), allocator: std.mem.Allocator) !diag.ErrorType {
+        const vtable = struct {
+            pub fn to_diagnostic(_self: *const anyopaque, _allocator: std.mem.Allocator) !diag.Diagnostic {
+                return @This().to_diagnostic(@alignCast(@ptrCast(_self)), _allocator);
+            }
+        };
+
+        return diag.ErrorType {
+
+            .ptr = try common.createWith(allocator, self.*),
+            .vtable = .{ .to_diagnostic = &vtable.to_diagnostic},
+        };
+    }
+
+
+};
+
+pub const MalformedDeclarationErrorType = union(enum) {
+    function: MalformedFunctionDeclaration,
+};
+
+pub const MalformedFunctionDeclaration = struct {
+    pub fn to_diagnostic(self: *const @This(), allocator: std.mem.Allocator) !diag.Diagnostic {
+        _ = self;
+        var builder = diag.DiagnosticBuilder.init(allocator);
+        return builder
+            .code(@intFromEnum(ParseErrorKind.malformed_declaration))
+            .severity(.Error)
+            .message("cannot mix inline and postfix function styles")
+            .build();
     }
 };

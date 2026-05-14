@@ -5,6 +5,9 @@ const Path = @import("./path.zig");
 const span = @import("span.zig");
 const Span = span.Span;
 
+const intern = @import("./intern.zig");
+
+
 
 pub const DefId = u64;
 pub const TypeId = u64;
@@ -46,11 +49,13 @@ pub const Context = struct {
     session: diag.ErrorStore,
     //module: ?ModuleId,
     //module_store: *ModuleStore,
+    intern_pool: intern.InternPool,
 
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
             .file_store = .init(allocator),
-            .session = .init(allocator)
+            .session = .init(allocator),
+            .intern_pool = .init(allocator),
         };
     }
     pub fn deinit(self: *@This()) void {

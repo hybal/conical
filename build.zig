@@ -9,7 +9,7 @@ const MODS = std.StaticStringMap(ModInf).initComptime(.{
     .{ "lex", ModInf { .path  = "src/lex/mod.zig", .deps = &.{"common"} } },
     .{ "parse", ModInf { .path  = "src/parse/mod.zig", .deps = &.{"common", "lex", "diagnostics"} } },
     .{ "diagnostics", ModInf { .path  = "src/diagnostics/mod.zig", .deps = &.{"common"} } },
-    .{ "hir", ModInf { .path  = "src/hir/mod.zig", .deps = &.{"common", "diagnostics"} } },
+    .{ "hir", ModInf { .path  = "src/hir/mod.zig", .deps = &.{"common", "diagnostics", "parse"} } },
     .{ "mir", ModInf { .path  = "src/mir/mod.zig", .deps = &.{"common", "diagnostics"} } },
     .{ "sema", ModInf { .path  = "src/sema/mod.zig", .deps = &.{"common", "diagnostics"} } },
     .{ "backend", ModInf { .path  = "src/backend/mod.zig", .deps = &.{"common", "diagnostics"} } },
@@ -18,12 +18,14 @@ const MODS = std.StaticStringMap(ModInf).initComptime(.{
 });
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
+    const target = b.standardTargetOptions(.{ });
 
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
         .name = "conical",
+        .use_llvm = true, //FIXME: Once zig adds SFrame support this should be disabled
+        .use_lld = true, //FIXME: Same here
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -69,6 +71,8 @@ pub fn build(b: *std.Build) void {
     var mod_it = modules.iterator();
     while (mod_it.next()) |entry| {
         const tst = b.addTest(.{
+            .use_lld = true, //FIXME: Remove with SFrame support
+            .use_llvm = true,
             .root_module = entry.value_ptr.*,
         });
         const test_run = b.addRunArtifact(tst);

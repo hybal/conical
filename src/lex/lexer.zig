@@ -670,7 +670,6 @@ pub const Lexer = struct {
                     }
                 },
                 else => {
-                    std.debug.print("DEBUG F: {}\n", .{c});
                     tag = .invalid;
                 },
             }
@@ -680,6 +679,3 @@ pub const Lexer = struct {
     }
 };
 
-test "lexer" {
-    //TODO
-}

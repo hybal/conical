@@ -52,9 +52,6 @@ pub const BindingId = struct {
 };
 
 
-pub const TypeExpr = struct {
-    exprs: []AstNodeId,
-};
 
 pub const TypeBinaryOp = enum {
     Union,
@@ -408,7 +405,6 @@ pub const AstKind = enum {
     binary_expr,
     unary_expr,
     terminal,
-    type_expr,
     type_binary_expr,
     type_metadata,
     type_literal,
@@ -457,7 +453,6 @@ pub const Ast = struct {
     binary_exprs: []const BinaryExpr,
     unary_exprs: []const UnaryExpr,
     terminals: []const Terminal,
-    type_exprs: []const TypeExpr,
     type_binary_exprs: []const TypeBinaryExpr,
     type_modifiers: []const TypeModifier,
     type_metadatas: []const TypeMetadata,

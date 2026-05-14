@@ -4,7 +4,6 @@ const lex = @import("lex");
 const common = @import("common");
 const parse = @import("../parser.zig");
 const golden = @import("golden.zig");
-const format = @import("../serialize_json.zig");
 
 test "parser" {
     const code = \\ mod a;

@@ -14,6 +14,7 @@ test "lex/tokens" {
         \\ /* muliline comment */
         \\ < << <= <<=
         \\ mod a;
+        \\ fn foo(a: i32, b) {}
         \\ fn main() {
         \\  let a = 1;
         \\ }
@@ -22,6 +23,7 @@ test "lex/tokens" {
     var ctx: common.Context = common.Context {
         .file_store = common.span.FileStore.init(allocator),
         .session = .init(allocator),
+        .intern_pool = .init(allocator)
     };
     defer ctx.deinit();
 
@@ -55,6 +57,17 @@ test "lex/tokens" {
     try expectEqual(.keyword_mod,    lexer.next_token().tag);
     try expectEqual(.ident,          lexer.next_token().tag);
     try expectEqual(.semicolon,      lexer.next_token().tag);
+    try expectEqual(.keyword_fn,      lexer.next_token().tag);
+    try expectEqual(.ident,      lexer.next_token().tag);
+    try expectEqual(.open_paren,      lexer.next_token().tag);
+    try expectEqual(.ident,      lexer.next_token().tag);
+    try expectEqual(.colon,      lexer.next_token().tag);
+    try expectEqual(.ident,      lexer.next_token().tag);
+    try expectEqual(.comma,      lexer.next_token().tag);
+    try expectEqual(.ident,      lexer.next_token().tag);
+    try expectEqual(.close_paren,      lexer.next_token().tag);
+    try expectEqual(.open_bracket,      lexer.next_token().tag);
+    try expectEqual(.close_bracket,      lexer.next_token().tag);
     try expectEqual(.keyword_fn,     lexer.next_token().tag);
     try expectEqual(.ident,          lexer.next_token().tag);
     try expectEqual(.open_paren,     lexer.next_token().tag);
@@ -87,6 +100,7 @@ test "lex/spans" {
     var ctx = common.Context {
         .file_store = .init(allocator),
         .session = .init(allocator),
+        .intern_pool = .init(allocator),
     };
     defer ctx.deinit();
 

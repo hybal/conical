@@ -3,7 +3,7 @@ const diag = @import("diagnostics");
 const common = @import("common");
 const lex = @import("lex");
 const parse = @import("parse");
-//const hir = @import("hir");
+const hir = @import("hir");
 //const mir = @import("mir");
 //const sema = @import("sema");
 //const backend = @import("backend");
@@ -15,12 +15,14 @@ const parse = @import("parse");
 pub fn main(init: std.process.Init) !u8 {
     const buffer = 
         \\mod a;
+        \\fn foo(a: i32) { 1}
         \\fn main() {
-        \\  let  = 1;
+        \\  let mut a = 1;
         \\ }
     ;
     var ctx = common.Context.init(std.heap.page_allocator);
     const file = try ctx.file_store.put(.{.buffer = buffer});
+    _ = hir;
     var parser = try parse.init(&ctx, buffer, file, std.heap.page_allocator);
     _ = try parser.parse();
     var buff: [64]u8 = undefined;

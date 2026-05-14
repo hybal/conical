@@ -28,9 +28,9 @@ pub fn Either(comptime A: type, comptime B: type) type {
 
         pub fn make(val: anytype) @This() {
             if (@TypeOf(val) == A) {
-                return Either.make_a(val);
+                return @This().make_a(val);
             } else {
-                return Either.make_b(val);
+                return @This().make_b(val);
             }
             
         }

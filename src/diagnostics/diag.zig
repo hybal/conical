@@ -116,17 +116,17 @@ pub const DiagnosticBuilder = struct {
     }
 
     pub fn add_label(self: *@This(), value: Label) !*@This() {
-        try self._labels.append(value, self.gpa);
+        try self._labels.append(self.allocator, value);
         return self;
     }
 
     pub fn add_note(self: *@This(), value: []const u8) !*@This() {
-        try self._notes.append(value, self.gpa);
+        try self._notes.append(self.allocator, value);
         return self;
     }
 
     pub fn add_suggestion(self: *@This(), value: Suggestion) !*@This() {
-        try self._suggestions.append(value, self.gpa);
+        try self._suggestions.append(self.allocator, value);
         return self;
     }
 
@@ -185,6 +185,16 @@ pub const ErrorStore = struct {
         try writer.print("\x1B[1;37m{s}\x1B[0m\n", .{msg});
         try writer.print("\x1B[32m  |    \x1B[0m{s}\n", .{lines});
         try writer.print("\x1B[32m{s}\x1B[0m\n", .{try get_caret_line(diag.span, line_start, 7 , self.gpa)});
+
+        if (diag.help) |help| {
+            try writer.print("\x1B[1;91m  help:\x1B[0m {s}\n", .{help});
+        }
+        for (diag.notes) |note| {
+            try writer.print("\x1B[1;35m  note:\x1B[0m\x1B[3m {s}\x1B[0m\n", .{note});
+        }
+        //TODO: add suggestions
+        //TODO: add labels
+        try writer.print("\n", .{});
     }
 
 
