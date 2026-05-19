@@ -93,15 +93,7 @@ fn print_item(self: *@This(), nodeid: ast.AstNodeId) anyerror!void {
             try self.print_fn_decl(node.item);
         },
         .binding => try self.print_binding(nodeid),
-        .@"type" => try self.print_type_decl(nodeid),
     }
-}
-
-fn print_type_decl(self: *@This(), nodeid: ast.AstNodeId) !void {
-    const node: *ast.TypeDecl = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
-    try self.writer.print("type ", .{});
-    try self.print_ident(node.ident.span);
-    try self.print_node(node.ty);
 }
 
 fn print_binding(self: *@This(), nodeid: ast.AstNodeId) anyerror!void {

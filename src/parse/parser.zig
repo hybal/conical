@@ -186,7 +186,6 @@ fn item(self: *@This()) !AstNodeId {
     const kind: struct {Ast.ItemKind, AstNodeId }= switch (peek_tok.?.tag) {
         .keyword_fn => .{ .function, try self.function_declaration()},
         .keyword_let => .{.binding, try self.let_binding()},
-        .keyword_type => .{.@"type", try self.type_declaration()},
         .keyword_mod => {
             const decl = try self.module_declaration();
             const sp: common.Span = .init(decl.?.span.start+1, self.file);
@@ -516,29 +515,6 @@ fn function_declaration(self: *@This()) !AstNodeId {
 
 
 
-fn type_declaration(self: *@This()) !AstNodeId {
-    var span: common.Span = .init(self.lexer.index, self.file);
-    const type_keyword_tok = try self.expect_ret(.keyword_type);
-    _ = type_keyword_tok;
-
-    const id = try self.expect_ret(.ident);
-    if (id == null) {
-        //ERROR: Expected identifier after 'type'
-        return error.ParseError;
-    }
-
-    const expr = try self.type_expression();
-
-    span.merge(.{ .start = span.start, .end = self.lexer.index, .fileid = self.file});
-    const node = Ast.TypeDecl {
-        .ident = .{ .span = .make(id.?.span) },
-        .ty = expr,
-    };
-
-    const nodeid = try self.builder.add_node(.type_decl, span, node);
-    return nodeid;
-}
-
 // ---- END TOP-LEVEL ----
 
 // ---- START TYPES ----
@@ -549,8 +525,8 @@ fn type_expression(self: *@This()) !AstNodeId {
 
 fn type_expression_metadata(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.type_expression_strict_inclusion();
-    if ( self.is_next(.keyword_with )) {
+    var left = try self.type_expression_strict_inclusion();
+    while ( self.is_next(.keyword_with )) {
         const right = try self.type_expression_strict_inclusion();
         const node = Ast.TypeMetadata {
             .left = left,
@@ -560,15 +536,15 @@ fn type_expression_metadata(self: *@This()) !AstNodeId {
 
         span.merge(.{.start = span.start, .end = self.lexer.index, .fileid = self.file });
         const nodeid = try self.builder.add_node(.type_metadata, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn type_expression_strict_inclusion(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.type_expression_membership();
-    if (self.is_next_one_of(.{ .lt, .gt })) {
+    var left = try self.type_expression_membership();
+    while (self.is_next_one_of(.{ .lt, .gt })) {
         const op = self.next() catch unreachable;
         const right = try self.type_expression_membership();
 
@@ -583,15 +559,15 @@ fn type_expression_strict_inclusion(self: *@This()) !AstNodeId {
         };
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn type_expression_membership(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.type_expression_difference();
-    if (self.is_next( .keyword_in )) {
+    var left = try self.type_expression_difference();
+    while (self.is_next( .keyword_in )) {
         const op = self.next() catch unreachable;
         _ = op;
         const right = try self.type_expression_difference();
@@ -602,15 +578,15 @@ fn type_expression_membership(self: *@This()) !AstNodeId {
         };
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn type_expression_difference(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.type_expression_union();
-    if (self.is_next( .minus )) {
+    var left = try self.type_expression_union();
+    while (self.is_next( .minus )) {
         const op = self.next() catch unreachable;
         _ = op;
         const right = try self.type_expression_union();
@@ -621,15 +597,15 @@ fn type_expression_difference(self: *@This()) !AstNodeId {
         };
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn type_expression_union(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.type_expression_intersection();
-    if (self.is_next( .pipe )) {
+    var left = try self.type_expression_intersection();
+    while (self.is_next( .pipe )) {
         const op = self.next() catch unreachable;
         _ = op;
         const right = try self.type_expression_intersection();
@@ -640,15 +616,15 @@ fn type_expression_union(self: *@This()) !AstNodeId {
         };
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn type_expression_intersection(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.type_expression_product();
-    if (self.is_next( .pipe )) {
+    var left = try self.type_expression_product();
+    while (self.is_next( .pipe )) {
         const op = self.next() catch unreachable;
         _ = op;
         const right = try self.type_expression_product();
@@ -659,7 +635,7 @@ fn type_expression_intersection(self: *@This()) !AstNodeId {
         };
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
@@ -667,8 +643,8 @@ fn type_expression_intersection(self: *@This()) !AstNodeId {
 
 fn type_expression_product(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.type_expression_modifiers();
-    if (self.is_next( .pipe )) {
+    var left = try self.type_expression_modifiers();
+    while (self.is_next( .pipe )) {
         const op = self.next() catch unreachable;
         _ = op;
         const right = try self.type_expression_modifiers();
@@ -679,7 +655,7 @@ fn type_expression_product(self: *@This()) !AstNodeId {
         };
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.type_binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
@@ -981,6 +957,9 @@ fn type_impl_sugar(self: *@This()) !AstNodeId {
 // ---- START EXPRESSIONS ----
 
 fn expression(self: *@This()) anyerror!AstNodeId {
+    if (self.next_if(.keyword_type)) |_| {
+        return try self.type_expression();
+    }
     return try self.expression_return();
 }
 
@@ -1210,8 +1189,8 @@ fn match_pattern(self: *@This()) !AstNodeId {
 
 fn expression_logical_or(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_logical_and();
-    if (self.next_if(.pipe2)) |tok| {
+    var left = try self.expression_logical_and();
+    while (self.next_if(.pipe2)) |tok| {
         const right = try self.expression_logical_and();
         const node = Ast.BinaryExpr {
             .left = left,
@@ -1221,15 +1200,15 @@ fn expression_logical_or(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_logical_and(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_bitwise_or();
-    if (self.next_if(.amp2)) |tok| {
+    var left = try self.expression_bitwise_or();
+    while (self.next_if(.amp2)) |tok| {
         const right = try self.expression_bitwise_or();
         const node = Ast.BinaryExpr {
             .left = left,
@@ -1239,15 +1218,15 @@ fn expression_logical_and(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_bitwise_or(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_bitwise_xor();
-    if (self.next_if(.pipe)) |tok| {
+    var left = try self.expression_bitwise_xor();
+    while (self.next_if(.pipe)) |tok| {
         const right = try self.expression_bitwise_xor();
         const node = Ast.BinaryExpr {
             .left = left,
@@ -1257,15 +1236,15 @@ fn expression_bitwise_or(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_bitwise_xor(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_bitwise_and();
-    if (self.next_if(.caret)) |tok| {
+    var left = try self.expression_bitwise_and();
+    while (self.next_if(.caret)) |tok| {
         const right = try self.expression_bitwise_and();
         const node = Ast.BinaryExpr {
             .left = left,
@@ -1275,15 +1254,15 @@ fn expression_bitwise_xor(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_bitwise_and(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_equality();
-    if (self.next_if(.amp)) |tok| {
+    var left = try self.expression_equality();
+    while (self.next_if(.amp)) |tok| {
         const right = try self.expression_equality();
         const node = Ast.BinaryExpr {
             .left = left,
@@ -1293,15 +1272,15 @@ fn expression_bitwise_and(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_equality(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_relational();
-    if (self.is_next_one_of(.{.eq2, .bangeq })) {
+    var left = try self.expression_relational();
+    while (self.is_next_one_of(.{.eq2, .bangeq })) {
         const tok = self.next() catch unreachable;
         const right = try self.expression_relational();
         const node = Ast.BinaryExpr {
@@ -1312,15 +1291,15 @@ fn expression_equality(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_relational(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_shift();
-    if (self.is_next_one_of(.{.lt, .lteq, .gt, .gteq })) {
+    var left = try self.expression_shift();
+    while (self.is_next_one_of(.{.lt, .lteq, .gt, .gteq })) {
         const tok = self.next() catch unreachable;
         const right = try self.expression_shift();
         const node = Ast.BinaryExpr {
@@ -1331,15 +1310,15 @@ fn expression_relational(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_shift(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_additive();
-    if (self.is_next_one_of(.{.lt2, .gt2})) {
+    var left = try self.expression_additive();
+    while (self.is_next_one_of(.{.lt2, .gt2})) {
         const tok = self.next() catch unreachable;
         const right = try self.expression_additive();
         const node = Ast.BinaryExpr {
@@ -1350,15 +1329,15 @@ fn expression_shift(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_additive(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_multiplicative();
-    if (self.is_next_one_of(.{.plus, .minus})) {
+    var left = try self.expression_multiplicative();
+    while (self.is_next_one_of(.{.plus, .minus})) {
         const tok = self.next() catch unreachable;
         const right = try self.expression_multiplicative();
         const node = Ast.BinaryExpr {
@@ -1369,15 +1348,15 @@ fn expression_additive(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_multiplicative(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_cast();
-    if (self.is_next_one_of(.{.star, .slash, .percent})) {
+    var left = try self.expression_cast();
+    while (self.is_next_one_of(.{.star, .slash, .percent})) {
         const tok = self.next() catch unreachable;
         const right = try self.expression_cast();
         const node = Ast.BinaryExpr {
@@ -1388,15 +1367,15 @@ fn expression_multiplicative(self: *@This()) !AstNodeId {
 
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.binary_expr, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
 
 fn expression_cast(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const left = try self.expression_unary();
-    if (self.next_if(.keyword_as)) |_| {
+    var left = try self.expression_unary();
+    while (self.next_if(.keyword_as)) |_| {
         const right = try self.type_expression();
         const node = Ast.Cast {
             .expr = left,
@@ -1404,7 +1383,7 @@ fn expression_cast(self: *@This()) !AstNodeId {
         };
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.cast, span, node);
-        return nodeid;
+        left = nodeid;
     }
     return left;
 }
