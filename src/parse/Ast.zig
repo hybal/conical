@@ -131,41 +131,6 @@ pub const TypeLiteral = union(enum) {
 
 pub const Path = struct {
     parts: []Ident,
-
-    pub fn equals(self: *const @This(), other: *const @This()) bool {
-        if (self.parts.len != other.parts.len) {
-            return false;
-        }
-        for (self.parts, 0..) |part, i| {
-            if (!part.equals(&other.parts[i])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-
-    pub fn get_string(self: *const @This(), gpa: std.mem.Allocator) ![]const u8 {
-        var out = std.ArrayList(u8).init(gpa);
-        if (self.parts.len == 1) {
-            try out.appendSlice(self.parts[0].value);
-        } else {
-            for (self.parts) |part| {
-                try out.appendSlice(part.value);
-                try out.appendSlice("::");
-            }
-        }
-        return try out.toOwnedSlice();
-    }
-
-    pub fn hash(self: *const @This()) !u64 {
-        var hasher = std.hash.Fnv1a_64.init();
-        for (self.parts) |part| {
-            hasher.update(part.value);
-        }
-        return hasher.final();
-    }
-
 };
 
 pub const TerminalType = union(enum) {
@@ -487,12 +452,13 @@ pub const Ast = struct {
     slices: []const SliceOp,
     casts: []const Cast,
     paths: []const Path,
+    module_decls: []const ModuleDecl,
     imports: []const Import,
 
     pub fn get(self: *const @This(), id: AstNodeId) struct {AstKind, *anyopaque} {
         const node_index = self.nodes[id].index;
         const node_kind = self.nodes[id].kind;
-        inline for (std.meta.tags(AstKind)) |tag| {
+        inline for (comptime std.meta.tags(AstKind)) |tag| {
             if (node_kind == tag) {
                 const field_name = comptime @tagName(tag) ++ "s";
 
@@ -508,6 +474,7 @@ pub const Ast = struct {
                 };
             }
         }
+        unreachable;
     }
 
     pub fn get_node(self: *const @This(), id: AstNodeId) AstNode {

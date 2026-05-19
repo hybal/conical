@@ -360,9 +360,7 @@ fn type_check(self: *@This(), tree: Hir.Hir) anyerror!Ast.TypeId {
                     const left_tyid = try self.type_check(expr.left);
                     self.expected_type = saved_expect_ty;
                     const left_ty = self.context.type_tab.get(left_tyid).?;
-                    std.debug.print("DEBUG A\n", .{});
                     if (left_ty.base_type == .strct) {
-                        std.debug.print("DEBUG B\n", .{});
                         if (left_ty.base_type.strct.fields.get(expr.right.value)) |field| {
                             out_type = field;
                         }

@@ -15,7 +15,7 @@ const hir = @import("hir");
 pub fn main(init: std.process.Init) !u8 {
     const buffer = 
         \\mod a;
-        \\fn foo(a: i32) { 1}
+        \\fn (a, b): (i32, i32) -> i32 { 1}
         \\fn main() {
         \\  let mut a = 1;
         \\ }

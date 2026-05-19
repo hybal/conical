@@ -93,6 +93,7 @@ fn next(self: *@This()) !lex.Token {
     if (self.saved_token) |prev| {
         self.saved_token = null;
         self.previous_token = prev;
+        self.lexer.index = prev.span.end;
         return prev;
     }
     const out = self.lexer.next_token();
@@ -359,14 +360,17 @@ fn function_declaration(self: *@This()) !AstNodeId {
     }
 
     const fn_ident = try self.expect_ret(.ident);
+    var fnid: ?common.Either(common.Span, diag.ErrorId) = null;
     if (fn_ident == null) {
         //ERROR: Expected identifier after 'fn'
         const err = errors.ExpectedTokenError {
             .expected = .ident,
-            .span = span,
+            .span = .init(self.previous_token.span.end, self.file),
         };
         const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-        _ = errid;
+        fnid = .make(errid);
+    } else {
+        fnid = .make(fn_ident.?.span);
     }
 
     if (!try self.expect(.open_paren)) {
@@ -435,29 +439,33 @@ fn function_declaration(self: *@This()) !AstNodeId {
         }
         const pid: common.Either(common.Span, diag.ErrorId) = if (param_ident_errid) |eid| .make(eid) else .make(param_ident.?.span);
         try param_ids.append(self.allocator, .{ .id = .{ .span = pid }, .modifier = modifier });
-
         if (self.next_if(.colon)) |colon_token| {
             span.merge(colon_token.span);
             is_inline = true;
             const ty = try self.type_expression();
             try param_tys.append(self.allocator, ty);
         } else if (is_inline) {
-            //ERROR: Cannot mix inline and postifx in function declaration
-            var notes = std.ArrayList([]const u8).empty;
-            try notes.append(self.allocator, "inline and postfix styles cannot be mixed");
-            const err = errors.ExpectedExpressionError {
+            const err = errors.ExpectedTokenError {
                 .span = if(param_ident) |p| p.span else .init(self.previous_token.span.end, self.file),
-                .expected = .type_expression,
-                .notes = notes,
+                .expected = .colon,
+                .notes = &.{"inline and postfix function declarations cannot be mixed"},
             };
             const errid = try self.context.session.push(try err.get_error_type(self.allocator));
             _ = errid;
-            return error.ParserError;
+            if (is_inline) {
+                const ty = try self.type_expression();
+                try param_tys.append(self.allocator, ty);
+            }
         }
         const has_comma = self.next_if(.comma);
         if (!self.is_next(.close_paren) and has_comma == null) {
-            //ERROR: Expected comma in-between paramaters
-            return error.ParseError;
+            const err = errors.ExpectedTokenError {
+                .span = .init(self.previous_token.span.end, self.file),
+                .expected = .comma,
+                .help = "add a comma between function parameters",
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
         }  
     }
     _ = self.expect(.close_paren) catch unreachable;
@@ -478,6 +486,7 @@ fn function_declaration(self: *@This()) !AstNodeId {
                 _ = comma_tok;
                 try param_tys.append(self.allocator, ty);
             }
+            _ = self.expect(.close_paren) catch unreachable;
         } else {
             const ty = try self.type_expression();
             try param_tys.append(self.allocator, ty);
@@ -494,7 +503,7 @@ fn function_declaration(self: *@This()) !AstNodeId {
     span.merge(.init(self.lexer.index, self.file));
     const node = Ast.FnDecl {
         .body = body,
-        .ident = .{ .span = .make(fn_ident.?.span)},
+        .ident = .{ .span = fnid.? },
         .return_ty = ret_ty,
         .param_types = try param_tys.toOwnedSlice(self.allocator),
         .params = try param_ids.toOwnedSlice(self.allocator),
@@ -759,8 +768,10 @@ fn type_expression_label(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const ident = try self.expect_ret(.ident);
     if (ident == null) {
-        //ERROR: expected identifier
-        return error.ParseError;
+        return error.FatalError;
+    }
+    if (!try self.expect(.colon)) {
+        return error.FatalError;
     }
     const group = try self.type_expression_grouping();
     const node = Ast.TypeLabel {
@@ -823,7 +834,6 @@ fn type_expression_literal(self: *@This()) !AstNodeId {
         .char_literal,
         .keyword_true,
         .keyword_false,
-        .ident
     })) {
         const tok = self.next() catch unreachable;
         const node = Ast.TypeLiteral {
@@ -833,7 +843,6 @@ fn type_expression_literal(self: *@This()) !AstNodeId {
         const nodeid = try self.builder.add_node(.type_literal, span, node);
         return nodeid;
     }
-    std.debug.print("DEBUG F: {any}\n", .{self.previous_token});
     //ERROR: Unexpected token
     return error.ParseError;
 }
@@ -1053,7 +1062,12 @@ fn expression_if(self: *@This()) !AstNodeId {
 fn expression_block(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     if (!try self.expect(.open_bracket)) {
-        return error.ParserError;
+        const err = errors.ExpectedExpressionError {
+            .expected = .block,
+            .span = .init(self.previous_token.span.end, self.file),
+        };
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        _ = errid;
     }
     var stmts: std.ArrayList(AstNodeId) = .empty;
     while (!self.is_next(.close_bracket)) {
@@ -1083,8 +1097,13 @@ fn expression_match(self: *@This()) !AstNodeId {
     if (self.next_if(.keyword_match)) |_| {
         const expr = try self.expression();
         if (!try self.expect(.open_bracket)) {
-            //ERROR: expected '{'
-            return error.ParseError;
+            const err = errors.ExpectedTokenError {
+                .expected = .open_bracket,
+                .span = .init(self.previous_token.span.end, self.file),
+                .help = "match expressions must always have brackets",
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
         }
         var match_arms: std.ArrayList(AstNodeId) = .empty;
         while (!self.is_next(.close_bracket)) {
@@ -1772,7 +1791,6 @@ fn expression_path(self: *@This()) !AstNodeId {
         std.debug.print("FATAL: Should never be 0\n", .{});
         return error.FatalError;
     }
-    std.debug.print("DEBUG L: {any}\n", .{idents.items[0].span.a});
     const node = Ast.Path {
         .parts = try idents.toOwnedSlice(self.allocator),
     };
