@@ -18,7 +18,7 @@ pub fn main(init: std.process.Init) !u8 {
         \\let A = type i32 | 1;
         \\fn ide(a, b): (i32, i32) -> i32 { 1}
         \\fn main() {
-        \\  let mut a = 1;
+        \\  let mut a = 2;
         \\ }
     ;
     var ctx = common.Context.init(std.heap.page_allocator);

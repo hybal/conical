@@ -32,14 +32,20 @@ comptime {
 
 pub const UnexpectedTokenError = struct {
     found: lex.Token,
+    notes: ?[]const []const u8 = null,
 
     pub fn to_diagnostic(self: *const @This(), allocator: std.mem.Allocator) !diag.Diagnostic {
         var builder = diag.DiagnosticBuilder.init(allocator);
-        try builder
+        _ = builder
             .code(@intFromEnum(ParseErrorKind.unexpected_token))
             .severity(.Error)
             .span(self.found.span)
             .message("Unexpected token");
+        if (self.notes) |notes| {
+            for (notes) |note| {
+                _ = try builder.add_note(note);
+            }
+        }
         return try builder.build();
     }
 
@@ -97,6 +103,7 @@ pub const ExpectedDeclarationError = struct {
 pub const UnexpectedDeclarationError = struct {
     span: common.Span,
     ty: ast.AstKind,
+    notes: ?[]const []const u8 = null,
 
     pub fn to_diagnostic(self: *const @This(), allocator: std.mem.Allocator) !diag.Diagnostic {
         var builder = diag.DiagnosticBuilder.init(allocator);
@@ -106,6 +113,11 @@ pub const UnexpectedDeclarationError = struct {
             .severity(.Error)
             .span(self.span)
             .message(msg);
+        if (self.notes) |notes| {
+            for (notes) |note| {
+                _ = try builder.add_note(note);
+            }
+        }
         return try builder.build();
     }
     pub fn get_error_type(self: *const @This(), allocator: std.mem.Allocator) !diag.ErrorType {

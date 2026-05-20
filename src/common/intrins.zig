@@ -1,0 +1,43 @@
+const std = @import("std");
+
+
+pub const OverloadOp = enum {
+    add,
+    sub,
+    mul,
+    div,
+    lshift,
+    rshift,
+    bitor,
+    bitand,
+    bitxor,
+    logand,
+    logor,
+    lognot,
+    unwrap,
+};
+
+pub const OPERATOR_OVERLOAD_MAP = [_]struct {OverloadOp, []const u8} {
+    .{ .add,     "__operator_add"         },
+    .{ .sub,     "__operator_subtract"    },
+    .{ .mul,     "__operator_multiply"    },
+    .{ .div,     "__operator_divide"      },
+    .{ .lshift,  "__operator_left_shift"  },
+    .{ .rshift,  "__operator_right_shift" },
+    .{ .bitor,   "__operator_bitwise_or"  },
+    .{ .bitand,  "__operator_bitwise_and" },
+    .{ .bitxor,  "__operator_bitwise_xor" },
+    .{ .logand,  "__operator_logical_and" },
+    .{ .logor,   "__operator_logical_or"  },
+    .{ .lognot,  "__operator_logical_not" },
+    .{ .unwrap,  "__operator_unwrap"      },
+};
+
+pub fn get_operator_overload(op: OverloadOp) []const u8 {
+    inline for (OPERATOR_OVERLOAD_MAP) |entry| {
+        if (entry.@"0" == op) {
+            return entry.@"1";
+        }
+    }
+    unreachable;
+}

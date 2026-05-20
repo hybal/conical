@@ -5,6 +5,7 @@ const _either = @import("./either.zig");
 const _color = @import("./colors.zig");
 const _iter = @import("./iter.zig");
 const _intern = @import("./intern.zig");
+const _intrins = @import("./intrins.zig");
 
 
 pub const DefId = _common.DefId;
@@ -33,3 +34,5 @@ pub const color = _color;
 pub const iter = _iter;
 
 pub const intern = _intern;
+
+pub const intrins = _intrins;

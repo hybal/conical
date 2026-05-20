@@ -26,7 +26,7 @@ previous_token: lex.Token = undefined,
 
 
 
-    /// Initialize the parser from an already existing Lexer instance
+/// Initialize the parser from an already existing Lexer instance
 pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = in,
@@ -53,6 +53,9 @@ pub fn deinit(self: *@This()) void {
 }
 
 
+/// Checks the next token, if it equals 'tag' then it returns the token, otherwise it returns null.
+/// returns error.EOF at end of stream.
+/// Does essentially the same thing as `next_if` just with a different intention.
 fn expect_ret(self: *@This(), tag: lex.Tag) !?lex.Token {
     if (self.is_next(tag)) {
         return try self.next();
@@ -60,6 +63,9 @@ fn expect_ret(self: *@This(), tag: lex.Tag) !?lex.Token {
     return null;
 }
 
+/// Checks to see if the next token is `tag`, and if it is advances the lexer.
+/// Returns true if present false otherwise.
+/// Returns error.EOF if at end of stream.
 fn expect(self: *@This(), tag: lex.Tag) !bool {
     if (!self.is_next(tag)) {
         return false;
@@ -68,6 +74,8 @@ fn expect(self: *@This(), tag: lex.Tag) !bool {
     return true;
 }
 
+/// Checks all tags in `values` to see if any of them match the next token.
+/// If it does it just returns whether it found one, it does not advance the lexer.
 fn is_next_one_of(self: *@This(), comptime values: anytype) bool {
     const next_tok_option = self.peek();
     if (next_tok_option == null) return false;
@@ -78,17 +86,25 @@ fn is_next_one_of(self: *@This(), comptime values: anytype) bool {
     return false;
 }
 
+
+/// Checks if the next token is `tag`, returns true if so, false otherwise.
+/// Does not advance the lexer.
 fn is_next(self: *@This(), tag: lex.Tag) bool {
     const next_tok = self.peek();
     if (next_tok == null) return false;
     return next_tok.?.tag == tag;
 }
 
+/// Checks if the next token is `tag`, returns it if so, null otherwise.
+/// Does advance the lexer if correct token.
 fn next_if(self: *@This(), tag: lex.Tag) ?lex.Token {
     if (self.is_next(tag)) return self.next() catch unreachable;
     return null;
 }
 
+/// Advance the lexer and return the next token.
+/// Returns error.EOF if at end of input.
+/// Respects `restore`
 fn next(self: *@This()) !lex.Token {
     if (self.saved_token) |prev| {
         self.saved_token = null;
@@ -104,31 +120,44 @@ fn next(self: *@This()) !lex.Token {
     return out;
 }
 
+/// Resets the lexer to right before `tok` and saves `tok`. 
+/// FIXME: Since the lexer is being reset, there isn't really a need to save the token in addition.
 fn restore(self: *@This(), tok: lex.Token) void {
     self.saved_token = tok;
     self.lexer.index = tok.span.start;
 }
 
+/// Gets the next token without advancing the lexer.
+/// If the lexer returns .eof, returns null.
+/// Respects `restore`
 fn peek(self: *@This()) ?lex.Token {
     if (self.saved_token) |prev| {
         return prev;
     }
     const next_tok = self.lexer.peek_token();
+    if (next_tok.tag == .eof) return null;
     return next_tok;
 }
 
 
 /// The entrypoint for the parser
+/// Returns the fully built Ast.
+/// Returns error.EOF if it runs out of input unexpectedly.
+/// Returns other allocator errors.
 pub fn parse(self: *@This()) !Ast.Ast {
     return try self.program();
 }
 
 // ---- START TOP-LEVEL ----
 
+/// Parser module declaration and any number of top-level declarations.
+/// Corresponds to grammar rule `PROGRAM`
 fn program(self: *@This()) anyerror!Ast.Ast {
     // Every source file requires a module declaration as the first thing in the file.
+    // MODULE_DECLARATION
     const mod = try self.module_declaration();
     var decls = std.ArrayList(AstNodeId).empty;
+    // ITEM*
     while (self.lexer.has_next()) {
         const decl = try self.item();
         try decls.append(self.allocator, decl);
@@ -143,8 +172,11 @@ fn program(self: *@This()) anyerror!Ast.Ast {
     return self.builder.build();
 }
 
+/// Parses a module declaration
+/// Corresponds to grammar rule `MODULE_DECLARATION`
 fn module_declaration(self: *@This()) !?Ast.ModuleDecl {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // KEYWORD_MOD
     if (!(try self.expect(.keyword_mod))) {
         const err = errors.ExpectedDeclarationError {
             .span = span,
@@ -157,7 +189,9 @@ fn module_declaration(self: *@This()) !?Ast.ModuleDecl {
         }
         return null;
     }
+    // EXPRESSION_PATH
     const path = try self.expression_path();
+    // ';'
     if(!(try self.expect(.semicolon))) {
         const err = errors.ExpectedTokenError {
             .expected = .semicolon,
@@ -174,15 +208,23 @@ fn module_declaration(self: *@This()) !?Ast.ModuleDecl {
 
 }
 
+// Parses a top-level declaration / item
+// Corresponds to grammar rule `ITEM`
 fn item(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // currently only `pub`
     const vis = try self.visibility();
+    // `extern`/`export`
     const link = try self.linkage();
+    // We parse function modifiers here to make things easier.
+    // TODO: move this to function parsing
     const function_mods = try self.function_modifiers();
     const peek_tok = self.peek();
     if (peek_tok == null) {
         return error.EOF;
     }
+    // Switches over the next token to dispatch to correct parse rule.
+    // Also handles multiple module declarations
     const kind: struct {Ast.ItemKind, AstNodeId }= switch (peek_tok.?.tag) {
         .keyword_fn => .{ .function, try self.function_declaration()},
         .keyword_let => .{.binding, try self.let_binding()},
@@ -192,6 +234,7 @@ fn item(self: *@This()) !AstNodeId {
             const err = errors.UnexpectedDeclarationError {
                 .span = sp,
                 .ty = .module_decl,
+                .notes = &.{ "there can only be one module per file" },
             };
             const errid = try self.context.session.push(try err.get_error_type(self.allocator));
             const poison_node = Ast.Poison {
@@ -200,12 +243,27 @@ fn item(self: *@This()) !AstNodeId {
             const poisonid = try self.builder.add_node(.poison, sp, poison_node);
             return poisonid;
         },
-        else => |v| {
-            std.debug.print("FATAL: {any}\n", .{v});
-            unreachable;
+        else =>  {
+            const err = errors.UnexpectedTokenError {
+                .found = peek_tok.?,
+                .notes = &.{ "top-level can only contain functions, imports, and variables" },
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            while (!self.is_next_one_of(.{ .keyword_fn, .keyword_let, .keyword_import, .semicolon })) {
+                _ = self.next() catch unreachable;
+            }
+            span.merge(.init(self.lexer.index, self.file));
+            const poison_node = Ast.Poison {
+                .error_id = errid,
+            };
+            const poisonid = try self.builder.add_node(.poison, span, poison_node);
+            return poisonid;
+
+
         },
     };
 
+    // We don't really need to do this, but its here.
     if (link) |l| span.merge(l.span);
     if (vis) |v| span.merge(v.span);
     for (function_mods) |i| {
@@ -230,6 +288,7 @@ fn item(self: *@This()) !AstNodeId {
 
 }
 
+// Parses item visibility.
 fn visibility(self: *@This()) !?Ast.Visibility {
     if (self.next_if(.keyword_pub)) |v| {
         return .{
@@ -240,6 +299,7 @@ fn visibility(self: *@This()) !?Ast.Visibility {
     return null;
 }
 
+// Parses item linkage
 fn linkage(self: *@This()) !?Ast.Linkage {
     if (self.next_if(.keyword_extern)) |tok| {
         return .{
@@ -256,6 +316,7 @@ fn linkage(self: *@This()) !?Ast.Linkage {
     return null;
 }
 
+// Parses function modifers.
 fn function_modifiers(self: *@This()) ![]Ast.FnMod {
     var mods: std.ArrayList(Ast.FnMod) = .empty;
     while (self.is_next_one_of(.{.keyword_inline, .keyword_pure, .keyword_comptime})) {
@@ -271,20 +332,25 @@ fn function_modifiers(self: *@This()) ![]Ast.FnMod {
     return try mods.toOwnedSlice(self.allocator);
 }
 
+// Parses a let binding
+// Corresponds to grammar rule `LET_BINDING`
 fn let_binding(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // KEYWORD_LET
     const let_keyword = try self.expect_ret(.keyword_let);
     if (let_keyword == null) {
         //FATAL: This should never be null, there is a problem in the compiler
         return error.FatalError;
     }
     span.merge(let_keyword.?.span);
+    // BINDING_MODIFIER
     const modifier = try self.binding_modifier();
 
+    // IDENT
     const ident_tmp = try self.expect_ret(.ident);
     var ident: common.Either(common.Span, diag.ErrorId) = undefined;
     if (ident_tmp == null) {
-        //ERROR: Expected identifier before '='
+        // Expected identifier
         const err = errors.ExpectedTokenError {
             .expected = .ident,
             .span = .init(self.previous_token.span.end, self.file),
@@ -294,12 +360,15 @@ fn let_binding(self: *@This()) !AstNodeId {
     } else {
         ident = .make(ident_tmp.?.span);
     }
+    // { ':' TYPE_EXPRESSION }
     var typeexpr: ?AstNodeId = null;
     if (self.next_if(.colon)) |tok| {
         span.merge(tok.span);
         typeexpr = try self.type_expression();
         span.merge(self.builder.get_span(typeexpr.?));
     }
+
+    // '='
     if (!try self.expect(.eq)) {
         //ERROR: Expected '='
         const err = errors.ExpectedTokenError {
@@ -309,7 +378,10 @@ fn let_binding(self: *@This()) !AstNodeId {
         const errid = try self.context.session.push(try err.get_error_type(self.allocator));
         _ = errid;
     }
+    // EXPRESSION
     const expr = try self.expression();
+    
+    // ';'
     const semicolon_tok = try self.expect(.semicolon);
     if (!semicolon_tok) {
         //ERROR: Missing semicolon
@@ -336,6 +408,8 @@ fn let_binding(self: *@This()) !AstNodeId {
     return nodeid;
 }
 
+/// Parses a binding modifier.
+/// Corresponds to grammar rule `BINDING_MODIFIER`
 fn binding_modifier(self: *@This()) !?Ast.BindingModifier {
     if (!self.is_next_one_of(.{.keyword_alias, .keyword_mut, .keyword_move})) return null;
     const tok = try self.next();
@@ -351,13 +425,17 @@ fn binding_modifier(self: *@This()) !?Ast.BindingModifier {
     };
 }
 
+/// Parses a function declaration.
+/// Corresponds to grammar rule `FUNCTION_DECLARATION`
 fn function_declaration(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // KEYWORD_FN
     if (!try self.expect(.keyword_fn)) {
         //FATAL: This should never be null
         return error.FatalError;
     }
 
+    // IDENT
     const fn_ident = try self.expect_ret(.ident);
     var fnid: ?common.Either(common.Span, diag.ErrorId) = null;
     if (fn_ident == null) {
@@ -371,7 +449,7 @@ fn function_declaration(self: *@This()) !AstNodeId {
     } else {
         fnid = .make(fn_ident.?.span);
     }
-
+    // '('
     if (!try self.expect(.open_paren)) {
        //ERROR: Expected open parenthesis after identifier
         const err = errors.ExpectedTokenError {
@@ -381,16 +459,23 @@ fn function_declaration(self: *@This()) !AstNodeId {
         const errid = try self.context.session.push(try err.get_error_type(self.allocator));
         _ = errid;
     }
+
+    // Keep track of if we have come across an inline type, that of `id: type`
+    // FIXME: This should only be set on the _first_ parameter, afterwards it should be considered immutable. 
     var is_inline: bool = false;
     var param_tys: std.ArrayList(AstNodeId) = .empty;
     var param_ids: std.ArrayList(Ast.BindingId) = .empty;
     var generics: std.ArrayList(Ast.Generic) = .empty;
     var ret_ty: ?AstNodeId = null;
+
+    // Parse generic list
+    // FIXME: This should only be done in the type list, currently it is always in the param list.
     while (self.is_next(.dollar)) {
+        // '$'
         const dollar_tok = self.next() catch unreachable;
         _ = dollar_tok;
+        // IDENT
         const id = try self.expect_ret(.ident);
-        var expr: ?AstNodeId = null;
         if (id == null) {
             //ERROR: Expected identifier after '$'
             const err = errors.ExpectedTokenError {
@@ -400,6 +485,8 @@ fn function_declaration(self: *@This()) !AstNodeId {
             const errid = try self.context.session.push(try err.get_error_type(self.allocator));
             _ = errid;
         }
+        // { ':' TYPE_EXPRESSION }
+        var expr: ?AstNodeId = null;
         if (self.is_next(.colon)) {
             const colon_tok = self.next() catch unreachable;
             _ = colon_tok;
@@ -411,6 +498,7 @@ fn function_declaration(self: *@This()) !AstNodeId {
         };
 
         try generics.append(self.allocator, generic);
+        // { ',' }
         const comma = self.next_if(.comma);
         if (!self.is_next(.close_paren) and comma == null) {
             //ERROR: Expectected comma
@@ -422,9 +510,12 @@ fn function_declaration(self: *@This()) !AstNodeId {
             _ = errid;
         }
     }
+    // Parse parameter / type list
+    // Determines if the function is using inline or postfix syntax via checking for `id: type`
     while (!self.is_next(.close_paren)) {
+        // BINDING_MODIFIER
         const modifier = try self.binding_modifier();
-
+        // IDENT
         const param_ident = try self.expect_ret(.ident);
         var param_ident_errid: ?diag.ErrorId = null;
         if (param_ident == null) {
@@ -438,6 +529,10 @@ fn function_declaration(self: *@This()) !AstNodeId {
         }
         const pid: common.Either(common.Span, diag.ErrorId) = if (param_ident_errid) |eid| .make(eid) else .make(param_ident.?.span);
         try param_ids.append(self.allocator, .{ .id = .{ .span = pid }, .modifier = modifier });
+        // { ':' TYPE_EXPRESSION }
+        // sets the function to inline
+        // This could technically make the grammar / parser context-aware,
+        //  however since the check is on the first parameter, its more like "dispatch-aware".
         if (self.next_if(.colon)) |colon_token| {
             span.merge(colon_token.span);
             is_inline = true;
@@ -467,15 +562,22 @@ fn function_declaration(self: *@This()) !AstNodeId {
             _ = errid;
         }  
     }
+    // ')'
+    // FIXME: This should have an error case since the loop can stop on EOF.
     _ = self.expect(.close_paren) catch unreachable;
+    // postfix list
     if (self.is_next(.colon)) {
         const colon_tok = self.next() catch unreachable;
-        _ = colon_tok;
         if (is_inline) {
-            //ERROR: Cannot mix inline and postfix in function declaration
-            return error.ParseError;
+            const err = errors.ExpectedTokenError {
+                .span = .init(colon_tok.span.end, self.file),
+                .expected = .colon,
+                .notes = &.{"inline and postfix function declarations cannot be mixed"},
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
         }
-
+        // '(' ( TYPE_EXPRESSION ( ',' TYPE_EXPRESSION )* ) ')'
         if (self.is_next(.open_paren)) {
             const paren_tok = self.next() catch unreachable;
             _ = paren_tok;
@@ -487,16 +589,19 @@ fn function_declaration(self: *@This()) !AstNodeId {
             }
             _ = self.expect(.close_paren) catch unreachable;
         } else {
+            // TYPE_EXPRESSION
             const ty = try self.type_expression();
             try param_tys.append(self.allocator, ty);
         }
 
     }
+    // { '->' TYPE_EXPRESSION }
     if (self.is_next(.thin_arrow)) {
         const arrow_tok = self.next() catch unreachable;
         _ = arrow_tok;
         ret_ty = try self.type_expression();
     }
+    // EXPRESSION_BLOCK
     const body = try self.expression_block();
 
     span.merge(.init(self.lexer.index, self.file));
@@ -519,13 +624,19 @@ fn function_declaration(self: *@This()) !AstNodeId {
 
 // ---- START TYPES ----
 
+/// Parses a type expression
+/// Corresponds to grammar rule `TYPE_EXPRESSION`
 fn type_expression(self: *@This()) !AstNodeId {
     return try self.type_expression_metadata();
 }
 
+/// Parses the metadata operator, that is the associated set.
+/// Corresponds to grammar rule `TYPE_EXPRESSION_METADATA`
 fn type_expression_metadata(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // TYPE_EXPRESSION_STRICT_INCLUSION
     var left = try self.type_expression_strict_inclusion();
+    // ( KEYWORD_WITH TYPE_EXPRESSION_STRICT_INCLUSION )*
     while ( self.is_next(.keyword_with )) {
         const right = try self.type_expression_strict_inclusion();
         const node = Ast.TypeMetadata {
@@ -541,9 +652,13 @@ fn type_expression_metadata(self: *@This()) !AstNodeId {
     return left;
 }
 
+/// Parses strict inclusion operators. Also called strict subset / strict superset.
+/// Corresponds to grammar rule `TYPE_EXPRESSION_STRICT_INCLUSION`
 fn type_expression_strict_inclusion(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // TYPE_EXPRESSION_MEMBERSHIP
     var left = try self.type_expression_membership();
+    // ( ( '<' | '>' ) TYPE_EXPRESSION_MEMBERSHIP )*
     while (self.is_next_one_of(.{ .lt, .gt })) {
         const op = self.next() catch unreachable;
         const right = try self.type_expression_membership();
@@ -564,9 +679,13 @@ fn type_expression_strict_inclusion(self: *@This()) !AstNodeId {
     return left;
 }
 
+/// Parses membership operator also called set inclusion
+/// Corresponds to grammar rule `TYPE_EXPRESSION_MEMBERSHIP`
 fn type_expression_membership(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // TYPE_EXPRESSION_DIFFERENCE
     var left = try self.type_expression_difference();
+    // ( KEYWORD_IN TYPE_EXPRESSION_DIFFERENCE )*
     while (self.is_next( .keyword_in )) {
         const op = self.next() catch unreachable;
         _ = op;
@@ -583,9 +702,13 @@ fn type_expression_membership(self: *@This()) !AstNodeId {
     return left;
 }
 
+/// Parses difference operator, specifically set difference, not symmetric difference.
+/// Corresponds to grammar rule `TYPE_EXPRESSION_DIFFERENCE`
 fn type_expression_difference(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // TYPE_EXPRESSION_UNION
     var left = try self.type_expression_union();
+    // ( '-' TYPE_EXPRESSION_UNION )*
     while (self.is_next( .minus )) {
         const op = self.next() catch unreachable;
         _ = op;
@@ -602,9 +725,13 @@ fn type_expression_difference(self: *@This()) !AstNodeId {
     return left;
 }
 
+/// Parses the union operator.
+/// Corresponds to grammar rule `TYPE_EXPRESSION_UNION`
 fn type_expression_union(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // TYPE_EXPRESSION_INTERSECTION
     var left = try self.type_expression_intersection();
+    // ( '|' TYPE_EXPRESSION_INTERSECTION )*
     while (self.is_next( .pipe )) {
         const op = self.next() catch unreachable;
         _ = op;
@@ -621,10 +748,14 @@ fn type_expression_union(self: *@This()) !AstNodeId {
     return left;
 }
 
+/// Parses intersection operator.
+/// Corresponds to grammar rule `TYPE_EXPRESSION_INTERSECTION`
 fn type_expression_intersection(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // TYPE_EXPRESSION_PRODUCT
     var left = try self.type_expression_product();
-    while (self.is_next( .pipe )) {
+    // ( '&' TYPE_EXPRESSION_PRODUCT )*
+    while (self.is_next( .amp )) {
         const op = self.next() catch unreachable;
         _ = op;
         const right = try self.type_expression_product();
@@ -641,10 +772,14 @@ fn type_expression_intersection(self: *@This()) !AstNodeId {
 }
 
 
+/// Parses product operator.
+/// Corresponds to grammar rule `TYPE_EXPRESSION_PRODUCT`
 fn type_expression_product(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // TYPE_EXPRESSION_MODIFIERS
     var left = try self.type_expression_modifiers();
-    while (self.is_next( .pipe )) {
+    // ( '*' TYPE_EXPRESSION_MODIFIERS )*
+    while (self.is_next( .star )) {
         const op = self.next() catch unreachable;
         _ = op;
         const right = try self.type_expression_modifiers();
@@ -660,9 +795,13 @@ fn type_expression_product(self: *@This()) !AstNodeId {
     return left;
 }
 
+/// Parses unary modifiers.
+/// Corresponds to grammar rule `TYPE_EXPRESSION_MODIFIERS`
+/// FIXME: Rename to unary
 fn type_expression_modifiers(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     var mods: std.ArrayList(Ast.TypeModifierOp) = .empty;
+    // ( '&' | '[]' | '[' EXPRESSION ']' )*
     while (self.is_next_one_of(.{ .amp, .amp2, .open_square })) {
         const tok = self.next() catch unreachable;
 
@@ -682,6 +821,7 @@ fn type_expression_modifiers(self: *@This()) !AstNodeId {
             try mods.append(self.allocator, .Reference);
         }
     }
+    // TYPE_EXPRESSION_GROUPING
     const expr = try self.type_expression_grouping();
 
     const node = Ast.TypeModifier {
@@ -694,27 +834,43 @@ fn type_expression_modifiers(self: *@This()) !AstNodeId {
 }
 
 
+/// Parses grouping syntax.
+/// More accurate to say that it parses things that have the same precedence as grouping.
+/// Corresponds to grammar rule `TYPE_EXPRESSION_GROUPING`
 fn type_expression_grouping(self: *@This()) anyerror!AstNodeId {
+    // '(' TYPE_EXPRESSION ')'
     if (self.is_next(.open_paren)) {
         _ = self.next() catch unreachable;
         const expr = try self.type_expression();
         if (!try self.expect(.close_paren)) {
-            //ERROR: Expected ')'
-            return error.ParseError;
+            const err = errors.ExpectedTokenError {
+                .expected = .close_paren,
+                .span = .init(self.previous_token.span.end, self.file),
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
         }
         return expr;
     }
-
+    // '{' EXPRESSION '}'
+    // TODO: Perhaps consider making this a normal block?
     if (self.is_next(.open_bracket)) {
         _ = self.next() catch unreachable;
         const expr = try self.expression();
         if (!try self.expect(.close_bracket)) {
-            //ERROR: Expected '}'
-            return error.ParseError;
+            const err = errors.ExpectedTokenError {
+                .expected = .close_bracket,
+                .span = .init(self.previous_token.span.end, self.file),
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
         }
         return expr;
     }
 
+    // IDENT | TYPE_EXPRESSION_LABEL
+    // This is currently the only place that backtracking is required.
+    // TODO: Move this to type_expression_literal
     if (self.is_next(.ident)) {
         const save = self.next() catch unreachable;
         if (self.is_next(.colon)) {
@@ -726,20 +882,19 @@ fn type_expression_grouping(self: *@This()) anyerror!AstNodeId {
         const out = try self.expression_path();
         return out;
     }
-
-    if (self.is_next(.back_slash)) {
-        const lambda = try self.expression_lambda();
-        return lambda;
-    }
-
+    // TYPE_EXPRESSION_SUGAR
     if (self.is_next_one_of(.{ .keyword_struct, .keyword_enum, .keyword_impl })) {
         const expr = try self.type_expression_sugar();
         return expr;
     }
 
+    // TYPE_EXPRESSION_PRIMARY
     return try self.type_expression_primary();
 }
 
+/// Parses a label
+/// Corresponds to grammar rule `TYPE_EXPRESSION_LABEL`
+/// TODO: This can probably be moved inline.
 fn type_expression_label(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const ident = try self.expect_ret(.ident);
@@ -760,6 +915,10 @@ fn type_expression_label(self: *@This()) !AstNodeId {
 }
 
 
+/// Parses all primary expressions
+/// Corresponds to grammar rule `TYPE_EXPRESSION_PRIMARY`
+/// Note that this and TYPE_EXPRESSION_LITERAL are technically at the same precedence level
+///  they are just seperated to make things like ranges more exact.
 fn type_expression_primary(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     if (self.next_if(.dot)) |_| {
@@ -786,9 +945,13 @@ fn type_expression_primary(self: *@This()) !AstNodeId {
 
 }
 
+/// Parses a literal type expression
+/// Corresponds to grammar rule `TYPE_EXPRESSION_LITERAL`
+/// TODO: This can probably be merged with EXPRESSION_LITERAL
 fn type_expression_literal(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-
+    // '.' IDENT
+    // a symbol
     if (self.next_if(.dot)) |_| {
         if (self.is_next(.ident)) {
             const ident = self.next() catch unreachable;
@@ -802,6 +965,7 @@ fn type_expression_literal(self: *@This()) !AstNodeId {
 
     }
 
+    // Various literals
     if (self.is_next_one_of(.{
         .int_literal,
         .float_literal,
@@ -823,6 +987,8 @@ fn type_expression_literal(self: *@This()) !AstNodeId {
     return error.ParseError;
 }
 
+/// Parses various syntax sugar
+/// Corresponds to grammar rule `TYPE_EXPRESSION_SUGAR`
 fn type_expression_sugar(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const peek_tok = self.peek();
@@ -866,31 +1032,50 @@ fn type_expression_sugar(self: *@This()) !AstNodeId {
 
 }
 
+/// Parses the struct syntax sugar
+/// Corresponds to the grammar rule `TYPE_STRUCT_SUGAR`
 fn type_struct_sugar(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    // KEYWORD_STRUCT
     const keyword = try self.expect(.keyword_struct);
-    if (!keyword) return error.ParseError;
+    if (!keyword) {
+        // Should never be called without a prefix struct keyword
+        return error.FatalError;
+    }
     if (!try self.expect(.open_bracket)) {
-        //ERROR: expected '{'
-        return error.ParseError;
+        const err = errors.ExpectedTokenError {
+            .expected = .open_bracket,
+            .span = .init(self.previous_token.span.end, self.file),
+        };
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        _ = errid;
+        //TODO: Add context aware error recovery.
+
     }
 
     var idents: std.ArrayList(Ast.Ident) = .empty;
     var exprs: std.ArrayList(AstNodeId) = .empty;
     while (!self.is_next(.close_bracket)) {
+        // IDENT ':' TYPE_EXPRESSION {','}
         const ident = try self.expect_ret(.ident);
         if (!try self.expect(.colon)) {
-            //ERROR: expected ':'
-            return error.ParseError;
+            const err = errors.ExpectedTokenError {
+                .expected = .colon,
+                .span = .init(self.previous_token.span.end, self.file),
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
         }
 
         const expr = try self.type_expression();
 
         _ = self.next_if(.comma);
+        //TODO: Add check for missing comma
 
         try idents.append(self.allocator, .{ .span = .make(ident.?.span) });
         try exprs.append(self.allocator, expr);
     }
+    //TODO: Add error handling for this.
     _ = self.expect(.close_bracket) catch unreachable;
 
     const node = Ast.TypeStruct {
@@ -904,13 +1089,19 @@ fn type_struct_sugar(self: *@This()) !AstNodeId {
     return nodeid;
 }
 
+/// Parses enum syntax sugar
+/// Corresponds to grammar rule `TYPE_ENUM_SUGAR`
 fn type_enum_sugar(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const keyword = try self.expect(.keyword_enum);
     if (!keyword) return error.ParseError;
     if (!try self.expect(.open_bracket)) {
-        //ERROR: expected '{'
-        return error.ParseError;
+        const err = errors.ExpectedTokenError {
+            .expected = .open_bracket,
+            .span = .init(self.previous_token.span.end, self.file),
+        };
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        _ = errid;
     }
     var exprs: std.ArrayList(AstNodeId) = .empty;
     while (!self.is_next(.close_bracket)) {
@@ -930,13 +1121,20 @@ fn type_enum_sugar(self: *@This()) !AstNodeId {
     return nodeid;
 }
 
+/// Parses impl syntax sugar
+/// Corresponds to grammar rule `TYPE_IMPL_SUGAR`
 fn type_impl_sugar(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const keyword = try self.expect(.keyword_impl);
     if (!keyword) return error.ParseError;
     if (!try self.expect(.open_bracket)) {
-        //ERROR: expected '{'
-        return error.ParseError;
+        const err = errors.ExpectedTokenError {
+            .expected = .open_bracket,
+            .span = .init(self.previous_token.span.end, self.file),
+        };
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        _ = errid;
+
     }
     var decs: std.ArrayList(AstNodeId) = .empty;
     while (!self.is_next(.close_bracket)) {
@@ -956,10 +1154,14 @@ fn type_impl_sugar(self: *@This()) !AstNodeId {
 
 // ---- START EXPRESSIONS ----
 
+/// Parses an expression
+/// Corresponds to grammar rule `EXPRESSION`
 fn expression(self: *@This()) anyerror!AstNodeId {
+    // KEYWORD_TYPE TYPE_EXPRESSION
     if (self.next_if(.keyword_type)) |_| {
         return try self.type_expression();
     }
+    // | EXPRESSION
     return try self.expression_return();
 }
 

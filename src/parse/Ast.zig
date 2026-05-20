@@ -224,7 +224,6 @@ pub const Item = struct {
 
 pub const ItemKind = enum {
     function,
-    @"type",
     binding,
 };
 
