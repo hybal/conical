@@ -17,7 +17,7 @@ pub const InternPool = struct {
 
     pub fn put(self: *@This(), string: []const u8) !InternId {
         const id = std.hash.XxHash3.hash(SEED, string);
-        try self.pool.getOrPutValue(id, string);
+        _ = try self.pool.getOrPutValue(id, string);
         return id;
     }
 

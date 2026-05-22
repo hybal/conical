@@ -188,14 +188,14 @@ pub const Generic = struct {
     ident: Ident,
     expr: ?AstNodeId,
 };
-pub const FnModKind = union(enum) {
+pub const EvalModifier = enum {
     pure,
     @"inline",
     @"comptime",
 };
 
 pub const FnMod = struct {
-    kind: FnModKind,
+    kind: EvalModifier,
     span: common.Span,
 };
 
@@ -331,7 +331,12 @@ pub const Ternary = struct {
 };
 
 pub const Block = struct {
-    exprs: []AstNodeId
+    exprs: []AstNodeId,
+};
+
+pub const ModBlock = struct {
+    block: AstNodeId,
+    mod: EvalModifier,
 };
 
 pub const Poison = struct {
@@ -390,6 +395,7 @@ pub const AstKind = enum {
     loop,
     loop_control,
     block,
+    mod_block,
     var_decl,
     fn_decl,
     fn_call,
@@ -438,6 +444,7 @@ pub const Ast = struct {
     loops: []const Loop,
     loop_controls: []const LoopControl,
     blocks: []const Block,
+    mod_blocks: []const ModBlock,
     var_decls: []const VarDecl,
     fn_decls: []const FnDecl,
     fn_calls: []const FnCall,

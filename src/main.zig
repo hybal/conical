@@ -4,6 +4,8 @@ const common = @import("common");
 const lex = @import("lex");
 const parse = @import("parse");
 const hir = @import("hir");
+const tir = @import("tir");
+const sets = @import("types").set;
 //const mir = @import("mir");
 //const sema = @import("sema");
 //const backend = @import("backend");
@@ -21,15 +23,23 @@ pub fn main(init: std.process.Init) !u8 {
         \\  let mut a = 2;
         \\ }
     ;
-    var ctx = common.Context.init(std.heap.page_allocator);
+    var alloc = std.heap.DebugAllocator(.{ 
+        .never_unmap = true,
+        .retain_metadata = true,
+    }).init;
+    const gpa = alloc.allocator();
+    var ctx = common.Context.init(gpa);
     const file = try ctx.file_store.put(.{.buffer = buffer});
     _ = hir;
-    var parser = try parse.init(&ctx, buffer, file, std.heap.page_allocator);
+    var parser = try parse.init(&ctx, buffer, file, gpa);
     _ = try parser.parse();
     var buff: [64]u8 = undefined;
     const stderr = try init.io.lockStderr(&buff, null);
     try ctx.session.emit(&ctx, init.io, &stderr.file_writer.interface);
-    init.io.unlockStderr();
+    _ = alloc.deinitWithoutLeakChecks();
+
+    _ = tir.eval.try_eval;
+    _ = tir.eval.try_eval_block;
     return 0;
 }
 

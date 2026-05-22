@@ -11,10 +11,17 @@ pub const OverloadOp = enum {
     bitor,
     bitand,
     bitxor,
+    eq,
+    neq,
+    lt,
+    gt,
+    lteq,
+    gteq,
     logand,
     logor,
     lognot,
     unwrap,
+    next,
 };
 
 pub const OPERATOR_OVERLOAD_MAP = [_]struct {OverloadOp, []const u8} {
@@ -27,10 +34,17 @@ pub const OPERATOR_OVERLOAD_MAP = [_]struct {OverloadOp, []const u8} {
     .{ .bitor,   "__operator_bitwise_or"  },
     .{ .bitand,  "__operator_bitwise_and" },
     .{ .bitxor,  "__operator_bitwise_xor" },
+    .{ .eq,      "__operator_eq"          },
+    .{ .neq,     "__operator_neq"         },
+    .{ .lt,      "__operator_bitwise_xor" },
+    .{ .gt,      "__operator_bitwise_xor" },
+    .{ .lteq,    "__operator_bitwise_xor" },
+    .{ .gteq,    "__operator_bitwise_xor" },
     .{ .logand,  "__operator_logical_and" },
     .{ .logor,   "__operator_logical_or"  },
     .{ .lognot,  "__operator_logical_not" },
     .{ .unwrap,  "__operator_unwrap"      },
+    .{ .next,    "__next",                },
 };
 
 pub fn get_operator_overload(op: OverloadOp) []const u8 {

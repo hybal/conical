@@ -10,11 +10,12 @@ const MODS = std.StaticStringMap(ModInf).initComptime(.{
     .{ "parse", ModInf { .path  = "src/parse/mod.zig", .deps = &.{"common", "lex", "diagnostics"} } },
     .{ "diagnostics", ModInf { .path  = "src/diagnostics/mod.zig", .deps = &.{"common"} } },
     .{ "hir", ModInf { .path  = "src/hir/mod.zig", .deps = &.{"common", "diagnostics", "lex", "parse"} } },
+    .{ "tir", ModInf { .path = "src/tir/mod.zig", .deps = &.{ "common", "diagnostics", "hir", "types"}}},
     .{ "mir", ModInf { .path  = "src/mir/mod.zig", .deps = &.{"common", "diagnostics"} } },
-    .{ "sema", ModInf { .path  = "src/sema/mod.zig", .deps = &.{"common", "diagnostics"} } },
     .{ "backend", ModInf { .path  = "src/backend/mod.zig", .deps = &.{"common", "diagnostics"} } },
     .{ "bindings", ModInf { .path = "src/bindings/mod.zig", .deps = &.{} }},
     .{ "driver", ModInf { .path  = "src/driver/mod.zig", .deps = &.{"common", "diagnostics"} } },
+    .{ "types", ModInf { .path = "src/types/mod.zig", .deps = &.{ "common", "hir", "diagnostics" } } },
 });
 
 pub fn build(b: *std.Build) void {

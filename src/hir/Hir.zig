@@ -63,7 +63,7 @@ pub const Conditional = struct {
     condition: HirNodeId,
     then: HirNodeId,
     @"else": ?HirNodeId,
-    refinements: []RefinementBinding,
+    refinements: ?[]RefinementBinding,
 };
 
 pub const RefinementBinding = struct {
@@ -98,8 +98,15 @@ pub const Pattern = union(enum) {
     underscore,
 };
 
+pub const EvalModifier = enum {
+    @"inline",
+    @"comptime",
+    pure,
+};
+
 pub const Block = struct {
     statements: []HirNodeId,
+    mod: ?EvalModifier,
     scope: ScopeId,
 };
 
@@ -328,6 +335,9 @@ pub const Symbol = struct {
     id: InternId,
 };
 
+/// A symbol table
+/// Note this is not the global symbol table for declarations
+///  it is purely for use when doing symbol resolution during Hir -> Tir conversion
 pub const SymbolTable = [][]Symbol; //[ScopeId][SymbolId]
 
 pub const HirNode = struct {

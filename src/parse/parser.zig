@@ -15,27 +15,27 @@ const diag = @import("diagnostics");
 const errors = @import("errors.zig");
 
 allocator: std.mem.Allocator,
-tmp_allocator: std.mem.Allocator = std.heap.page_allocator, //TODO: use an actual allocator
-lexer: lex.Lexer,
-context: *common.Context,
-has_module: bool = false,
-builder: Ast.AstBuilder,
-file: common.FileId,
-saved_token: ?lex.Token = null,
-previous_token: lex.Token = undefined,
+    tmp_allocator: std.mem.Allocator = std.heap.page_allocator, //TODO: use an actual allocator
+    lexer: lex.Lexer,
+    context: *common.Context,
+    has_module: bool = false,
+    builder: Ast.AstBuilder,
+    file: common.FileId,
+    saved_token: ?lex.Token = null,
+    previous_token: lex.Token = undefined,
 
 
 
-/// Initialize the parser from an already existing Lexer instance
-pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
-    return .{
-        .lexer = in,
-        .allocator = gpa,
-        .context = context,
-        .builder = .init(gpa),
-        .file = in.file,
-    };
-}
+    /// Initialize the parser from an already existing Lexer instance
+    pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
+        return .{
+            .lexer = in,
+            .allocator = gpa,
+            .context = context,
+            .builder = .init(gpa),
+            .file = in.file,
+        };
+    }
 
 /// Initialize the parser from source
 pub fn init(context: *common.Context, buffer: []const u8, file: common.FileId, gpa: std.mem.Allocator) !@This() {
@@ -321,7 +321,7 @@ fn function_modifiers(self: *@This()) ![]Ast.FnMod {
     var mods: std.ArrayList(Ast.FnMod) = .empty;
     while (self.is_next_one_of(.{.keyword_inline, .keyword_pure, .keyword_comptime})) {
         const tok = try self.next();
-        const kind: Ast.FnModKind = switch (tok.tag) {
+        const kind: Ast.EvalModifier = switch (tok.tag) {
             .keyword_inline => .@"inline",
             .keyword_pure => .pure,
             .keyword_comptime => .@"comptime",
@@ -380,7 +380,7 @@ fn let_binding(self: *@This()) !AstNodeId {
     }
     // EXPRESSION
     const expr = try self.expression();
-    
+
     // ';'
     const semicolon_tok = try self.expect(.semicolon);
     if (!semicolon_tok) {
@@ -451,7 +451,7 @@ fn function_declaration(self: *@This()) !AstNodeId {
     }
     // '('
     if (!try self.expect(.open_paren)) {
-       //ERROR: Expected open parenthesis after identifier
+        //ERROR: Expected open parenthesis after identifier
         const err = errors.ExpectedTokenError {
             .expected = .open_paren,
             .span = span,
@@ -1795,11 +1795,38 @@ fn expression_primary(self: *@This()) !AstNodeId {
     if (self.is_next(.back_slash)) {
         return try self.expression_lambda();
     }
+    
+    if (self.is_next_one_of(.{ .keyword_comptime, .keyword_inline, .keyword_pure })) {
+        return try self.expression_mod_block();
+    }
 
     if (self.is_next(.open_bracket)) {
         return try self.expression_block();
     }
     return try self.expression_terminal();
+}
+
+fn expression_mod_block(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const mod: Ast.EvalModifier = switch ((self.next() catch unreachable).tag) {
+        .keyword_comptime => .@"comptime",
+        .keyword_inline => .@"inline",
+        .keyword_pure => .pure,
+        else => unreachable,
+    };
+    span.merge(.init(self.lexer.index, self.file));
+
+    const block = try self.expression_optional_block();
+
+    span.merge(.init(self.lexer.index, self.file));
+    const mod_block = Ast.ModBlock {
+        .block = block,
+        .mod = mod,
+    };
+
+    span.merge(.init(self.lexer.index, self.file));
+    const out = try self.builder.add_node(.mod_block, span, mod_block);
+    return out;
 }
 
 fn expression_lambda(self: *@This()) !AstNodeId {
@@ -2151,57 +2178,57 @@ fn loop_block(self: *@This()) !AstNodeId {
     const nodeid = try self.builder.add_node(.block, span, node);
     return nodeid;
 
+}
+
+fn while_loop(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    if (!try self.expect(.keyword_while)) {
+        //FATAL: Called without a known while loop
+        return error.FatalError;
     }
 
-    fn while_loop(self: *@This()) !AstNodeId {
-        var span: common.Span = .init(self.lexer.index, self.file);
-        if (!try self.expect(.keyword_while)) {
-            //FATAL: Called without a known while loop
-            return error.FatalError;
-        }
+    const cond = try self.expression();
+    const block = try self.loop_block();
 
-        const cond = try self.expression();
-        const block = try self.loop_block();
+    const node = Ast.WhileLoop {
+        .block = block,
+        .condition = cond,
+    };
 
-        const node = Ast.WhileLoop {
-            .block = block,
-            .condition = cond,
-        };
+    span.merge(.init(self.lexer.index, self.file));
+    const nodeid = try self.builder.add_node(.while_loop, span, node);
+    return nodeid;
+}
 
-        span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.while_loop, span, node);
-        return nodeid;
+fn for_loop(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    if (!try self.expect(.keyword_for)) {
+        //FATAL: Called without a known for loop
+        return error.FatalError;
     }
 
-    fn for_loop(self: *@This()) !AstNodeId {
-        var span: common.Span = .init(self.lexer.index, self.file);
-        if (!try self.expect(.keyword_for)) {
-            //FATAL: Called without a known for loop
-            return error.FatalError;
-        }
-
-        const ident = try self.expect_ret(.ident);
-        if (ident == null) {
-            //ERROR: Expected identifier
-            return error.ParseError;
-        }
-
-        if (!try self.expect(.keyword_in)) {
-            //ERROR: Expected 'in'
-            return error.ParseError;
-        }
-
-        const expr = try self.expression();
-
-        const block = try self.loop_block();
-
-        const node = Ast.ForLoop {
-            .expr = expr,
-            .ident = .{ .span = .make(ident.?.span) },
-            .block = block
-        };
-
-        span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.for_loop, span, node);
-        return nodeid;
+    const ident = try self.expect_ret(.ident);
+    if (ident == null) {
+        //ERROR: Expected identifier
+        return error.ParseError;
     }
+
+    if (!try self.expect(.keyword_in)) {
+        //ERROR: Expected 'in'
+        return error.ParseError;
+    }
+
+    const expr = try self.expression();
+
+    const block = try self.loop_block();
+
+    const node = Ast.ForLoop {
+        .expr = expr,
+        .ident = .{ .span = .make(ident.?.span) },
+        .block = block
+    };
+
+    span.merge(.init(self.lexer.index, self.file));
+    const nodeid = try self.builder.add_node(.for_loop, span, node);
+    return nodeid;
+}
