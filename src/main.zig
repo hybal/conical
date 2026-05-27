@@ -32,7 +32,9 @@ pub fn main(init: std.process.Init) !u8 {
     const file = try ctx.file_store.put(.{.buffer = buffer});
     _ = hir;
     var parser = try parse.init(&ctx, buffer, file, gpa);
-    _ = try parser.parse();
+    const ast = try parser.parse();
+    var hir_ctx = hir.lower.init(gpa, &ctx, file, buffer, &ast);
+    _ = try hir_ctx.lower();
     var buff: [64]u8 = undefined;
     const stderr = try init.io.lockStderr(&buff, null);
     try ctx.session.emit(&ctx, init.io, &stderr.file_writer.interface);

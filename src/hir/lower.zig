@@ -18,12 +18,14 @@ file: common.FileId,
 tree: *const Ast,
 
 pub fn init(allocator: std.mem.Allocator, context: *common.Context, file: common.FileId, source: []const u8, tree: *const Ast) @This() {
+    var tpa = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer tpa.deinit();
     return @This() {
         .allocator = allocator,
-        .tpa = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+        .tpa = tpa.allocator(),
         .context = context,
         .file = file,
-        .builder = .init(allocator, context, source),
+        .builder = .init(allocator, source, context),
         .tree = tree,
     };
 }
@@ -102,9 +104,9 @@ fn unary_operator_to_overload(self: *@This(), op: lex.Tag, expr: hir.HirNodeId) 
 }
 
 fn make_fn_call(self: *@This(), left: hir.HirNodeId, args: []const hir.HirNodeId) !hir.HirNodeId {
-    var oargs: std.ArrayList(hir.HirNodeId) = .empty;
+    var oargs: std.ArrayList(hir.FnArg) = .empty;
     for (args) |arg| {
-        try oargs.append(self.allocator, arg);
+        try oargs.append(self.allocator, hir.FnArg { .expr = arg, .is_generic = false, .param_name = null });
     }
 
     const call = hir.FnCall {
@@ -131,10 +133,13 @@ fn make_binding(self: *@This(), id: common.Span, expr: hir.HirNodeId, mod: ?hir.
 }
 
 fn make_direct_access(self: *@This(), left: hir.HirNodeId, right: []const u8) !hir.HirNodeId {
-    const sym = try self.builder.symbol_of(right);
+    const sym = self.builder.symbol_of(right);
+    if (sym == null) {
+        unreachable;
+    }
 
     const term = hir.Terminal {
-        .id = sym,
+        .id = sym.?,
     };
 
     const rightid = try self.builder.add_node(.terminal, .init(0, self.file), term);
@@ -186,14 +191,14 @@ fn make_block(self: *@This(), scope: hir.ScopeId, mod: ?hir.EvalModifier, exprs:
 }
 
 
-pub fn lower(self: *@This()) !Hir.Hir {
-    for (self.tree.nodes) |node| {
-        _ = try self.lower_single(node);
+pub fn lower(self: *@This()) !Hir {
+    for (self.tree.nodes, 0..) |_, i| {
+        _ = try self.lower_single(i);
     }
     return try self.builder.build();
 }
 
-fn lower_single(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+fn lower_single(self: *@This(), nodeid: ast.AstNodeId) anyerror!hir.HirNodeId {
     const kind, _ = self.tree.get(nodeid);
     const out = switch (kind) {
         .while_loop => try self.lower_while(nodeid),
@@ -201,9 +206,261 @@ fn lower_single(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
         .type_struct => try self.lower_struct(nodeid),
         .type_enum => try self.lower_enum(nodeid),
         .type_impl => try self.lower_impl(nodeid),
+        .binary_expr => try self.lower_binary_expr(nodeid),
+        .unary_expr => try self.lower_unary_expr(nodeid),
+        .item => try self.lower_item(nodeid),
+        .access_operator => try self.lower_access(nodeid),
+        .assignment => try self.lower_assignment(nodeid),
+        .block => try self.lower_block(nodeid),
+        .cast => try self.lower_cast(nodeid),
+        .fn_call => try self.lower_fn_call(nodeid),
+        .if_stmt => try self.lower_if_stmt(nodeid),
+        else => unreachable,
     };
     return out;
 }
+
+fn lower_if_stmt(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .if_stmt);
+    const node: *ast.IfStmt = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const condition = try self.lower_single(node.condition);
+    const prev_scope = self.builder.scope;
+    var refinements: ?[]hir.RefinementBinding = null;
+    if (node.refinements) |refids| {
+        refinements = try self.allocator.alloc(hir.RefinementBinding, refids.len);
+        _ = try self.builder.add_scope(true);
+        for (refids, 0..) |refid, i| {
+            _ = try self.builder.add_symbol(refid.a.span.a);
+            var sym: hir.SymbolId = undefined;
+            if (refid.b) |b| {
+                if (self.builder.symbol_of(b.span.a.get_string(self.builder.source))) |s| {
+                    sym = s;
+                } else {
+                    return error.UndefinedSymbol;
+                }
+            } else {
+                if (self.builder.symbol_of(refid.a.span.a.get_string(self.builder.source))) |s| {
+                    sym = s;
+                } else {
+                    return error.UndefinedSymbol;
+                }
+            }
+            refinements.?[i] = hir.RefinementBinding {
+                .left = try self.context.intern_pool.put(refid.a.span.a.get_string(self.builder.source)),
+                .right = sym,
+            };
+
+        }
+    }
+    const then = try self.lower_single(node.block);
+    const @"else" = if (node.else_block) |e| try self.lower_single(e) else null;
+    self.builder.into_scope(prev_scope);
+    const conditional = hir.Conditional {
+        .condition = condition,
+        .refinements = refinements,
+        .@"else" = @"else",
+        .then = then,
+    };
+
+    const out = try self.builder.add_node(.conditional, self.tree.get_span(nodeid), conditional);
+    return out;
+
+}
+
+fn lower_fn_call(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .fn_call);
+    const node: *ast.FnCall = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const left = try self.lower_single(node.left);
+
+    var args = try self.allocator.alloc(hir.FnArg, node.params.len);
+
+    for (node.params, 0..) |arg, i| {
+        const id: ?common.intern.InternId = if (arg.id) |id| try self.context.intern_pool.put(id.span.a.get_string(self.builder.source)) else null;
+        args[i] = hir.FnArg {
+            .expr = try self.lower_single(arg.val),
+            .param_name = id,
+            .is_generic = arg.is_generic,
+        };
+    }
+    const call = hir.FnCall {
+        .args = args,
+        .left = left,
+    };
+    const out = try self.builder.add_node(.fn_call, self.tree.get_span(nodeid), call);
+    return out;
+}
+
+fn lower_cast(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    _ = self;
+    _ = nodeid;
+    unreachable;
+}
+
+
+fn lower_block(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .block);
+    const node: *ast.Block = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    var block_nodes = try self.allocator.alloc(hir.HirNodeId, node.exprs.len);
+    const prev_scope = self.builder.scope;
+    const scope = try self.builder.add_scope(true);
+    for (node.exprs, 0..) |e, i| {
+        block_nodes[i] = try self.lower_single(e);
+    }
+    self.builder.into_scope(prev_scope);
+    const block = hir.Block {
+        .scope = scope,
+        .mod = null,
+        .statements = block_nodes,
+    };
+    const out = try self.builder.add_node(.block, self.tree.get_span(nodeid), block);
+    return out;
+}
+
+fn lower_assignment(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .assignment);
+    const node: *ast.Assignment = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const expr = try self.lower_single(node.expr);
+    const lvalue = try self.lower_single(node.lvalue);
+    //TODO: Verify that the lvalue is correct.
+    const assignment = hir.Assignment {
+        .left = lvalue,
+        .right = expr,
+    };
+    const out = try self.builder.add_node(.assignment, self.tree.get_span(nodeid), assignment); 
+    return out;
+}
+
+fn lower_access(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .access_operator);
+    const node: *ast.AccessOperator = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const left = try self.lower_single(node.left);
+    const right = try self.context.intern_pool.put(node.right.span.get_string(self.builder.source));
+    const access: hir.Access = .{
+        .left = left,
+        .right = right,
+    };
+    const out = try self.builder.add_node(.access, self.tree.get_span(nodeid), access);
+    return out;
+}
+
+
+fn lower_item(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .item);
+    const node: *ast.Item = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const item_node = switch (node.item_kind) {
+        .function => try self.lower_fn_decl(node.item, node.function_mods),
+        .binding => try self.lower_binding(node.item),
+    };
+    const linkage: ?hir.Linkage = if (node.linkage) |l| switch (l.kind) {
+        .@"export" => .@"export",
+        .@"extern" => .@"extern",
+    } else null;
+    const visibility: ?hir.Visibility = if (node.visibility) |v| switch (v.kind) {
+        .public => .public,
+    } else null;
+    const item = hir.Item {
+        .linkage = linkage,
+        .node = item_node,
+        .visibility = visibility,
+        .kind = switch (node.item_kind) {
+            .binding => .binding,
+            .function => .func,
+        },
+    };
+    const out = try self.builder.add_node(.item, self.tree.get_span(nodeid), item);
+    return out;
+}
+
+fn lower_binding(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .var_decl);
+    const node: *ast.VarDecl = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const expr = try self.lower_single(node.initialize);
+    _ = try self.builder.add_symbol(node.id.id.span.a);
+    const mod: ?hir.BindingModifier = if (node.id.modifier) |m| switch (m.kind) {
+        .alias => .alias,
+        .mut => .mut,
+        .move => .move,
+    } else null;
+    const binding = hir.Binding {
+        .id = try self.context.intern_pool.put(node.id.id.span.a.get_string(self.builder.source)),
+        .initialization = expr,
+        .modifier = mod,
+    };
+    const out = try self.builder.add_node(.binding, self.tree.get_span(nodeid), binding);
+    return out;
+    
+}
+fn lower_fn_decl(self: *@This(), nodeid: ast.AstNodeId, mods: ?[]ast.FnMod) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .fn_decl);
+    const node: *ast.FnDecl = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const id = try self.context.intern_pool.put(node.ident.span.a.get_string(self.builder.source));
+    const prev_scope = self.builder.scope;
+    _ = try self.builder.add_scope(true);
+    var generics_buf = try self.allocator.alloc(hir.Generic, node.generics.len);
+    for (node.generics, 0..) |gen, i| {
+        generics_buf[i] = hir.Generic {
+            .id = try self.context.intern_pool.put(gen.ident.span.a.get_string(self.builder.source)),
+            .ty = if (gen.expr) |e| try self.lower_single(e) else null,
+        };
+        _ = try self.builder.add_symbol(gen.ident.span.a);
+    }
+    var param_buf = try self.allocator.alloc(hir.FunctionParameter, node.params.len);
+    for (node.params, 0..) |p, i| {
+        const param_mod: ?hir.BindingModifier = if (p.modifier) |m| switch (m.kind) {
+            .alias => .alias,
+            .mut => .mut,
+            .move => .move,
+        } else null;
+        param_buf[i] = hir.FunctionParameter {
+            .id = try self.context.intern_pool.put(p.id.span.a.get_string(self.builder.source)),
+            .ty = try self.lower_single(node.param_types[i]),
+            .modifier = param_mod,
+        };
+        _ = try self.builder.add_symbol(p.id.span.a);
+    }
+    const ret_ty = if (node.return_ty) |r| try self.lower_single(r) else null;
+    const block = try self.lower_single(node.body);
+    self.builder.into_scope(prev_scope);
+    var decl_mods: ?[]hir.FnModifier = null;
+    if (mods) |ms| {
+        decl_mods = try self.allocator.alloc(hir.FnModifier, ms.len);
+        for (ms, 0..) |m, i| {
+            decl_mods.?[i] = switch (m.kind) {
+                .@"comptime" => .@"comptime",
+                .@"inline" => .@"inline",
+                .pure => .pure,
+            };
+        }
+    }
+    const out_node = hir.FnDecl {
+        .generics = generics_buf,
+        .id = id,
+        .params = param_buf,
+        .ret_ty = ret_ty,
+        .modifiers = decl_mods,
+        .body = block,
+    };
+    const out = try self.builder.add_node(.fn_decl, self.tree.get_span(nodeid), out_node);
+    return out;
+}
+
+fn lower_binary_expr(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .binary_expr);
+    const node: *ast.BinaryExpr = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const left = try self.lower_single(node.left);
+    const right = try self.lower_single(node.right);
+    const op = try self.binary_operator_to_overload(node.op.tag, left ,right);
+    return op;
+}
+
+fn lower_unary_expr(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .unary_expr);
+    const node: *ast.UnaryExpr = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const expr = try self.lower_single(node.expr);
+    const op = try self.unary_operator_to_overload(node.op.tag, expr);
+    return op;
+}
+
 
 fn lower_while(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     std.debug.assert(self.tree.get(nodeid).@"0" == .while_loop);
@@ -211,18 +468,17 @@ fn lower_while(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     const condition = try self.lower_single(node.condition);
     const inner_block = try self.lower_single(node.block);
 
-    const ncond = self.unary_operator_to_overload(.bang, condition);
+    const ncond = try self.unary_operator_to_overload(.bang, condition);
 
-    const nnodes: std.ArrayList(hir.HirNodeId) = .empty;
+    var nnodes: std.ArrayList(hir.HirNodeId) = .empty;
 
-    const brk = hir.LoopControl {
-        .@"break",
-    };
+    const brk = hir.LoopControl.@"break";
     const brkid = try self.builder.add_node(.loop_control, .init(0, self.file), brk);
     
     try nnodes.append(self.allocator, brkid);
     const nblock = hir.Block {
         .scope = 0,
+        .mod = null,
         .statements = try nnodes.toOwnedSlice(self.allocator),
     };
     const nblockid = try self.builder.add_node(.block, .init(0, self.file), nblock);
@@ -241,6 +497,7 @@ fn lower_while(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     try nodes.append(self.allocator, conditionalid);
 
     const block = hir.Block {
+        .mod = null,
         .scope = 0,
         .statements = try nodes.toOwnedSlice(self.allocator),
     };
@@ -282,7 +539,7 @@ fn lower_for(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     const null_symid = try self.builder.add_node(.terminal, .init(0, self.file), null_sym);
 
     const id_term = hir.Terminal {
-        .id = self.builder.symbol_of(node.ident.span.a.get_string(self.builder.source)),
+        .id = self.builder.symbol_of(node.ident.span.a.get_string(self.builder.source)).?,
     };
 
     const id_termid = try self.builder.add_node(.terminal, .init(0, self.file), id_term);
@@ -290,12 +547,13 @@ fn lower_for(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     const cond = try self.binary_operator_to_overload(.eq2, id_termid, null_symid);
 
     var cblock = std.ArrayList(hir.HirNodeId).empty;
-    const brk = hir.LoopControl { .@"break" };
+    const brk = hir.LoopControl.@"break";
     const brkid = try self.builder.add_node(.loop_control, .init(0, self.file), brk);
     try cblock.append(self.allocator, brkid);
 
     const cblockid = try self.builder.add_node(.block, .init(0, self.file), hir.Block {
         .scope = 0,
+        .mod = null,
         .statements = try cblock.toOwnedSlice(self.allocator),
     });
 
@@ -313,6 +571,7 @@ fn lower_for(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     try loop_block.append(self.allocator, internal_block);
 
     const loop_blockid = try self.builder.add_node(.block, .init(0, self.file), hir.Block {
+        .mod = null,
         .scope = 0,
         .statements = try loop_block.toOwnedSlice(self.allocator),
     });
@@ -367,10 +626,11 @@ fn lower_impl(self: *@This(), nodeid: hir.HirNodeId) !hir.HirNodeId {
             //ERROR: Sets currently default to public and can't be changed.
             return error.HirError;
         }
-
-
     }
+    return error.Unimplemented;
 }
+
+
 
 
 

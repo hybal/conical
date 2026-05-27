@@ -181,7 +181,7 @@ pub const FnDecl = struct {
     param_types: []AstNodeId,
     generics: []Generic,
     return_ty: ?AstNodeId,
-    body: ?AstNodeId,
+    body: AstNodeId,
 };
 
 pub const Generic = struct {

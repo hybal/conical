@@ -11,7 +11,6 @@ const MODS = std.StaticStringMap(ModInf).initComptime(.{
     .{ "diagnostics", ModInf { .path  = "src/diagnostics/mod.zig", .deps = &.{"common"} } },
     .{ "hir", ModInf { .path  = "src/hir/mod.zig", .deps = &.{"common", "diagnostics", "lex", "parse"} } },
     .{ "tir", ModInf { .path = "src/tir/mod.zig", .deps = &.{ "common", "diagnostics", "hir", "types"}}},
-    .{ "mir", ModInf { .path  = "src/mir/mod.zig", .deps = &.{"common", "diagnostics"} } },
     .{ "backend", ModInf { .path  = "src/backend/mod.zig", .deps = &.{"common", "diagnostics"} } },
     .{ "bindings", ModInf { .path = "src/bindings/mod.zig", .deps = &.{} }},
     .{ "driver", ModInf { .path  = "src/driver/mod.zig", .deps = &.{"common", "diagnostics"} } },

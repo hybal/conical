@@ -112,7 +112,7 @@ pub const Block = struct {
 
 pub const Binding = struct {
     id: InternId,
-    modifier: BindingModifier,
+    modifier: ?BindingModifier,
     initialization: HirNodeId,
 };
 
@@ -175,7 +175,7 @@ pub const Cast = struct {
 pub const FunctionParameter = struct {
     id: InternId, 
     ty: HirNodeId,
-    modifier: BindingModifier,
+    modifier: ?BindingModifier,
 };
 
 pub const LambdaParameter = struct {
@@ -196,17 +196,23 @@ pub const Lambda = struct {
     block: HirNodeId,
 };
 
+pub const FnArg = struct {
+    expr: HirNodeId,
+    is_generic: bool,
+    param_name: ?InternId,
+};
 pub const FnCall = struct {
     left: HirNodeId,
-    args: []HirNodeId,
+    args: []FnArg,
 };
 
 pub const FnDecl = struct {
     id: InternId, 
     params: []FunctionParameter,
     generics: []Generic,
-    ret_ty: HirNodeId,
-    modifier: FnModifier,
+    ret_ty: ?HirNodeId,
+    modifiers: ?[]FnModifier,
+    body: HirNodeId,
 };
 
 pub const FnModifier = enum {
@@ -215,9 +221,9 @@ pub const FnModifier = enum {
     @"comptime",
 };
 
-pub const ItemKind = union(enum) {
-    binding: HirNodeId,
-    func: HirNodeId,
+pub const ItemKind = enum {
+    binding,
+    func
 };
 
 pub const Linkage = enum {
@@ -226,11 +232,12 @@ pub const Linkage = enum {
 };
 
 pub const Visibility = enum {
-    @"pub",
+    public,
 };
 
 pub const Item = struct {
-    node: ItemKind,
+    kind: ItemKind,
+    node: HirNodeId,
     linkage: ?Linkage,
     visibility: ?Visibility,
 };
@@ -268,7 +275,7 @@ const HirNodeType = struct {
     terminated: Terminated,
     unary_expr: UnaryExpr,
     access: Access,
-    Assignment: Assignment,
+    assignment: Assignment,
     conditional: Conditional,
     loop: Loop,
     loop_control: LoopControl,
@@ -331,7 +338,7 @@ pub const SymbolId = usize;
 pub const InternId = common.intern.InternId;
 
 pub const Symbol = struct {
-    span: SpanId,
+    span: common.Span,
     id: InternId,
 };
 
@@ -407,7 +414,7 @@ pub const HirBuilder = struct {
     pub fn init(allocator: std.mem.Allocator, source: []const u8, ctx: *common.Context) @This() {
         var internal: HirNodeTypeBuilder() = undefined;
         inline for (comptime std.meta.fieldNames(HirNodeTypeBuilder())) |field| {
-            @field(internal, field.name) = .empty;
+            @field(internal, field) = .empty;
         }
         const out = HirBuilder {
             .symbol_map = .init(allocator),
@@ -441,8 +448,9 @@ pub const HirBuilder = struct {
         var out: Hir = undefined;
 
         inline for (comptime std.meta.fieldNames(HirNodeTypeBuilder())) |fl| {
-            @field(out, fl) = try @field(self.internal_nodes, fl).toOwnedSlice(self.allocator);
+            @field(out.internal_nodes, fl) = try @field(self.internal_nodes, fl).toOwnedSlice(self.allocator);
         }
+        return out;
     }
 
     fn append(self: *@This(), array: anytype, data: anytype) !HirNodeId {
@@ -453,7 +461,7 @@ pub const HirBuilder = struct {
     pub fn add_node(self: *@This(), comptime kind: HirKind, span: common.Span, data: anytype) !HirNodeId {
         const id_name = @tagName(kind);
         const id = try self.append(&@field(self.internal_nodes, id_name), data);
-        const spanid = try self.append(&self.internal_nodes.spans, span);
+        const spanid = try self.append(&self.spans, span);
         const out = try self.append(&self.nodes, HirNode {
             .kind = kind,
             .span = spanid,
@@ -469,7 +477,8 @@ pub const HirBuilder = struct {
             .id = intern,
             .span = span,
         };
-        const symbolid = try self.append(self.symbol_table[self.scope], symbol);
+        var symbtab = self.symbol_table.items[self.scope];
+        const symbolid = try self.append(&symbtab, symbol);
         try self.symbol_map.put(string, symbolid);
         return symbolid;
     }
@@ -484,9 +493,9 @@ pub const HirBuilder = struct {
     }
 
     pub fn add_scope(self: *@This(), descend: bool) !ScopeId {
-        const id = try self.append(self.symbol_table, .empty);
+        const id = try self.append(&self.symbol_table, std.ArrayList(Symbol).empty);
         if (descend) {
-            self.scope = id;
+            self.into_scope(id);
         }
         return id;
     }

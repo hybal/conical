@@ -8,12 +8,14 @@ const Tir = tir.Tir;
 gpa: std.mem.Allocator,
 compalloc: std.mem.Allocator,
 tri_data: *const Tir,
+env: std.AutoHashMap(tir.ResultLoc, CValue),
 
 pub fn init(gpa: std.mem.Allocator, tir_data: *const Tir) @This() {
     const self = @This() {
         .gpa = gpa,
         .compalloc = std.heap.page_allocator, //should likely be arena
         .tir = tir_data,
+        .env = .init(gpa),
     };
     return self;
 }
@@ -51,3 +53,4 @@ pub fn try_eval(self: *@This(), blockid: tir.BlockId, res: tir.ResultLoc) ?CValu
         },
     }
 }
+

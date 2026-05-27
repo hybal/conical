@@ -2,19 +2,31 @@ const std = @import("std");
 const common = @import("common");
 const set = @import("./set.zig");
 
-pub const TypeSet = struct {
+
+/// Represents a subset of the overal Type set.
+/// Two subsets are able to be merged only when label == null
+/// Otherwise it is a distinct subset.
+pub const Subset = struct {
     set: set.Set,
     label: ?common.intern.InternId,
 };
 
-pub const TypeId = usize;
+/// Array of products / labeled subsets
+pub const TypeSet = struct {
+    sets: std.ArrayList(Subset),
+};
 
-pub const TypeStore = []Type;
 
 pub const Type = struct {
-    value: []set.Set,
-    associated: set.Set,
-    min_bits: usize,
-    size: ?usize,
+    value: TypeSet,
+    associated: TypeSet,
+    allocator: std.mem.Allocator,
+    pub fn init(allocator: std.mem.Allocator) @This() {
+        return @This() {
+            .value = .{ .sets = .empty },
+            .associated = .{ .sets = .empty },
+            .allocator = allocator,
+        };
+    }
 
 };
