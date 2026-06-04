@@ -16,6 +16,9 @@ context: *common.Context,
 builder: hir.HirBuilder,
 file: common.FileId,
 tree: *const Ast,
+in_loop: bool = false,
+in_func: bool = false,
+in_lvalue: bool = false,
 
 pub fn init(allocator: std.mem.Allocator, context: *common.Context, file: common.FileId, source: []const u8, tree: *const Ast) @This() {
     var tpa = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -190,6 +193,13 @@ fn make_block(self: *@This(), scope: hir.ScopeId, mod: ?hir.EvalModifier, exprs:
     return blockid;
 }
 
+fn ident_to_intern(self: *@This(), id: ast.Ident) !common.intern.InternId {
+    if (id.span.is_b()) {
+        return error.InvalidIdentifier;
+    }
+    return try self.context.intern_pool.put(id.span.a.get_string(self.builder.source));
+}
+
 
 pub fn lower(self: *@This()) !Hir {
     for (self.tree.nodes, 0..) |_, i| {
@@ -199,7 +209,7 @@ pub fn lower(self: *@This()) !Hir {
 }
 
 fn lower_single(self: *@This(), nodeid: ast.AstNodeId) anyerror!hir.HirNodeId {
-    const kind, _ = self.tree.get(nodeid);
+    const kind, const node = self.tree.get(nodeid);
     const out = switch (kind) {
         .while_loop => try self.lower_while(nodeid),
         .for_loop => try self.lower_for(nodeid),
@@ -211,14 +221,265 @@ fn lower_single(self: *@This(), nodeid: ast.AstNodeId) anyerror!hir.HirNodeId {
         .item => try self.lower_item(nodeid),
         .access_operator => try self.lower_access(nodeid),
         .assignment => try self.lower_assignment(nodeid),
-        .block => try self.lower_block(nodeid),
+        .block => try self.lower_block(nodeid, null),
         .cast => try self.lower_cast(nodeid),
         .fn_call => try self.lower_fn_call(nodeid),
         .if_stmt => try self.lower_if_stmt(nodeid),
-        else => unreachable,
+        .loop => try self.lower_loop(nodeid),
+        .loop_control => try self.lower_loop_control(nodeid),
+        .mod_block => mb: {
+            const n: *ast.ModBlock = @ptrCast(@alignCast(node));
+            break :mb try self.lower_block(nodeid, n.mod);
+        },
+        .import => try self.lower_import(nodeid),
+        .index => try self.lower_index(nodeid),
+        .initializer => try self.lower_initializer(nodeid),
+        .terminal => try self.lower_terminal(nodeid),
+        .terminated => try self.lower_terminated(nodeid),
+        .lambda => try self.lower_lambda(nodeid),
+        .path => try self.lower_path(nodeid),
+        .return_stmt => try self.lower_return(nodeid),
+        .slice => try self.lower_slice(nodeid),
+        .type_binary_expr => try self.lower_type_binary_expr(nodeid),
+        .type_set => try self.lower_type_set(nodeid),
+        .type_range => try self.lower_type_range(nodeid),
+        .type_decl => try self.lower_type_decl(nodeid),
+        .type_literal => try self.lower_type_literal(nodeid),
+        .type_label => try self.lower_type_label(nodeid),
+        .type_metadata => try self.lower_type_metadat(nodeid),
+        .type_modifier => try self.lower_type_modifier(nodeid),
+        else => |e| {
+            std.debug.print("UNIMPLEMENTED: {any}\n", .{e});
+            unreachable;
+        },
     };
     return out;
 }
+fn lower_type_set(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .type_set);
+    const node: *ast.TypeSet = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    var nodes: std.ArrayList(hir.HirNodeId) = .empty;
+    for (node.values) |v| {
+        try nodes.append(self.allocator, try self.lower_single(v));
+    }
+    const set = hir.TypeSet {
+        .values = try nodes.toOwnedSlice(self.allocator),
+    };
+    const term = hir.TypeTerminal {
+        .set = set,
+    };
+    const out = try self.builder.add_node(.type_terminal, self.tree.get_span(nodeid), term);
+    return out;
+}
+ 
+fn lower_type_binary_expr(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .type_binary_expr);
+    const node: *ast.TypeBinaryExpr = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const left = try self.lower_single(node.left);
+    const right = try self.lower_single(node.right);
+    const op: hir.TypeBinaryExprType = switch (node.op) {
+        .Difference => .difference,
+        .Equality => .equality,
+        .Intersection => .intersection,
+        .Membership => .membership,
+        .Product => .product,
+        .StrictSubset => .strict_subset,
+        .StrictSuperSet => .strict_superset,
+        .Subset => .subset,
+        .SuperSet => .superset,
+        .Union => .@"union",
+    };
+
+    const expr = hir.TypeBinaryExpr {
+        .left = left,
+        .right = right,
+        .ty = op
+    };
+    const out = try self.builder.add_node(.type_binary_expr, self.tree.get_span(nodeid), expr);
+    return out;
+}
+ fn lower_slice(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .slice);
+    const node: *ast.SliceOp = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    _ = node;
+    unreachable;
+
+} 
+
+fn lower_return(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .return_stmt);
+    const node: *ast.ReturnStmt = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    if (!self.in_func) {
+        return error.ReturnOutsideOfFunc;
+    }
+    const ret = hir.Return {
+        .expr = try self.lower_single(node.expr),
+    };
+    const out = try self.builder.add_node(.return_stmt, self.tree.get_span(nodeid), ret);
+    return out;
+}
+ 
+
+fn lower_path(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .path);
+    const node: *ast.Path = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    _ = node;
+    unreachable;
+}
+ 
+
+fn lower_lambda(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .lambda);
+    const node: *ast.Lambda = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    var generics: []hir.Generic = try self.allocator.alloc(hir.Generic, node.generics.len);
+    const saved_scope = self.builder.scope;
+    _ = try self.builder.add_scope(true);
+    for (node.generics, 0..) |generic, i| {
+        const ty = if (generic.expr) |e| try self.lower_single(e) else null;
+        const id = try self.ident_to_intern(generic.ident);
+        _ = try self.builder.add_symbol(generic.ident.span.a);
+        generics[i] = hir.Generic {
+            .id = id,
+            .ty = ty,
+        };
+    }
+    var params: []hir.LambdaParameter = try self.allocator.alloc(hir.LambdaParameter, node.params.len);
+    for (node.params, 0..) |param, i| {
+        const mod: ?hir.BindingModifier = if (param.mod) |m| switch (m.kind) {
+            .move => .move,
+            .mut => .mut,
+            .alias => .alias,
+        } else null;
+        _ = try self.builder.add_symbol(param.ident.span.a);
+        params[i] = hir.LambdaParameter {
+            .id = try self.ident_to_intern(param.ident),
+            .ty = if (param.ty) |pt| try self.lower_single(pt) else null,
+            .modifier = mod,
+        };
+    }
+    const ret_ty: ?hir.HirNodeId = if (node.ret_ty) |r| try self.lower_single(r) else null;
+    const body = try self.lower_single(node.expr);
+    self.builder.into_scope(saved_scope);
+    const lambda = hir.Lambda {
+        .block = body,
+        .generics = generics,
+        .params = params,
+        .return_ty = ret_ty,
+    };
+    const out = try self.builder.add_node(.lambda, self.tree.get_span(nodeid), lambda);
+    return out;
+}
+
+fn lower_terminated(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .terminated);
+    const node: *ast.Terminated = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    return try self.lower_single(node.expr);
+}
+ 
+fn lower_terminal(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .terminal);
+    const node: *ast.Terminal = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const term = node.termtype;
+    switch (term) {
+        .symbol => |sym| {
+            const internid = try self.context.intern_pool.put(sym.span.a.get_string(self.builder.source));
+            const termnode = hir.Terminal {
+                .literal = .{
+                    .symbol = internid,
+                },
+            };
+            const out = try self.builder.add_node(.terminal, self.tree.get_span(nodeid), termnode);
+            return out;
+        },
+        .value => |tok| {
+            _ = tok;
+            return error.Unimplemented;
+        },
+    }
+}
+ 
+
+fn lower_initializer(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .initializer);
+    const node: *ast.Initializer = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    var tyexpr: ?hir.HirNodeId = null;
+    if (node.ty) |t| {
+        tyexpr = try self.lower_single(t);
+    }
+    var compounds: []hir.CompoundLiteralValue = try self.allocator.alloc(hir.CompoundLiteralValue, node.fields.len);
+    for (node.fields, 0..) |field, i| {
+        const label: ?common.intern.InternId = if (field.id) |id| try self.context.intern_pool.put(id.span.a.get_string(self.builder.source)) else null;
+        compounds[i] = hir.CompoundLiteralValue {
+            .label = label,
+            .value = try self.lower_single(field.value),
+        };
+    }
+    const compound = hir.CompoundLiteral {
+        .values = compounds,
+        .ty = tyexpr,
+    };
+    const term = hir.Terminal {
+        .compound = compound,
+    };
+    const out = try self.builder.add_node(.terminal, self.tree.get_span(nodeid), term);
+    return out;
+}
+ 
+
+fn lower_index(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .index);
+    const node: *ast.IndexOp = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const op: common.intrins.OverloadOp = if (self.in_lvalue) .index_set else .index;
+    const expr = try self.lower_single(node.expr);
+    const index_expr = try self.lower_single(node.index);
+    const func = common.intrins.get_operator_overload(op);
+    const access = try self.make_direct_access(expr, func);
+    const callnode = try self.make_fn_call(access, &.{index_expr});
+
+    const deref = hir.UnaryExpr {
+        .expr = callnode,
+        .ty = .dereference,
+    };
+    const out = try self.builder.add_node(.unary_expr, self.tree.get_span(nodeid), deref);
+    return out;
+}
+ 
+
+fn lower_import(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .import);
+    const node: *ast.Import = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    _ = node;
+    return error.Unimplemented;
+}
+ 
+fn lower_loop_control(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .loop_control);
+    const node: *ast.LoopControl = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    if (!self.in_loop) {
+        return error.LoopControlOutsideOfLoop;
+    }
+    const control: hir.LoopControl = switch (node.control) {
+        .@"break" => .@"break",
+        .@"continue" => .@"continue",
+    };
+    const out = try self.builder.add_node(.loop_control, self.tree.get_span(nodeid), control);
+    return out;
+}
+ 
+fn lower_loop(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+    std.debug.assert(self.tree.get(nodeid).@"0" == .loop);
+    const node: *ast.Loop = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
+    const saved_in_loop = self.in_loop;
+    self.in_loop = true;
+    const block = try self.lower_single(node.block);
+    self.in_loop = saved_in_loop;
+    const loop = hir.Loop {
+        .block = block,
+    };
+    const out = try self.builder.add_node(.loop, self.tree.get_span(nodeid), loop);
+    return out;
+}
+
 
 fn lower_if_stmt(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     std.debug.assert(self.tree.get(nodeid).@"0" == .if_stmt);
@@ -297,7 +558,7 @@ fn lower_cast(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
 }
 
 
-fn lower_block(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
+fn lower_block(self: *@This(), nodeid: ast.AstNodeId, mod: ?ast.EvalModifier) !hir.HirNodeId {
     std.debug.assert(self.tree.get(nodeid).@"0" == .block);
     const node: *ast.Block = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
     var block_nodes = try self.allocator.alloc(hir.HirNodeId, node.exprs.len);
@@ -307,9 +568,14 @@ fn lower_block(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
         block_nodes[i] = try self.lower_single(e);
     }
     self.builder.into_scope(prev_scope);
+    const modifier: ?hir.EvalModifier = if (mod) |m| switch (m) {
+        .@"inline" => .@"inline",
+        .@"comptime" => .@"comptime",
+        .pure => .pure,
+    } else null;
     const block = hir.Block {
         .scope = scope,
-        .mod = null,
+        .mod = modifier,
         .statements = block_nodes,
     };
     const out = try self.builder.add_node(.block, self.tree.get_span(nodeid), block);
@@ -320,8 +586,10 @@ fn lower_assignment(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     std.debug.assert(self.tree.get(nodeid).@"0" == .assignment);
     const node: *ast.Assignment = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
     const expr = try self.lower_single(node.expr);
+    const saved_in_lvalue = self.in_lvalue;
+    self.in_lvalue = true;
     const lvalue = try self.lower_single(node.lvalue);
-    //TODO: Verify that the lvalue is correct.
+    self.in_lvalue = saved_in_lvalue;
     const assignment = hir.Assignment {
         .left = lvalue,
         .right = expr,
@@ -466,7 +734,10 @@ fn lower_while(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     std.debug.assert(self.tree.get(nodeid).@"0" == .while_loop);
     const node: *ast.WhileLoop = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
     const condition = try self.lower_single(node.condition);
+    const saved_in_loop = self.in_loop;
+    self.in_loop = true;
     const inner_block = try self.lower_single(node.block);
+    self.in_loop = saved_in_loop;
 
     const ncond = try self.unary_operator_to_overload(.bang, condition);
 
@@ -517,12 +788,16 @@ fn lower_for(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     if (node.ident.span.is_b()) {
         return error.Error;
     }
-
+    const saved_scope = self.builder.scope;
+    _ = try self.builder.add_scope(true);
     var loop_block = std.ArrayList(hir.HirNodeId).empty;
 
     const expr = try self.lower_single(node.expr);
-
+    
+    const saved_in_loop = self.in_loop;
+    self.in_loop = true;
     const internal_block = try self.lower_single(node.block);
+    self.in_loop = saved_in_loop;
 
     const next = try self.make_direct_access(expr, common.intrins.get_operator_overload(.next));
 
@@ -579,6 +854,7 @@ fn lower_for(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     const loop = try self.builder.add_node(.loop, .init(0, self.file), hir.Loop {
         .block = loop_blockid,
     });
+    self.builder.into_scope(saved_scope);
     return loop;
 }
 

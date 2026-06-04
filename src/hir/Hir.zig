@@ -31,7 +31,7 @@ pub const CompoundLiteral = struct {
 };
 
 pub const CompoundLiteralValue = struct {
-    label: ?[]const u8,
+    label: ?InternId,
     value: HirNodeId,
 };
 
@@ -139,11 +139,15 @@ pub const TypeBinaryExpr = struct {
     right: HirNodeId,
 };
 
+pub const TypeSet = struct {
+    values: []HirNodeId,
+};
 pub const TypeTerminal = union(enum) {
     literal: TypeLiteral,
     ident: SymbolId,
     range: TypeRange,
     label: TypeLabel,
+    set: TypeSet,
 };
 pub const TypeLiteral = union(enum) {
     literal: Literal,
@@ -181,7 +185,7 @@ pub const FunctionParameter = struct {
 pub const LambdaParameter = struct {
     id: InternId,
     ty: ?HirNodeId,
-    modifier: BindingModifier,
+    modifier: ?BindingModifier,
 };
 
 pub const Generic = struct {
