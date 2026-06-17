@@ -118,11 +118,10 @@ fn floatRangeCompare(context: void, lhs: FRange, rhs: FRange) std.math.Order {
 
 fn intCompare(value: Int, context: IRange) std.math.Order {
     if (value < context.start) return .lt;
+    if (value > context.end) return .gt;
     if (context.start_inclusive) {
         if (value == context.start) return .eq;
     }
-
-    if (value > context.end) return .gt;
     if (context.end_inclusive) {
         if (value == context.end) return .eq;
     }
@@ -159,7 +158,13 @@ fn symbolLt(context: void, lhs: Symbol, rhs: Symbol) bool {
     return symbolCompare(lhs, rhs) == .lt;
 }
 
+fn iRangeContains(context: IRange, range: IRange) std.math.Order {
+    return intCompare(context.start, range);
+}
 
+fn fRangeContains(context: FRange, range: FRange) std.math.Order {
+    return floatCompare(context.start, range);
+}
 
 pub const SetValue = union(enum) {
     int: Int,
@@ -172,6 +177,7 @@ pub const Set = struct {
     floats: std.ArrayList(FRange),
     symbols: std.ArrayList(Symbol),
     allocator: std.mem.Allocator,
+
     pub fn init(allocator: std.mem.Allocator) @This() {
         return Set {
             .ints = .empty,
@@ -211,7 +217,7 @@ pub const Set = struct {
         if (b.compare(a) == .subset) {
             return a;
         }
-        
+
         if (a.overlap(b)) {
             return IRange {
                 .start = @min(a.start, b.start),
@@ -251,7 +257,6 @@ pub const Set = struct {
             return a;
         }
         if (a.overlap(b)) {
-            std.debug.print("DEBUG C\n", .{});
             return FRange {
                 .start = @min(a.start, b.start),
                 .start_inclusive = a.start_inclusive or b.start_inclusive,
@@ -301,6 +306,169 @@ pub const Set = struct {
         };
         return index != null;
     }
+
+    pub fn is_member_irange(self: *const @This(), range: IRange) bool {
+        const idx = std.sort.binarySearch(IRange, self.ints.items, range, iRangeContains);
+        return idx != null;
+    }
+
+    pub fn is_member_frange(self: *const @This(), range: FRange) bool {
+        const idx = std.sort.binarySearch(FRange, self.floats.items, range, fRangeContains);
+        return idx != null;
+    }
+
+    pub fn @"union"(self: *@This(), other: *const @This()) !void {
+        for (other.ints.items) |it| {
+            if (!self.is_member_irange(it)) {
+                try self.putIRange(it);
+            }
+        }
+
+        for (other.floats.items) |it| {
+            if (!self.is_member_frange(it)) {
+                try self.putFRange(it);
+            }
+        }
+
+        for (other.symbols.items) |it| {
+            if (!self.is_member(.{ .symbol = it })) {
+                try self.putV(.{ .symbol = it });
+            }
+        }
+    }
+
+    pub fn intersection(self: *@This(), other: *const @This()) !void {
+        var ints: std.ArrayList(IRange) = .empty;
+        var floats: std.ArrayList(FRange) = .empty;
+        var symbols: std.ArrayList(Symbol) = .empty;
+
+        for (self.ints.items) |sr| {
+            for (other.ints.items) |or_| {
+                if (!sr.overlap(or_)) continue;
+                const start_include = 
+                    if (sr.start == or_.start) sr.start_inclusive and or_.start_inclusive 
+                    else if (sr.start > or_.start) sr.start_inclusive 
+                    else or_.start_inclusive;
+                const end_include = 
+                    if (sr.end == or_.end) sr.end_inclusive and or_.end_inclusive 
+                    else if (sr.end > or_.start) sr.start_inclusive 
+                    else or_.start_inclusive;
+                try ints.append(self.allocator, IRange {
+                    .start = @max(sr.start, or_.start),
+                    .start_inclusive = start_include,
+                    .end = @min(sr.end, or_.min),
+                    .end_inclusive = end_include,
+                });
+            }
+        }
+        self.ints.deinit(self.allocator);
+        self.ints = ints;
+
+        for (self.floats.items) |sr| {
+            for (other.floats.items) |or_| {
+                if (!sr.overlap(or_)) continue;
+                const start_include = 
+                    if (sr.start == or_.start) sr.start_inclusive and or_.start_inclusive 
+                    else if (sr.start > or_.start) sr.start_inclusive 
+                    else or_.start_inclusive;
+                const end_include = 
+                    if (sr.end == or_.end) sr.end_inclusive and or_.end_inclusive 
+                    else if (sr.end > or_.start) sr.start_inclusive 
+                    else or_.start_inclusive;
+                try floats.append(self.allocator, FRange {
+                    .start = @max(sr.start, or_.start),
+                    .start_inclusive = start_include,
+                    .end = @min(sr.end, or_.min),
+                    .end_inclusive = end_include,
+                });
+            }
+        }
+
+        self.floats.deinit(self.allocator);
+        self.floats = floats;
+
+        for (self.symbols.items) |ss| {
+            const idx = std.sort.binarySearch(Symbol, other.symbols.items, ss, symbolCompare);
+            if (idx != null) {
+                try symbols.append(self.allocator, ss);
+            }
+        }
+
+        self.symbols.deinit(self.allocator);
+        self.symbols = symbols;
+    }
+
+    pub fn difference(self: *@This(), other: *const @This()) !void {
+        var ints: std.ArrayList(IRange) = .empty;
+        var floats: std.ArrayList(FRange) = .empty;
+        var symbols: std.ArrayList(Symbol) = .empty;
+
+    }
+
+    pub fn compare(self: *const @This(), other: *const @This()) SetOrder {
+        var self_has_extra = false;
+        var other_has_extra = false;
+
+        for (self.ints.items) |sr| {
+            const idx = std.sort.binarySearch(IRange, other.ints.items, sr, iRangeContains);
+            if (idx == null or sr.compare(other.ints.items[idx.?]) == .superset) {
+                self_has_extra = true;
+                break;
+            }
+        }
+
+        for (other.ints.items) |or_| {
+            const idx = std.sort.binarySearch(IRange, self.ints.items, or_, iRangeContains);
+            if (idx == null or or_.compare(self.ints.items[idx.?]) == .superset) {
+                other_has_extra = true;
+                break;
+            }
+        }
+
+        if (!self_has_extra) {
+            for (self.floats.items) |sf| {
+                const idx = std.sort.binarySearch(FRange, other.floats.items, sf, fRangeContains);
+                if (idx == null or sf.compare(other.floats.items[idx.?]) == .superset) {
+                    self_has_extra = true;
+                    break;
+                }
+            }
+        }
+
+        if (!other_has_extra) {
+            for (other.floats.items) |of_| {
+                const idx = std.sort.binarySearch(FRange, self.floats.items, of_, fRangeContains);
+                if (idx == null or of_.compare(self.floats.items[idx.?]) == .superset) {
+                    other_has_extra = true;
+                    break;
+                }
+            }
+        }
+
+        if (!self_has_extra) {
+            for (self.symbols.items) |ss| {
+                if (std.sort.binarySearch(Symbol, other.symbols.items, ss, symbolCompare) == null) {
+                    self_has_extra = true;
+                    break;
+                }
+            }
+        }
+
+        if (!other_has_extra) {
+            for (other.symbols.items) |os| {
+                if (std.sort.binarySearch(Symbol, self.symbols.items, os, symbolCompare) == null) {
+                    other_has_extra = true;
+                    break;
+                }
+            }
+        }
+
+        if (!self_has_extra and !other_has_extra) return .equal;
+        if (!self_has_extra) return .subset;
+        return .superset;
+    }
+
+
 
     pub fn to_string(self: *const @This(), ctx: *common.Context, writer: *std.Io.Writer) !void {
         try writer.print("{{", .{});

@@ -22,3 +22,4 @@ Examples of each principle, in-order, are:
 # Documentation
 
 Currently there is no official documentation for the language as it is still very early in design and implementation. However, there is a design ideas / general syntax overview [here](./docs/book/language.md) (N.B. Everything in that document is subject to change).
+There is also a work-in-progress specification [here](./docs/spec/README.md).

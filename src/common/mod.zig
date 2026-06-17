@@ -6,6 +6,7 @@ const _color = @import("./colors.zig");
 const _iter = @import("./iter.zig");
 const _intern = @import("./intern.zig");
 const _intrins = @import("./intrins.zig");
+const _numbers = @import("./numbers.zig");
 
 
 pub const DefId = _common.DefId;
@@ -36,3 +37,5 @@ pub const iter = _iter;
 pub const intern = _intern;
 
 pub const intrins = _intrins;
+
+pub const numbers = _numbers;

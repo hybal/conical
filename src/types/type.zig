@@ -19,7 +19,7 @@ pub const TypeSet = struct {
 
 pub const Type = struct {
     value: TypeSet,
-    associated: TypeSet,
+    associated: ?TypeSet,
     allocator: std.mem.Allocator,
     pub fn init(allocator: std.mem.Allocator) @This() {
         return @This() {

@@ -39,9 +39,9 @@ pub fn main(init: std.process.Init) !u8 {
     const stderr = try init.io.lockStderr(&buff, null);
     try ctx.session.emit(&ctx, init.io, &stderr.file_writer.interface);
     _ = alloc.deinitWithoutLeakChecks();
-    std.debug.print("DEBUG: {}\n", .{@sizeOf(tir.Tir.Instr)});
-    _ = tir.eval.try_eval;
-    _ = tir.eval.try_eval_block;
+    
+    std.debug.print("{}\n", .{@sizeOf(tir.Tir.Instr)});
+
     return 0;
 }
 

@@ -7,15 +7,17 @@ const Tir = tir.Tir;
 
 gpa: std.mem.Allocator,
 compalloc: std.mem.Allocator,
-tri_data: *const Tir,
+builder: *const tir.TirBuilder,
 env: std.AutoHashMap(tir.ResultLoc, CValue),
+context: *common.Context,
 
-pub fn init(gpa: std.mem.Allocator, tir_data: *const Tir) @This() {
+pub fn init(gpa: std.mem.Allocator, context: *common.Context, builder: *const tir.TirBuilder) @This() {
     const self = @This() {
         .gpa = gpa,
         .compalloc = std.heap.page_allocator, //should likely be arena
-        .tir = tir_data,
+        .builder = builder,
         .env = .init(gpa),
+        .context = context,
     };
     return self;
 }
@@ -28,6 +30,7 @@ pub const CValue = union(enum) {
     @"type": types.Type,
     initializer: tir.Initialization,
     array: []CValue,
+    slot: u32,
     data: []u8, //will probably be removed
 };
 

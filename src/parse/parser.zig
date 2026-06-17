@@ -15,27 +15,27 @@ const diag = @import("diagnostics");
 const errors = @import("errors.zig");
 
 allocator: std.mem.Allocator,
-    tmp_allocator: std.mem.Allocator = std.heap.page_allocator, //TODO: use an actual allocator
-    lexer: lex.Lexer,
-    context: *common.Context,
-    has_module: bool = false,
-    builder: Ast.AstBuilder,
-    file: common.FileId,
-    saved_token: ?lex.Token = null,
-    previous_token: lex.Token = undefined,
+tmp_allocator: std.mem.Allocator = std.heap.page_allocator, //TODO: use an actual allocator
+lexer: lex.Lexer,
+context: *common.Context,
+has_module: bool = false,
+builder: Ast.AstBuilder,
+file: common.FileId,
+saved_token: ?lex.Token = null,
+previous_token: lex.Token = undefined,
 
 
 
-    /// Initialize the parser from an already existing Lexer instance
-    pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
-        return .{
-            .lexer = in,
-            .allocator = gpa,
-            .context = context,
-            .builder = .init(gpa),
-            .file = in.file,
-        };
-    }
+/// Initialize the parser from an already existing Lexer instance
+pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
+    return .{
+        .lexer = in,
+        .allocator = gpa,
+        .context = context,
+        .builder = .init(gpa),
+        .file = in.file,
+    };
+}
 
 /// Initialize the parser from source
 pub fn init(context: *common.Context, buffer: []const u8, file: common.FileId, gpa: std.mem.Allocator) !@This() {
