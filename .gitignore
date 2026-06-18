@@ -1,7 +1,6 @@
 *tags*
 docs/*.html
 build
-lib/*
 zig-out/
 .*
 !.gitignore

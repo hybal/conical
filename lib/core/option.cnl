@@ -1,0 +1,18 @@
+mod core::option;
+
+pub let Option = \$T => type some: T | .none with impl {
+    fn __operator_unwrap(self: &Self) -> bool {
+        !self.is_some()
+    }
+
+    fn is_some(self: &Self) -> bool {
+        *self != .none
+    }
+
+    fn unwrap_or(self: &Self, other: T) -> T {
+        match *self {
+            some: v => v,
+            .none => other,
+        }
+    }
+};

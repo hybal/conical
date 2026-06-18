@@ -45,6 +45,7 @@ pub const InstrKind = enum(u16) {
     difference,
     // Set intersection
     intersection,
+    // Set range
     range,
     // Set membership
     membership,

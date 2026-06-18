@@ -1,0 +1,295 @@
+mod core::int;
+
+/// Helper functions
+comptime fn unchecked_cast($A, B: type, val: A) -> B {
+    return val as B;
+}
+
+fn min($T: T <= anyint, a: T, b: T) -> T {
+    if (type __operator_less_then_equal in T) {
+        if (a <= b) return a;
+        return b;
+    }
+    if (__intrin_int_less_than_equal(a, b)) return a;
+    return b;
+}
+
+fn max($T: T <= anyint, a: T, b: T) -> T {
+    if (type __opterator_greater_than_equal in T) {
+        if ( a >= b ) return a;
+        return b;
+    }
+    if (__intrin_int_greater_than_equal(a, b)) return a;
+    return b;
+}
+
+comptime fn pow(a: anyint, b: anyint) -> anyint {
+    __intrin_int_pow(a, b)
+}
+
+/// A compile-time only integer.
+/// Allows for arithmetic in compile-time contexts without having to resort to intrinsics.
+pub let comptime_int = anyint with impl {
+    fn __operator_add(a: Self, b: Self) -> Self {
+        __intrin_int_add(a, b)
+    }
+
+    fn __operator_subtract(a: Self, b: Self) -> Self {
+        __intrin_int_subtract(a, b)
+    }
+
+    fn __operator_multiply(a: Self, b: Self) -> Self {
+        __intrin_int_multiply(a, b)
+    }
+    fn __operator_divide(a: Self, b: (Self - 0)) -> Self {
+        __intrin_int_divide(a, b)
+    }
+
+    fn __operator_remainder(a: Self, b: (Self - 0)) -> Self {
+        __intrin_int_remainder(a, b)
+    }
+    fn __operator_negate(a: Self) -> Self {
+        __intrin_int_negate(a)
+    }
+
+    fn __operator_left_shift(a: Self, b: Self) -> Self {
+        __intrin_int_left_shift(a, b)
+    }
+ 
+    fn __operator_right_shift(a: Self, b: Self) -> Self {
+        __intrin_int_right_shift(a, b)
+    }
+ 
+    fn __operator_bitwise_or(a: Self, b: Self) -> Self {
+        __intrin_int_bitwise_or(a, b)
+    }
+ 
+    fn __operator_bitwise_and(a: Self, b: Self) -> Self {
+        __intrin_int_bitwise_and(a, b)
+    }
+ 
+    fn __operator_bitwise_xor(a: Self, b: Self) -> Self {
+        __intrin_int_bitwise_xor(a, b)
+    }
+
+    fn __operator_eq(a: Self, b: Self) -> bool {
+        __intrin_int_eq(a, b)
+    }
+
+    fn __operator_neq(a: Self, b: Self) -> bool {
+        __intrin_int_neq(a, b)
+    }
+
+    fn __operator_less_then(a: Self, b: Self) -> bool {
+        __intrin_int_less_then(a, b)
+    }
+
+    fn __operator_greater_then(a: Self, b: Self) -> bool {
+        __intrin_int_greater_then(a, b)
+    }
+
+    fn __operator_less_then_equal(a: Self, b: Self) -> bool {
+        __intrin_int_less_then_equal(a, b)
+    }
+
+    fn __operator_greater_then_equal(a: Self, b: Self) -> bool {
+        __intrin_int_greater_then_equal(a, b)
+    }
+};
+
+
+/// Arbitrary ranged integer.
+/// Always returns the exact possible range for any operation.
+/// `a` should always be less then `b`
+pub comptime fn Int(a: comptime_int, b: comptime_int) -> type {
+    let range = type a..b;
+    let add_start = a + a;
+    let add_end = b + b;
+    let add_range = type {add_start}..{add_end};
+
+    let sub_start = a - b;
+    let sub_end = b - a;
+    let sub_range = type {sub_start}..{sub_end};
+
+    let mul_start = min(min(
+                        a * a,
+                        a * b),
+                        b * b,
+                        );
+    let mul_end = max(max(
+                        a * a,
+                        a * b),
+                        b * b,
+                        );
+    let mul_range = type {mul_start}..{mul_end};
+
+    let mut div_start = max(a, b);
+    let mut div_end = min(a, b);
+    if b != 0 {
+        let aa = a / a;
+        let ba = b / a;
+        div_start = min(div_start, aa);
+        div_start = min(div_start, ba);
+        div_end = max(div_end, aa);
+        div_end = max(div_end, ba);
+    }
+    if b != 0 {
+        let ab = a / b;
+        let bb = b / b;
+        div_start = min(div_start, ab);
+        div_start = min(div_start, bb);
+        div_end = max(div_end, ab);
+        div_end = max(div_end, bb);
+    }
+    if a <= 1 && 1 <= b {
+        div_start = min(div_start, a);
+        div_start = min(div_start, b);
+        div_end = max(div_end, a);
+        div_end = max(div_end, b);
+    }
+
+    if a <= -1 && -1 <= b {
+        div_start = min(div_start, -a);
+        div_start = min(div_start, -b);
+        div_end = max(div_end, -a);
+        div_end = max(div_end, -b);
+    }
+
+    let div_range = type {div_start}..{div_end};
+
+    let negate_start = -a;
+    let negate_end = -b;
+    let negate_range = type {negate_start}..{negate_end};
+
+    let bits: comptime_int = active_bits(range);
+    let exp = pow(2, bits - 1);
+    
+    let lshift_start = if(a < 0) -exp else a;
+    let lshift_end = exp - 1; 
+    let lshift_range = type {lshift_start}..{lshift_end};
+
+    let rshift_start = if (a < 0) a else 0;
+    let rshift_end = b;
+    let rshift_range = type {rshift_start}..{rshift_end};
+
+    let bitwise_start = -exp;
+    let bitwise_end = exp - 1;
+    let bitwise_range = type {bitwise_start}..{bitwise_end};
+
+    let bitor_range = bitwise_range;
+    let bitxor_range = bitwise_range;
+
+    let bitand_range = range;
+
+
+    let arith_functions = type impl {
+        fn __operator_add(a: range, b: range) -> add_range {
+            let out = __intrin_int_add(a, b);
+            return unchecked_cast(add_range, out);
+        }
+
+        fn __operator_subtract(a: range, b: range) -> sub_range {
+            let out = __intrin_int_subtract(a, b);
+            return unchecked_cast(sub_range, out);
+        }
+
+        fn __operator_multiply(a: range, b: range) -> mul_range {
+            let out = __intrin_int_multiply(a, b);
+            return unchecked_cast(mul_range, out);
+        }
+
+        fn __operator_divide(a: range, b: (range - 0)) -> div_range {
+            let out = __intrin_int_divide(a, b);
+            return unchecked_cast(div_range, out);
+        }
+
+        fn __operator_negate(a: range) -> negate_range {
+            let out = __intrin_int_negate(a);
+            return unchecked_cast(negate_range, out);
+        }
+
+        fn __operator_left_shift(a: range, b: range) -> lshift_range {
+            let out = __intrin_left_shift(a, b);
+            return unchecked_cast(lshift_range, out);
+        }
+
+        fn __operator_right_shift(a: range, b: range) -> rshift_range {
+            let out = __intrin_right_shift(a, b);
+            return unchecked_cast(rshift_range, out);
+        }
+
+        fn __operator_bitwise_or(a: range, b: range) -> bitor_range {
+            let out = __intrin_bitwise_or(a, b);
+            return unchecked_cast(bitor_range, out);
+        }
+        
+        fn __operator_bitwise_and(a: range, b: range) -> bitand_range {
+            let out = __intrin_bitwise_and(a, b);
+            return unchecked_cast(bitand_range, out);
+        }
+
+        fn __operator_bitwise_xor(a: range, b: range) -> bitxor_range {
+            let out = __intrin_bitwise_xor(a, b);
+            return unchecked_cast(bitxor_range, out);
+        }
+
+        fn __operator_eq(a: range, b: range) -> bool {
+            let out = __intrin_int_eq(a, b);
+            return out;
+        }
+
+        fn __operator_neq(a: range, b: range) -> bool {
+            let out = __intrin_int_neq(a, b);
+            return out;
+        }
+
+        fn __operator_less_then(a: range, b: range) -> bool {
+            let out = __intrin_int_less_then(a, b);
+            return out;
+        }
+
+        fn __operator_greater_then(a: range, b: range) -> bool {
+            let out = __intrin_int_greater_then(a, b);
+            return out;
+        }
+
+        fn __operator_less_then_equal(a: range, b: range) -> bool {
+            let out = __intrin_int_less_then_equal(a, b);
+            return out;
+        }
+
+        fn __operator_greater_then_equal(a: range, b: range) -> bool {
+            let out = __intrin_int_greater_then_equal(a, b);
+            return out;
+        }
+    };
+
+    let out = range with arith_functions;
+    return out;
+}
+
+pub comptime fn ModularInt(a: anyint, b: anyint) -> type {
+    let range = a..b;
+    let arith_functions = range with type impl {
+        fn __operator_add(a: Self, b: Self) -> Self {
+            __intrin_int_mod_add(a, b)
+        }
+
+        fn __operator_subtract(a: Self, b: Self) -> Self {
+            __intrin_int_mod_subtract(a, b)
+        }
+        //etc.
+    };
+}
+
+pub let u1 = Int(0, 1);
+pub let u8 = Int(0, 255);
+pub let i8 = Int(-128, 127);
+pub let u16 = Int(0, 65536);
+pub let i16 = Int(-32768, 32767);
+pub let u32 = Int(0, 4294967295);
+pub let i32 = Int(-2147483648, 2147483647);
+pub let u64 = Int(0, 18446744073709551615);
+pub let i64 = Int(-9223372036854775808, 9223372036854775807);
+pub let u128 = Int(0, 340282366920938463463374607431768211456);
+pub let i128 = Int(-170141183460469231731687303715884105728, 170141183460469231731687303715884105727);

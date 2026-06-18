@@ -1,0 +1,35 @@
+
+/// Represents a view or slice of memory.
+/// TODO: add correct lifetime constraints
+pub let slice = \$T => type value: ptr * length: usize with impl {
+    fn __operator_index(self: Self, index: usize) -> T {
+        if index > self.length {
+            panic();
+        }
+        __intrin_array_get_at_offset(self.value, index)
+    }
+
+    fn __operator_index_set($V, self: Self, index: usize, value: V) {
+        if index > self.length {
+            panic();
+        }
+        __intrin_array_set_at_offset(self.value, index, value);
+    }
+
+    fn __operator_slice(self: Self, start: usize, end: usize) -> Self {
+        if (start > self.length || end >= self.length) {
+            panic();
+        }
+        if ( start > end ) panic();
+        let v = __intrin_offset_ptr(self.value, start);
+        let length = end - start;
+        .{ .value = v, .length = length };
+    }
+
+    fn __operator_next(self: Self, index: usize) -> Option(T) {
+        if ( index >= .(usize_s) { self.length } - 1) return .none;
+        .{ .some = self.__operator_index(self, index) }
+    }
+};
+
+
