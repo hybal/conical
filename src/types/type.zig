@@ -28,5 +28,4 @@ pub const Type = struct {
             .allocator = allocator,
         };
     }
-
 };

@@ -1,0 +1,34 @@
+mod std::collection::array;
+import core::result;
+import core::option;
+import core::iterator;
+import std::mem::allocator;
+
+pub let Array = \($T, $Alloc: Alloc <= AllocatorI = GlobalAlloc) => type struct {
+    data: []T,
+    capacity: usize,
+    allocator: Alloc,
+} with impl {
+    fn new(allocator: Alloc = global_allocator) -> Self {
+        Self {
+            .data = {},
+            .capacity = 0,
+            .allocator = allocator,
+        }
+    }
+    
+    fn __drop(self: &mut Self) {
+        self.allocator.free_slice(self.data);
+    }
+
+    fn append(self: &mut Self, item: T) -> Option(AllocError) {
+        if (self.data.len + 1 >= capacity - 1) {
+            self.capacity += self.capacity * GROWTH_CONSTANT;
+            self.data = self.allocator.realloc_slice(self.data, self.capacity);
+        }
+
+        self.data.len += 1;
+        self.data[self.data.len-1] = item;
+        .none
+    }
+};

@@ -57,6 +57,8 @@ pub const InstrKind = enum(u16) {
     sub,
     // Set superset
     sup,
+    // Refine a value to a new type
+    refine,
     // Type check, checks a inferred type against a computed one,
     //  used to model explicit type annotations.
     // Will always be executed, all operands are required to be comptime expressions.
@@ -71,7 +73,7 @@ pub const InstrKind = enum(u16) {
     arg_get,
     // Call a function with the previously set arguments
     call,
-     // Tries to evaluate a block, in-which case gets replaced with the comptime result, otherwise 
+     // Tries to evaluate a block, in-which case gets replaced with the comptime result
     eval,
     // "evaluate" a block at runtime. Essentially a basic jump to a block, but results in the yielded value from the block.
     evalr,

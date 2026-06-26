@@ -1,4 +1,5 @@
-
+mod core::slice;
+import prelude;
 /// Represents a view or slice of memory.
 /// TODO: add correct lifetime constraints
 pub let slice = \$T => type value: ptr * length: usize with impl {
@@ -26,9 +27,17 @@ pub let slice = \$T => type value: ptr * length: usize with impl {
         .{ .value = v, .length = length };
     }
 
-    fn __operator_next(self: Self, index: usize) -> Option(T) {
+    fn next(self: Self, index: usize) -> Option(T) {
         if ( index >= .(usize_s) { self.length } - 1) return .none;
         .{ .some = self.__operator_index(self, index) }
+    }
+
+    fn iterator(self: Self) -> Iterator(Self, usize) {
+        .{
+            .data = self,
+            .count = 0,
+            .next = next,
+        };
     }
 };
 

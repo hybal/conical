@@ -1,0 +1,8 @@
+/// The basic utf-8 string type.
+/// Only provides basic grapheme iteration (not grapheme clusters) and other simple string operations.
+import core::prelude;
+
+
+pub let char = type 0..255;
+
+pub let str = []char;

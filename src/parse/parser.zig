@@ -809,7 +809,12 @@ fn type_expression_modifiers(self: *@This()) !AstNodeId {
             const array_expr = try self.expression();
             if (!try self.expect(.close_square)) {
                 //ERROR: Expected ]
-                return error.ParseError;
+                const err = errors.ExpectedTokenError {
+                    .expected = .close_square,
+                    .span = .init(span.end, self.file),
+                };
+                const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                _ = errid;
             }
             try mods.append(self.allocator, .{ .Array = array_expr });
         } else if (tok.tag == .open_square and self.is_next(.close_square)) {
@@ -984,7 +989,14 @@ fn type_expression_literal(self: *@This()) !AstNodeId {
         return nodeid;
     }
     //ERROR: Unexpected token
-    return error.ParseError;
+    const err = errors.UnexpectedTokenError {
+        .found = self.peek().?,
+    };
+    const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+    const errnode = try self.builder.add_node(.poison, self.peek().?.span, Ast.Poison {
+        .error_id = errid
+    });
+    return errnode;
 }
 
 /// Parses various syntax sugar
@@ -1093,8 +1105,9 @@ fn type_struct_sugar(self: *@This()) !AstNodeId {
 /// Corresponds to grammar rule `TYPE_ENUM_SUGAR`
 fn type_enum_sugar(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    const keyword = try self.expect(.keyword_enum);
-    if (!keyword) return error.ParseError;
+    if (!try self.expect(.keyword_enum)) {
+        return error.FatalError;
+    }
     if (!try self.expect(.open_bracket)) {
         const err = errors.ExpectedTokenError {
             .expected = .open_bracket,
@@ -1126,7 +1139,7 @@ fn type_enum_sugar(self: *@This()) !AstNodeId {
 fn type_impl_sugar(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const keyword = try self.expect(.keyword_impl);
-    if (!keyword) return error.ParseError;
+    if (!keyword) return error.FatalError;
     if (!try self.expect(.open_bracket)) {
         const err = errors.ExpectedTokenError {
             .expected = .open_bracket,
@@ -1190,7 +1203,13 @@ fn expression_if(self: *@This()) !AstNodeId {
         if (open_paren != null) {
             if (!try self.expect(.close_paren)) {
                 //ERROR: Expected ')'
-                return error.ParseError;
+                span.merge(.init(self.lexer.index, self.file));
+                const err = errors.ExpectedTokenError {
+                    .expected = .close_paren,
+                    .span = .init(span.end, self.file),
+                };
+                const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                _ = errid;
             }
         }
         var refinements: std.ArrayList(Ast.Refinement) = .empty;
@@ -1199,7 +1218,13 @@ fn expression_if(self: *@This()) !AstNodeId {
                 const ident = try self.expect_ret(.ident);
                 if (ident == null) {
                     //ERROR: Expected identifier
-                    return error.ParseError;
+                    span.merge(.init(self.lexer.index, self.file));
+                    const err = errors.ExpectedTokenError {
+                        .expected = .ident,
+                        .span = .init(span.end, self.file),
+                    };
+                    const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                    _ = errid;
                 }
                 var refinement = Ast.Refinement {
                     .a = .{ .span = .make(ident.?.span) },
@@ -1338,7 +1363,13 @@ fn match_pattern(self: *@This()) !AstNodeId {
     if (self.is_next(.dot)) {
         if (!try self.expect(.open_bracket)) {
             //ERROR: Expected '{'
-            return error.ParseError;
+            span.merge(.init(self.lexer.index, self.file));
+            const err = errors.ExpectedTokenError {
+                .expected = .open_bracket,
+                .span = .init(span.end, self.file),
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
         }
         var ids: std.ArrayList(Ast.Ident) = .empty;
         var vals: std.ArrayList(AstNodeId) = .empty;
@@ -1346,7 +1377,12 @@ fn match_pattern(self: *@This()) !AstNodeId {
             const ident = try self.expect_ret(.ident);
             if (ident == null) {
                 //ERROR: Expected identifier
-                return error.ParseError;
+                const err = errors.ExpectedTokenError {
+                    .expected = .ident,
+                    .span = .init(span.end, self.file),
+                };
+                const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                _ = errid;
             }
 
             if (!try self.expect(.colon)) {

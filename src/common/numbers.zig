@@ -1,124 +1,242 @@
+/// Large and Arbitrary precision numbers for compile-time execution
+/// TODO: add tests
+/// TODO: make custom large int implementation
 const std = @import("std");
+
+const int = std.math.big.int;
 
 pub const Int = std.math.big.int.Managed;
 
+const PRECISION = 148;
+const MAX_MANTISSA = std.math.maxInt(i493);
+const MIN_MANTISSA = std.math.minInt(i493);
+const MAX_EXPONENT = std.math.maxInt(i19);
+const MIN_EXPONENT = std.math.minInt(i19);
 
-/// Represents a IEE-754 inspired 512 bit floating point number.
-/// Note that there are no special values like NaN or infinities, the only special case are subnormals.
+/// A 512 base-10 floating point number
+/// Note: this is incredibly slow on debug builds
 pub const Float = packed struct {
-    sign: u1,
-    mantissa: u19, 
-    exp: u492,
+    mantissa: i493, 
+    exp: i19,
 
     pub const FloatError = error {
         Overflow,
     };
 
-    const MANTISSA_BITS = 492;
-    const EXPONENT_BITS = 19;
-    const SIGN_BITS = 1;
-    const EXPONENT_MASK = (1 << EXPONENT_BITS) - 1;
-    const MANTISSA_MASK = (1 << MANTISSA_BITS) - 1;
-    const BIAS = 262143;
-    pub fn init() @This() {
-        return .{
-            .sign = 0,
-            .mantissa = 0,
-            .exp = 0,
-        };
+    pub fn init(mantissa: i493, exponent: i19) @This() {
+        return (@This() {
+            .mantissa = mantissa,
+            .exp = exponent,
+        }).normalize();
     }
 
-//    pub fn init_string(allocator: std.mem.Allocator, chars: []const u8) !@This() {
-//        var self = @This().init(allocator);
-//        try self.set_string(chars);
-//        return self;
-//    }
+    /// Convert a string to a float
+    /// Follows the following format:
+    /// [+-]? ([1..9] [0..9]* | '0') '.' [0..9]* ( [eE] ([+-]?) [0..9]+ )
+    pub fn init_str(str: []const u8) !@This() {
+        var mantissa: i986 = 0;
+        var exp: i19 = 0;
+        var sign: i986 = 1;
 
-    fn normalize(exp: u492, man: u19) FloatError!struct { u492, u19 } {
-        var iman = man;
-        var iexp = exp;
-        if (iman == 0) return .{0, 0};
+        var seen_dot = false;
+        var i: usize = 0;
 
-        while (iman >= (1 << (MANTISSA_BITS + 1))) {
-            iman = round_shift_right(man, 1);
-            iexp = iexp + 1;
+        if (str.len == 0)
+            return error.InvalidNumber;
+
+        if (str[0] == '-') {
+            sign = -1;
+            i += 1;
+        } else if (str[0] == '+') {
+            i += 1;
         }
 
-        while (iman < (1 << MANTISSA_BITS)) {
-            iman = iman << 1;
-            iexp = iexp - 1;
-        }
-        if (iexp >= EXPONENT_MASK) {
-            return FloatError.Overflow;
-        }
+        while (i < str.len) : (i += 1) {
+            const c = str[i];
 
-        if (iexp <= 0) {
-            const shift = 1 - iexp;
-            iman = round_shift_right(man, shift);
-            iexp = 0;
-            return .{iexp, iman};
-        }
+            switch (c) {
+                '0'...'9' => {
+                    mantissa *= 10;
+                    mantissa += c - '0';
 
-        iman = iman & MANTISSA_MASK;
-        return .{ iexp + BIAS, iman};
-    }
+                    if (seen_dot) exp -= 1;
+                },
 
-    fn round_shift_right(man: u492, n: u492) u492 {
-        var iman = man;
-        if (n == 0) return iman;
-        const half = 1 << (n - 1);
-        const lost = man & ((1 << n) - 1);
-        iman = man >> n;
-        if (lost > iman) {
-            iman = iman + 1;
-        } else if (lost == half) {
-            if (iman & 1 == 1) iman = iman + 1;
-        }
-        return iman;
-    }
+                '.' => {
+                    if (seen_dot) return error.InvalidNumber;
+                    seen_dot = true;
+                },
 
-    pub fn add(self: @This(), other: @This()) FloatError!@This() {
-        var a_man: u32 = self.mantissa;
-        var b_man: u32 = other.mantissa;
-        var a_exp = self.exp;
-        var b_exp = other.exp;
-        const a_sign = self.sign;
-        const b_sign = other.sign;
-        if (a_exp != 0) a_man = a_man | (1 << MANTISSA_BITS);
-        if (b_exp != 0) b_man = b_man | (1 << MANTISSA_BITS);
+                'e', 'E' => {
+                    i += 1;
+                    const extra_exp =
+                        try std.fmt.parseInt(
+                            i19,
+                            str[i..],
+                            10,
+                        );
 
-        a_exp = if (a_exp == 0) 1 else a_exp - BIAS;
-        b_exp = if (b_exp == 0) 1 else b_exp - BIAS;
+                    exp += extra_exp;
+                    break;
+                },
 
-        if (a_exp > b_exp) {
-            b_man = round_shift_right(b_man, a_exp - b_exp);
-            b_exp = a_exp;
-        } else if (b_exp > a_exp) {
-            a_man = round_shift_right(a_man, b_exp - a_exp);
-            a_exp = b_exp;
-        }
-
-        var man: u492 = undefined;
-        var sign: u1 = undefined;
-        const exp: u19 = a_exp;
-
-        if (a_sign == b_sign) {
-            man = a_man + b_man;
-            sign = a_sign;
-        } else {
-            if (a_man >= b_man) {
-                man = a_man - b_man;
-                sign = a_sign;
-            } else {
-                man = b_man - a_man;
-                sign = b_sign;
+                else => return error.InvalidNumber,
             }
         }
 
+        mantissa *= sign;
+
+        return @This().normalize_wide(
+            mantissa,
+            exp,
+        );    
+    }
+
+    fn char_to_int(char: u8) u8 {
+        return char - 30;
+    }
+
+
+
+    fn pow10(comptime T: type, n: usize) T {
+        return std.math.pow(T, 10, n);
+    }
+
+    fn count_digits(v: anytype) u16 {
+        if (v == 0) return 1;
+
+        var n = @abs(v);
+        var digits: u16 = 0;
+
+        while (n != 0) {
+            n /= 10;
+            digits += 1;
+        }
+
+        return digits;
+    }
+    fn normalize(self: @This()) @This() {
+        return normalize_wide(@intCast(self.mantissa), self.exp);
+    }
+    fn normalize_wide(_mantissa: i986, _exp: i19) @This() {
+        if (_mantissa == 0) {
+            return .{
+                .mantissa = 0,
+                .exp = 0,
+            };
+        }
+
+        var mantissa = _mantissa;
+        var exp = _exp;
+
+        const digits = count_digits(mantissa);
+
+        if (digits > PRECISION) {
+            const shift = digits - PRECISION;
+
+            mantissa = @divTrunc(
+                mantissa,
+                std.math.pow(i986, 10, shift),
+            );
+
+            exp += @intCast(shift);
+        } else if (digits < PRECISION) {
+            const shift = PRECISION - digits;
+
+            mantissa *= std.math.pow(
+                i986,
+                10,
+                shift,
+            );
+
+            exp -= @intCast(shift);
+        }
+
         return .{
-            .sign = sign,
-            .mantissa = man,
+            .mantissa = @intCast(mantissa),
             .exp = exp,
+        };    
+    }   
+
+    pub fn add(self: @This(), other: @This()) @This() {
+        if (self.exp == other.exp) {
+            const new = @This() { .mantissa = self.mantissa + other.mantissa, .exp = self.exp };
+            return new;
+        }
+
+        var exp = @max(self.exp, other.exp);
+        var mantissa = if (self.exp > other.exp) self.mantissa else other.mantissa;
+        while (exp != @min(self.exp, other.exp)) {
+            mantissa = @divTrunc(mantissa, 10);
+            exp -= 1;
+        }
+        const new_mant = mantissa + if (self.exp < other.exp) self.mantissa else other.mantissa;
+        return .init(new_mant, exp);
+    }
+
+    pub fn sub(self: @This(), other: @This()) @This() {
+        const neg_other = other.negate();
+        const out = self.add(neg_other);
+        return out;
+    }
+
+    pub fn negate(self: @This()) @This() {
+        return .init(-self.mantissa, self.exp);
+    }
+
+    pub fn mul(self: @This(), other: @This()) @This() {
+        const mantissa = self.mantissa * other.mantissa;
+        const exp = self.exp + other.exp;
+        return .init(mantissa, exp);
+    }
+
+    pub fn div(self: @This(), other: @This()) @This() {
+        const scale = std.math.pow(i986, 10, PRECISION - 1);
+
+        const m: i986 = 
+            @divTrunc((@as(i986, self.mantissa) * scale),
+                @as(i986, other.mantissa));
+
+        const exp = self.exp - other.exp - (PRECISION - 1);
+        return Float.normalize_wide(m, exp);
+    }
+
+    pub fn abs(self: @This()) @This() {
+        return .{ .mantissa = @abs(self.mantissa), .exp = self.exp };
+    }
+
+    pub fn compare(self: @This(), other: @This()) std.math.Order {
+        if (self.exp > other.exp) return .gt;
+        if (self.exp < other.exp) return .lt;
+        if (self.mantissa > other.mantissa) return .gt;
+        if (self.mantissa < other.mantissa) return .lt;
+        return .eq;
+    }
+
+
+    pub fn to_string(_self: @This(), allocator: std.mem.Allocator) ![]u8 {
+        const self = _self.normalize();
+        const absv = if (self.mantissa < 0) -self.mantissa else self.mantissa;
+
+        var most_sig = absv;
+        var digits: i19 = 0;
+        while (most_sig >= 10) {
+            most_sig = @divTrunc(most_sig, 10);
+            digits += 1;
+        }
+
+        const remainder = absv - most_sig * blk: {
+            var p: i493 = 1;
+            var i: i19 = 0;
+            while (i < digits) : (i += 1) p *= 10;
+            break :blk p;
         };
+
+        const adjusted_exp = self.exp + (PRECISION - 1);
+        if (self.mantissa < 0) {
+            return std.fmt.allocPrint(allocator, "-{}.{}e{}", .{ most_sig, remainder, adjusted_exp});
+        } else {
+            return std.fmt.allocPrint(allocator, "{}.{}e{}", .{ most_sig, remainder, adjusted_exp });
+        }
     }
 };

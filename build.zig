@@ -24,8 +24,8 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "conical",
-        .use_llvm = true, //FIXME: Once zig adds SFrame support this should be disabled
-        .use_lld = true, //FIXME: Same here
+        .use_llvm = false, //FIXME: Once zig adds SFrame support this should be disabled, currently false since backend has not yet been made
+        .use_lld = false, //FIXME: Same here
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -64,15 +64,15 @@ pub fn build(b: *std.Build) void {
     }
 
 
-    modules.getPtr("bindings").?.*.link_libc = true;
+    //modules.getPtr("bindings").?.*.link_libc = true;
 
     // Add tests
     const test_step = b.step("test", "Run unit tests");
     var mod_it = modules.iterator();
     while (mod_it.next()) |entry| {
         const tst = b.addTest(.{
-            .use_lld = true, //FIXME: Remove with SFrame support
-            .use_llvm = true,
+            .use_lld = false, //FIXME: Remove with SFrame support
+            .use_llvm = false,
             .root_module = entry.value_ptr.*,
         });
         const test_run = b.addRunArtifact(tst);

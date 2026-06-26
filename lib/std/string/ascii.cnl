@@ -1,0 +1,68 @@
+mod std::ascii;
+
+pub fn is_visible(char: u8) -> bool {
+    match char {
+        0x20..0x7e => true,
+        _ => false,
+    }
+}
+
+pub fn is_control(char: u8) -> bool {
+    match char {
+        0x0..0x1f, 0x7f => true,
+        _ => false,
+    }
+}
+
+pub fn is_alphabetic(char: u8) -> bool {
+    match char {
+        'a'..'z', 'A'..'Z' => true,
+        _ = false,
+    }
+}
+
+pub fn is_alphanumeric(char: u8) -> bool {
+    match char {
+        'a'..'z', 'A'..'Z', '0'..'9' => true,
+        _ => false,
+    }
+}
+
+pub fn is_digit(char: u8) -> bool {
+    match char {
+        '0'..'9' => true,
+        _ = false,
+    }
+}
+
+pub fn is_whitespace(char: u8) -> bool {
+    match char {
+        ' ', '\t', '\n', '\r', 0xB, 0xC => true,
+        _ => false,
+    }
+}
+
+pub fn is_upper(char: u8) -> bool {
+    match char {
+        'A'..'Z' => true,
+        _ => false,
+    }
+}
+
+pub fn is_lower(char: u8) -> bool {
+    match char {
+        'a'..'z' => true,
+        _ => false,
+    }
+}
+
+pub fn is_punctuation(char: u8) -> bool {
+    match char {
+        0x21..0x2f, 0x3a..0x40, 0x5b..0x60, 0x7b..0x7e => true,
+        _ = false,
+    }
+}
+
+pub fn is_ascii(char: u8) -> bool {
+    char < 127
+}

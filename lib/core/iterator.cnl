@@ -1,2 +1,12 @@
 mod core::iterator;
+import core::option;
 
+pub let Iterator = \($D, $T) => struct {
+    data: D,
+    count: T,
+    next: fn(data: &D, count: T) -> Option(D),
+} with impl {
+    fn __operator_next(self: &Self) -> Option(D) {
+        self.next(self.count)
+    }
+};

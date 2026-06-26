@@ -38,10 +38,14 @@ pub fn main(init: std.process.Init) !u8 {
     var buff: [64]u8 = undefined;
     const stderr = try init.io.lockStderr(&buff, null);
     try ctx.session.emit(&ctx, init.io, &stderr.file_writer.interface);
+    init.io.unlockStderr();
     _ = alloc.deinitWithoutLeakChecks();
-    
-    std.debug.print("{}\n", .{@sizeOf(tir.Tir.Instr)});
 
+    const a = sets.Set.init(gpa);
+    const b = sets.Set.init(gpa);
+    const e = a.equal(&b);
+    _ = e;
+    
     return 0;
 }
 
