@@ -1,10 +1,10 @@
-mod std::collection::array;
+mod std::collection::list;
 import core::result;
 import core::option;
 import core::iterator;
 import std::mem::allocator;
 
-pub let Array = \($T, $Alloc: Alloc <= AllocatorI = GlobalAlloc) => type struct {
+pub let List = \($T, $Alloc: Alloc <= AllocatorI = GlobalAlloc) => type struct {
     data: []T,
     capacity: usize,
     allocator: Alloc,

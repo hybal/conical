@@ -5,26 +5,18 @@ comptime fn unchecked_cast($A, B: type, val: A) -> B {
     return val as B;
 }
 
-fn min($T: T <= anyint, a: T, b: T) -> T {
-    if (type __operator_less_then_equal in T) {
-        if (a <= b) return a;
-        return b;
+fn min(a: comptime_int, b: comptime_int) -> comptime_int {
+    match a < b {
+        true => a,
+        false => b,
     }
-    if (__intrin_int_less_than_equal(a, b)) return a;
-    return b;
 }
 
-fn max($T: T <= anyint, a: T, b: T) -> T {
-    if (type __opterator_greater_than_equal in T) {
-        if ( a >= b ) return a;
-        return b;
+fn max(a: comptime_int, b: comptime_int) -> comptime_int {
+    match a > b {
+        true => a,
+        false => b,
     }
-    if (__intrin_int_greater_than_equal(a, b)) return a;
-    return b;
-}
-
-comptime fn pow(a: anyint, b: anyint) -> anyint {
-    __intrin_int_pow(a, b)
 }
 
 /// A compile-time only integer.
@@ -125,34 +117,46 @@ pub comptime fn Int(a: comptime_int, b: comptime_int) -> type {
 
     let mut div_start = max(a, b);
     let mut div_end = min(a, b);
-    if b != 0 {
-        let aa = a / a;
-        let ba = b / a;
-        div_start = min(div_start, aa);
-        div_start = min(div_start, ba);
-        div_end = max(div_end, aa);
-        div_end = max(div_end, ba);
+    match b {
+        0 => {},
+        _ => |b| {
+            let aa = a / a;
+            let ba = b / a;
+            div_start = min(div_start, aa);
+            div_start = min(div_start, ba);
+            div_end = max(div_end, aa);
+            div_end = max(div_end, ba);
+        }
     }
-    if b != 0 {
-        let ab = a / b;
-        let bb = b / b;
-        div_start = min(div_start, ab);
-        div_start = min(div_start, bb);
-        div_end = max(div_end, ab);
-        div_end = max(div_end, bb);
+    match b {
+        0 => {},
+        _ => |b| {
+            let ab = a / b;
+            let bb = b / b;
+            div_start = min(div_start, ab);
+            div_start = min(div_start, bb);
+            div_end = max(div_end, ab);
+            div_end = max(div_end, bb);
+        }
     }
-    if a <= 1 && 1 <= b {
-        div_start = min(div_start, a);
-        div_start = min(div_start, b);
-        div_end = max(div_end, a);
-        div_end = max(div_end, b);
+    match .{ a, b } {
+        _..1 * 1.._ => {
+            div_start = min(div_start, a);
+            div_start = min(div_start, b);
+            div_end = max(div_end, a);
+            div_end = max(div_end, b);
+        },
+        _ => {},
     }
 
-    if a <= -1 && -1 <= b {
-        div_start = min(div_start, -a);
-        div_start = min(div_start, -b);
-        div_end = max(div_end, -a);
-        div_end = max(div_end, -b);
+    match .{ a, b } {
+        _..-1 * -1.._ => {
+            div_start = min(div_start, -a);
+            div_start = min(div_start, -b);
+            div_end = max(div_end, -a);
+            div_end = max(div_end, -b);
+        },
+        _ => {},
     }
 
     let div_range = type {div_start}..{div_end};
@@ -164,11 +168,11 @@ pub comptime fn Int(a: comptime_int, b: comptime_int) -> type {
     let bits: comptime_int = active_bits(range);
     let exp = pow(2, bits - 1);
     
-    let lshift_start = if(a < 0) -exp else a;
+    let lshift_start = match a < 0 { true => -exp, false => a };
     let lshift_end = exp - 1; 
     let lshift_range = type {lshift_start}..{lshift_end};
 
-    let rshift_start = if (a < 0) a else 0;
+    let rshift_start = match a < 0 { true => a, false => 0 };
     let rshift_end = b;
     let rshift_range = type {rshift_start}..{rshift_end};
 

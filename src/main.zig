@@ -39,12 +39,7 @@ pub fn main(init: std.process.Init) !u8 {
     const stderr = try init.io.lockStderr(&buff, null);
     try ctx.session.emit(&ctx, init.io, &stderr.file_writer.interface);
     init.io.unlockStderr();
-    _ = alloc.deinitWithoutLeakChecks();
-
-    const a = sets.Set.init(gpa);
-    const b = sets.Set.init(gpa);
-    const e = a.equal(&b);
-    _ = e;
+    defer _ = alloc.deinitWithoutLeakChecks();
     
     return 0;
 }

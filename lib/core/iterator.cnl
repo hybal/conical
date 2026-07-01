@@ -1,12 +1,14 @@
+/// Contains types relating to iteration.
 mod core::iterator;
 import core::option;
 
-pub let Iterator = \($D, $T) => struct {
-    data: D,
-    count: T,
-    next: fn(data: &D, count: T) -> Option(D),
-} with impl {
-    fn __operator_next(self: &Self) -> Option(D) {
-        self.next(self.count)
-    }
+
+/// The main iterator interface.
+/// This interface is required to use the `for x in a` construct on a type.
+pub let IteratorI = interface {
+    /// Advances the iterator and returns the result.
+    /// .end is returned at the end of iteration.
+    /// There are no guarantees that calling next again after .end won't result in further values.
+    fn next($T, self: &mut Self) -> T | .end;
 };
+

@@ -42,7 +42,7 @@ UNICODE_NON_CHARACTERS ::= [U+00FDD0-U+00FDEF]
 Comments are ignored during lexing and as such do not contribute to the AST.
 
 ```ebnf
-LINE_COMMENT ::= '//' ( ~NEWLINE )* (NEWLINE | EOF)
+LINE_COMMENT  ::= '//' ( ~NEWLINE )* (NEWLINE | EOF)
 
 BLOCK_COMMENT ::= '/*' ( BLOCK_COMMENT | ~DISALLOWED_CHARACTERS )* '*/'
 ```
@@ -50,46 +50,47 @@ BLOCK_COMMENT ::= '/*' ( BLOCK_COMMENT | ~DISALLOWED_CHARACTERS )* '*/'
 ## Identifiers, Keywords, and Digits
 
 ```ebnf
-IDENTIFIER       ::= [A-Za-z_] [A-Za-z0-9_]*
-KEYWORD_IF       ::= 'if'
-KEYWORD_ELSE     ::= 'else'
-KEYWORD_WHILE    ::= 'while'
-KEYWORD_FOR      ::= 'for'
-KEYWORD_LOOP     ::= 'loop'
-KEYWORD_CONTINUE ::= 'continue'
-KEYWORD_BREAK    ::= 'break'
-KEYWORD_IN       ::= 'in'
-KEYWORD_MATCH    ::= 'match'
-KEYWORD_FN       ::= 'fn'
-KEYWORD_INLINE   ::= 'inline'
-KEYWORD_PUB      ::= 'pub'
-KEYWORD_EXPORT   ::= 'export'
-KEYWORD_EXTERN   ::= 'extern'
-KEYWORD_IMPORT   ::= 'import'
-KEYWORD_LET      ::= 'let'
-KEYWORD_MUT      ::= 'mut'
-KEYWORD_ALIAS    ::= 'alias'
-KEYWORD_MOVE     ::= 'move'
-KEYWORD_RETURN   ::= 'return'
-KEYWORD_STRUCT   ::= 'struct'
-KEYWORD_ENUM     ::= 'enum'
-KEYWORD_USE      ::= 'use'
-KEYWORD_MOD      ::= 'mod'
-KEYWORD_COMPTIME ::= 'comptime'
-KEYWORD_AS       ::= 'as'
-KEYWORD_STATIC   ::= 'static'
-KEYWORD_TYPE     ::= 'type'
-KEYWORD_DISTINCT ::= 'distinct'
-KEYWORD_CONST    ::= 'const'
-KEYWORD_IMPL     ::= 'impl'
-KEYWORD_WHEN     ::= 'when'
-KEYWORD_SELF     ::= 'Self'
-KEYWORD_WHERE    ::= 'where'
-KEYWORD_WITH     ::= 'with'
-KEYWORD_MACRO    ::= 'macro'
-KEYWORD_PURE     ::= 'pure'
-KEYWORD_TRUE     ::= 'true'
-KEYWORD_FALSE    ::= 'false'
+IDENTIFIER          ::= [A-Za-z_] [A-Za-z0-9_]*
+KEYWORD_IF          ::= 'if'
+KEYWORD_ELSE        ::= 'else'
+KEYWORD_WHILE       ::= 'while'
+KEYWORD_FOR         ::= 'for'
+KEYWORD_LOOP        ::= 'loop'
+KEYWORD_CONTINUE    ::= 'continue'
+KEYWORD_BREAK       ::= 'break'
+KEYWORD_IN          ::= 'in'
+KEYWORD_MATCH       ::= 'match'
+KEYWORD_FN          ::= 'fn'
+KEYWORD_INLINE      ::= 'inline'
+KEYWORD_PUB         ::= 'pub'
+KEYWORD_EXPORT      ::= 'export'
+KEYWORD_EXTERN      ::= 'extern'
+KEYWORD_IMPORT      ::= 'import'
+KEYWORD_LET         ::= 'let'
+KEYWORD_MUT         ::= 'mut'
+KEYWORD_ALIAS       ::= 'alias'
+KEYWORD_MOVE        ::= 'move'
+KEYWORD_RETURN      ::= 'return'
+KEYWORD_STRUCT      ::= 'struct'
+KEYWORD_ENUM        ::= 'enum'
+KEYWORD_INTERFACE   ::= 'interface'
+KEYWORD_USE         ::= 'use'
+KEYWORD_MOD         ::= 'mod'
+KEYWORD_COMPTIME    ::= 'comptime'
+KEYWORD_AS          ::= 'as'
+KEYWORD_STATIC      ::= 'static'
+KEYWORD_TYPE        ::= 'type'
+KEYWORD_DISTINCT    ::= 'distinct'
+KEYWORD_CONST       ::= 'const'
+KEYWORD_IMPL        ::= 'impl'
+KEYWORD_WHEN        ::= 'when'
+KEYWORD_SELF        ::= 'Self'
+KEYWORD_WHERE       ::= 'where'
+KEYWORD_WITH        ::= 'with'
+KEYWORD_MACRO       ::= 'macro'
+KEYWORD_PURE        ::= 'pure'
+KEYWORD_TRUE        ::= 'true'
+KEYWORD_FALSE       ::= 'false'
 ```
 
 
@@ -231,6 +232,7 @@ TYPE_EXPRESSION_LABEL            ::= IDENTIFIER ':' TYPE_EXPRESSION_GROUPING
 TYPE_EXPRESSION_PRIMARY          ::= TYPE_EXPRESSION_LITERAL
                                    | TYPE_SET_LITERAL
                                    | KEYWORD_SELF 
+                                   | KEYWORD_TYPE
 
 TYPE_EXPRESSION_LITERAL          ::= INTEGER_LITERAL 
                                    | FLOAT_LITERAL 
@@ -242,7 +244,7 @@ TYPE_EXPRESSION_LITERAL          ::= INTEGER_LITERAL
 
 TYPE_SET_LITERAL                 ::= '.' '{' ( TYPE_EXPRESSION_LITERAL ( ',' TYPE_EXPRESSION_LITERAL  )* ) '}'
 
-TYPE_EXPRESSION_SUGAR            ::= TYPE_STRUCT_SUGAR | TYPE_ENUM_SUGAR | TYPE_IMPL_SUGAR | RANGE_LITERAL
+TYPE_EXPRESSION_SUGAR            ::= TYPE_STRUCT_SUGAR | TYPE_ENUM_SUGAR | TYPE_IMPL_SUGAR | TYPE_INTERFACE_SUGAR | RANGE_LITERAL
 
 TYPE_STRUCT_SUGAR                ::= KEYWORD_STRUCT '{' IDENTIFIER ':' TYPE_EXPRESSION (',' IDENTIFIER ':' TYPE_EXPRESSION)* {','} '}'
 
@@ -250,13 +252,17 @@ TYPE_ENUM_SUGAR                  ::= KEYWORD_ENUM '{' (IDENTIFIER { ':' TYPE_EXP
 
 TYPE_IMPL_SUGAR                  ::= KEYWORD_IMPL '{' FUNCTION_DECLARATION+ '}'
 
+TYPE_INTERFACE_SUGAR             ::= KEYWORD_INTERFACE '{' (FUNCTION_SIGNATURE ';' )+ '}'
+
 ```
 
 ## Functions
 
 ```ebnf
 
-FUNCTION_DECLARATION            ::= (FUNCTION_DECLARATION_INLINE | FUNCTION_DECLARATION_POSTFIX) EXPRESSION_BLOCK
+FUNCTION_DECLARATION            ::= FUNCTION_SIGNATURE {EXPRESSION_BLOCK}
+
+FUNCTION_SIGNATURE              ::= FUNCTION_DECLARATION_INLINE | FUNCTION_DECLARATION_POSTFIX
 
 FUNCTION_MODIFIERS              ::= KEYWORD_INLINE | KEYWORD_PURE | KEYWORD_COMPTIME
 

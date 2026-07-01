@@ -125,6 +125,7 @@ pub const TypeImpl = struct {
 pub const TypeLiteral = union(enum) {
     value: Token,
     self,
+    @"type",
     symbol: Ident,
 };
 

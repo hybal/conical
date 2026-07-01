@@ -1,0 +1,102 @@
+mod core::operator;
+
+pub let AddI = interface {
+    fn __operator_add(self: anytype, other: anytype) -> anytype;
+}
+
+pub let SubI = interface {
+    fn __operator_subtract(self: anytype, other: anytype) -> anytype;
+};
+
+pub let MulI = interface {
+    fn __operator_multiply(self: anytype, other: anytype) -> anytype;
+};
+
+pub let DivI = interface {
+    fn __operator_divide(self: anytype, other: anytype) -> anytype;
+};
+
+pub let RemI = interface {
+    fn __operator_remainder(self: anytype, other: anytype) -> anytype;
+};
+
+pub let NegI = interface {
+    fn __operator_negate(self: anytype, other: anytype) -> anytype;
+};
+
+pub let LShiftI = interface {
+    fn __operator_left_shift(self: anytype, other: anytype) -> anytype;
+};
+
+pub let RShiftI = interface {
+    fn __operator_right_shift(self: anytype, other: anytype) -> anytype;
+};
+
+pub let BitOrI = interface {
+    fn __operator_bitwise_or(self: anytype, other: anytype) -> anytype;
+};
+
+pub let BitAndI = interface {
+    fn __operator_bitwise_and(self: anytype, other: anytype) -> anytype;
+};
+
+pub let BitXorI = interface {
+    fn __operator_bitwise_xor(self: anytype, other: anytype) -> anytype;
+};
+
+pub let EqI = interface {
+    fn __operator_eq(self: anytype, other: anytype) -> anytype;
+};
+
+pub let NEqI = interface {
+    fn __operator_neq(self: anytype, other: anytype) -> anytype;
+};
+
+pub let LessThenI = interface {
+    fn __operator_less_then(self: anytype, other: anytype) -> antype;
+};
+
+pub let GreaterThenI = interface {
+    fn __operator_greater_then(self: anytype, other: anytype) -> anytype;
+};
+
+pub let LessThenEqualI = interface {
+    fn __operator_less_then_equal(self: anytype, other: anytype) -> anytype;
+};
+
+pub let GreaterThenEqualI = interface {
+    fn __operator_greater_then_equal(self: anytype, other: anytype) -> anytype;
+};
+
+pub let IndexI = interface {
+    fn __operator_index(self: anytype, index: anytype) -> anytype;
+};
+
+pub let IndexMutI = interface {
+    fn __operator_index_set(self: anytype, index: anytype, value: anytype);
+};
+
+pub let SliceI = interface {
+    fn __operator_slice(self: anytype, start: anytype, end: anytype) -> anytype;
+};
+
+pub let AutoDropI = interface {
+    fn __drop(self: antype);
+};
+
+pub let DropI = __drop: anytype;
+
+
+pub let ComparableI = EqI | NEqI | LessThenI | GreaterThenI | LessThenEqualI | GreaterThenEqualI;
+
+pub let BitwiseI = LShiftI | RShiftI | BitOrI | BitAndI | BitXorI;
+
+pub let ArithI = AddI | SubI | DivI | MulI | RemI | NegI;
+
+
+
+
+
+
+
+

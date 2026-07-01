@@ -946,6 +946,13 @@ fn type_expression_primary(self: *@This()) !AstNodeId {
         const nodeid = try self.builder.add_node(.type_literal, span, node);
         return nodeid;
     }
+
+    if (self.next_if(.keyword_type)) |_| {
+        const node: Ast.TypeLiteral = .@"type";
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.type_literal, span, node);
+        return nodeid;
+    }
     return try self.type_expression_literal();
 
 }

@@ -1,8 +1,8 @@
 # Conical Standard Library
 
-> **WARN** 
+> **WARNING** 
 > Conical is not yet in a useable state.
-> Everything in this directory is unstable and can change at any time, and is not gauranteed to compile on current versions.
+> Everything in this directory is unstable and can change at any time, and is not guaranteed to compile on current versions.
 
 The standard library for conical is organized into three main sections: core, std, and extra.
 
@@ -11,7 +11,7 @@ This does not mean that things that require target-specific functionality cannot
 
 Std contains declarations that are very commonly used in production.
 
-Extra contains everything that doesn't fit in core/std, except bindings which are not allowed anywhere in the standard library.
+Extra contains everything that doesn't fit in core/std, except bindings which are not allowed except in the case of OS APIs or syscalls.
 
 `prelude.cnl` is also included at the root of this directory and contains things from core that are automatically included in every program.
 
