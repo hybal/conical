@@ -1,2 +1,26 @@
 mod core::result;
 
+pub let Result = \($T, $E) => type ok: T | err: E with impl {
+    fn is_ok(self: Self) -> bool {
+        match self {
+            ok: _ => true,
+            _ => false,
+        }
+    }
+
+    fn is_err(self: Self) -> bool {
+        match self {
+            ok: _ => false,
+            _ => true,
+        }
+    }
+
+    fn unwrap_or(self: Self, orelse: T) -> T {
+        match self {
+            ok: _ => |v| v.ok,
+            _ => orelse,
+        }
+    }
+
+};
+

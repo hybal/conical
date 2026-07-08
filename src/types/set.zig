@@ -32,6 +32,11 @@ pub const Set = union(enum) {
         right: *Set,
     },
     associative: []const Set,
+
+    default: struct {
+        set: *Set,
+        expr: Value,
+    },
     // It might be a good idea for ranges to actually be apart of the value type
     // but that remains to be seen
     irange: IRange,
@@ -61,7 +66,6 @@ pub const Set = union(enum) {
     }
 
     pub fn initSpecial(value: enum { anyint, anyfloat, universal, ptr, @"type" }) Set {
-        std.debug.print("DEBUG A\n", .{});
         const out: Set = switch (value) {
             .anyint => .anyint,
             .anyfloat => .anyfloat,
@@ -95,6 +99,12 @@ pub const Set = union(enum) {
                 }};
             },
             .@"type" => out = .@"type",
+            .default => |d| {
+                out = .{ .default = .{
+                    .expr = d.value,
+                    .set = try d.set.clone(allocator),
+                }};
+            },
         }
         return out;
     }
@@ -157,6 +167,9 @@ pub const Set = union(enum) {
                 if (v.left.compare(other) != .superset
                     and v.right.compare(other) == .superset) return .subset;
                 return .superset;
+            },
+            .default => |v| {
+                return v.set.compare(other);
             },
             else => unreachable 
         }
@@ -229,7 +242,10 @@ pub const Set = union(enum) {
                         and fr.end.compare(val.float) == .gt) return true;
                 }
                 return false;
-            }
+            },
+            .default => |d| {
+                return d.set.membership(val);
+            },
         }
         unreachable;
     }
@@ -304,6 +320,13 @@ pub const Set = union(enum) {
             try associatives.append(allocator, other_c);
             self.* = .{ .associative = associatives.items };
         }
+    }
+
+    pub fn set_default(self: *@This(), value: Value) void {
+        self.* = .{ .default = .{
+            .set = self.*,
+            .expr = value
+        }};
     }
 
 };

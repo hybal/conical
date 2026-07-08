@@ -1,6 +1,6 @@
 mod core::subtype;
 
-fn implements(sub: type, interface: type) {
-    type interface <= sub;
+fn implements(sub: type, inter: type) {
+    type inter <= sub;
 }
 

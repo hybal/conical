@@ -109,6 +109,11 @@ pub const TypeLabel = struct {
     expr: AstNodeId,
 };
 
+pub const TypeDefault = struct {
+    left: AstNodeId,
+    right: AstNodeId,
+};
+
 pub const TypeStruct = struct {
     field_labels: []Ident,
     field_exprs: []AstNodeId,
@@ -124,15 +129,21 @@ pub const TypeImpl = struct {
 
 pub const TypeLiteral = union(enum) {
     value: Token,
+    symbol: Ident,
     self,
     @"type",
-    symbol: Ident,
+    discard,
 };
 
-
-pub const Path = struct {
-    parts: []Ident,
+pub const TypeUseMod = struct {
+    kind: TypeUseModKind,
+    expr: AstNodeId,
 };
+
+pub const TypeUseModKind = enum {
+    relevant,
+};
+
 
 pub const TerminalType = union(enum) {
     value: Token,
@@ -140,7 +151,6 @@ pub const TerminalType = union(enum) {
 };
 
 pub const Terminal = struct {
-    span: common.Span,
     termtype: TerminalType,
 };
 
@@ -346,15 +356,9 @@ pub const Poison = struct {
 
 pub const Unit = struct {};
 
-pub const ModuleDecl = struct {
-    path: AstNodeId,
-    span: common.Span,
-};
 pub const Program = struct {
-    module: ?ModuleDecl,
     declarations: []AstNodeId,
 };
-
 
 pub const SpanId = usize;
 pub const AstNodeId = usize;
@@ -380,13 +384,14 @@ pub const AstKind = enum {
     type_literal,
     type_modifier,
     type_label,
+    type_default,
     type_enum,
     type_struct,
     type_impl,
     type_set,
     type_range,
+    type_use_mod,
     assignment,
-    if_stmt,
     match,
     match_arm,
     match_pattern,
@@ -408,9 +413,6 @@ pub const AstKind = enum {
     access_operator,
     index,
     slice,
-    cast,
-    path,
-    module_decl,
     import,
 };
 
@@ -428,6 +430,7 @@ pub const Ast = struct {
     type_modifiers: []const TypeModifier,
     type_metadatas: []const TypeMetadata,
     type_labels: []const TypeLabel,
+    type_defaults: []const TypeDefault,
     type_literals: []const TypeLiteral,
     type_enums: []const TypeEnum,
     type_structs: []const TypeStruct,
@@ -435,7 +438,6 @@ pub const Ast = struct {
     type_sets: []const TypeSet,
     type_ranges: []const TypeRange,
     assignments: []const Assignment,
-    if_stmts: []const IfStmt,
     matchs: []const Match,
     match_arms: []const MatchArm,
     match_patterns: []const Pattern,
@@ -457,10 +459,8 @@ pub const Ast = struct {
     access_operators: []const AccessOperator,
     indexs: []const IndexOp,
     slices: []const SliceOp,
-    casts: []const Cast,
-    paths: []const Path,
-    module_decls: []const ModuleDecl,
     imports: []const Import,
+    type_use_mod: []const TypeUseMod,
 
     pub fn get(self: *const @This(), id: AstNodeId) struct {AstKind, *anyopaque} {
         const node_index = self.nodes[id].index;

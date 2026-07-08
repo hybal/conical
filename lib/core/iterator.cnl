@@ -1,4 +1,5 @@
 /// Contains types relating to iteration.
+/// Included in the prelude
 mod core::iterator;
 import core::option;
 

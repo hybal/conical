@@ -26,7 +26,7 @@ previous_token: lex.Token = undefined,
 
 
 
-/// Initialize the parser from an already existing Lexer instance
+    /// Initialize the parser from an already existing Lexer instance
 pub fn init_from_lexer(in: lex.Lexer, context: *common.Context, gpa: std.mem.Allocator) @This() {
     return .{
         .lexer = in,
@@ -155,7 +155,6 @@ pub fn parse(self: *@This()) !Ast.Ast {
 fn program(self: *@This()) anyerror!Ast.Ast {
     // Every source file requires a module declaration as the first thing in the file.
     // MODULE_DECLARATION
-    const mod = try self.module_declaration();
     var decls = std.ArrayList(AstNodeId).empty;
     // ITEM*
     while (self.lexer.has_next()) {
@@ -164,48 +163,11 @@ fn program(self: *@This()) anyerror!Ast.Ast {
     }
     const prog = Ast.Program {
         .declarations = try decls.toOwnedSlice(self.allocator),
-        .module = mod,
     };
 
     self.builder.set_program(prog);
     defer self.deinit();
     return self.builder.build();
-}
-
-/// Parses a module declaration
-/// Corresponds to grammar rule `MODULE_DECLARATION`
-fn module_declaration(self: *@This()) !?Ast.ModuleDecl {
-    var span: common.Span = .init(self.lexer.index, self.file);
-    // KEYWORD_MOD
-    if (!(try self.expect(.keyword_mod))) {
-        const err = errors.ExpectedDeclarationError {
-            .span = span,
-            .ty = .expected_module,
-        };
-        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-        _ = errid;
-        while (self.is_next_one_of(.{ .ident, .colon2, .semicolon })) {
-            _ = try self.next();
-        }
-        return null;
-    }
-    // EXPRESSION_PATH
-    const path = try self.expression_path();
-    // ';'
-    if(!(try self.expect(.semicolon))) {
-        const err = errors.ExpectedTokenError {
-            .expected = .semicolon,
-            .span = .init(self.builder.get_span(path).end-1, self.file),
-        };
-        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-        _ = errid;
-    }
-    span.merge(.init(self.lexer.index, self.file));
-    return .{
-        .path = path,
-        .span = span,
-    };
-
 }
 
 // Parses a top-level declaration / item
@@ -227,23 +189,8 @@ fn item(self: *@This()) !AstNodeId {
     // Also handles multiple module declarations
     const kind: struct {Ast.ItemKind, AstNodeId }= switch (peek_tok.?.tag) {
         .keyword_fn => .{ .function, try self.function_declaration()},
-        .keyword_let => .{.binding, try self.let_binding()},
-        .keyword_mod => {
-            const decl = try self.module_declaration();
-            const sp: common.Span = .init(decl.?.span.start+1, self.file);
-            const err = errors.UnexpectedDeclarationError {
-                .span = sp,
-                .ty = .module_decl,
-                .notes = &.{ "there can only be one module per file" },
-            };
-            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-            const poison_node = Ast.Poison {
-                .error_id = errid,
-            };
-            const poisonid = try self.builder.add_node(.poison, sp, poison_node);
-            return poisonid;
-        },
-        else =>  {
+        .keyword_let => .{ .binding, try self.let_binding()},
+        else => {
             const err = errors.UnexpectedTokenError {
                 .found = peek_tok.?,
                 .notes = &.{ "top-level can only contain functions, imports, and variables" },
@@ -635,10 +582,10 @@ fn type_expression(self: *@This()) !AstNodeId {
 fn type_expression_metadata(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     // TYPE_EXPRESSION_STRICT_INCLUSION
-    var left = try self.type_expression_strict_inclusion();
+    var left = try self.type_expression_default();
     // ( KEYWORD_WITH TYPE_EXPRESSION_STRICT_INCLUSION )*
     while ( self.is_next(.keyword_with )) {
-        const right = try self.type_expression_strict_inclusion();
+        const right = try self.type_expression_default();
         const node = Ast.TypeMetadata {
             .left = left,
             .right = right,
@@ -648,6 +595,23 @@ fn type_expression_metadata(self: *@This()) !AstNodeId {
         span.merge(.{.start = span.start, .end = self.lexer.index, .fileid = self.file });
         const nodeid = try self.builder.add_node(.type_metadata, span, node);
         left = nodeid;
+    }
+    return left;
+}
+
+fn type_expression_default(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    const left = try self.type_expression_strict_inclusion();
+    if ( self.is_next(.eq) ) {
+        _ = self.expect(.eq) catch unreachable;
+        const right = try self.expression();
+        const node = Ast.TypeDefault {
+            .left = left,
+            .right = right,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const out = try self.builder.add_node(.type_default, span, node);
+        return out;
     }
     return left;
 }
@@ -777,12 +741,12 @@ fn type_expression_intersection(self: *@This()) !AstNodeId {
 fn type_expression_product(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     // TYPE_EXPRESSION_MODIFIERS
-    var left = try self.type_expression_modifiers();
+    var left = try self.type_expression_unary();
     // ( '*' TYPE_EXPRESSION_MODIFIERS )*
     while (self.is_next( .star )) {
         const op = self.next() catch unreachable;
         _ = op;
-        const right = try self.type_expression_modifiers();
+        const right = try self.type_expression_unary();
         const node = Ast.TypeBinaryExpr {
             .left = left,
             .right = right,
@@ -798,7 +762,7 @@ fn type_expression_product(self: *@This()) !AstNodeId {
 /// Parses unary modifiers.
 /// Corresponds to grammar rule `TYPE_EXPRESSION_MODIFIERS`
 /// FIXME: Rename to unary
-fn type_expression_modifiers(self: *@This()) !AstNodeId {
+fn type_expression_unary(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     var mods: std.ArrayList(Ast.TypeModifierOp) = .empty;
     // ( '&' | '[]' | '[' EXPRESSION ']' )*
@@ -858,24 +822,12 @@ fn type_expression_grouping(self: *@This()) anyerror!AstNodeId {
         return expr;
     }
     // '{' EXPRESSION '}'
-    // TODO: Perhaps consider making this a normal block?
     if (self.is_next(.open_bracket)) {
-        _ = self.next() catch unreachable;
-        const expr = try self.expression();
-        if (!try self.expect(.close_bracket)) {
-            const err = errors.ExpectedTokenError {
-                .expected = .close_bracket,
-                .span = .init(self.previous_token.span.end, self.file),
-            };
-            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-            _ = errid;
-        }
-        return expr;
+        return try self.expression_block();
     }
 
     // IDENT | TYPE_EXPRESSION_LABEL
     // This is currently the only place that backtracking is required.
-    // TODO: Move this to type_expression_literal
     if (self.is_next(.ident)) {
         const save = self.next() catch unreachable;
         if (self.is_next(.colon)) {
@@ -883,8 +835,10 @@ fn type_expression_grouping(self: *@This()) anyerror!AstNodeId {
             const out = try self.type_expression_label();
             return out;
         }
-        self.restore(save);
-        const out = try self.expression_path();
+        const id_node = Ast.Terminal {
+            .termtype = .{ .value = save },
+        };
+        const out = try self.builder.add_node(.terminal, save.span, id_node);
         return out;
     }
     // TYPE_EXPRESSION_SUGAR
@@ -899,7 +853,6 @@ fn type_expression_grouping(self: *@This()) anyerror!AstNodeId {
 
 /// Parses a label
 /// Corresponds to grammar rule `TYPE_EXPRESSION_LABEL`
-/// TODO: This can probably be moved inline.
 fn type_expression_label(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     const ident = try self.expect_ret(.ident);
@@ -949,6 +902,13 @@ fn type_expression_primary(self: *@This()) !AstNodeId {
 
     if (self.next_if(.keyword_type)) |_| {
         const node: Ast.TypeLiteral = .@"type";
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.type_literal, span, node);
+        return nodeid;
+    }
+
+    if (self.next_if(.underscore)) |_| {
+        const node: Ast.TypeLiteral = .discard;
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.type_literal, span, node);
         return nodeid;
@@ -1197,80 +1157,10 @@ fn expression_return(self: *@This()) !AstNodeId {
         const nodeid = try self.builder.add_node(.return_stmt, span, node);
         return nodeid;
     }
-    return try self.expression_if();
-}
-
-
-
-fn expression_if(self: *@This()) !AstNodeId {
-    var span: common.Span = .init(self.lexer.index, self.file);
-    if (self.next_if(.keyword_if)) |_| {
-        const open_paren = self.next_if(.open_paren);
-        const cond = try self.expression();
-        if (open_paren != null) {
-            if (!try self.expect(.close_paren)) {
-                //ERROR: Expected ')'
-                span.merge(.init(self.lexer.index, self.file));
-                const err = errors.ExpectedTokenError {
-                    .expected = .close_paren,
-                    .span = .init(span.end, self.file),
-                };
-                const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-                _ = errid;
-            }
-        }
-        var refinements: std.ArrayList(Ast.Refinement) = .empty;
-        if (self.next_if(.pipe)) |_| {
-            while (!self.is_next(.pipe)) {
-                const ident = try self.expect_ret(.ident);
-                if (ident == null) {
-                    //ERROR: Expected identifier
-                    span.merge(.init(self.lexer.index, self.file));
-                    const err = errors.ExpectedTokenError {
-                        .expected = .ident,
-                        .span = .init(span.end, self.file),
-                    };
-                    const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-                    _ = errid;
-                }
-                var refinement = Ast.Refinement {
-                    .a = .{ .span = .make(ident.?.span) },
-                    .b = null,
-                };
-                if (self.next_if(.eq)) |_| {
-                    const maps_to = try self.expect_ret(.ident);
-                    if (maps_to == null) {
-                        //ERROR: expected identifier after '='
-                        return error.ParseError;
-                    }
-                    refinement.b = .{ .span = .make(maps_to.?.span) };
-                }
-                _ = self.next_if(.comma);
-                try refinements.append(self.allocator, refinement);
-            }
-            _ = self.expect(.pipe) catch unreachable;
-        }
-
-        const block = if (open_paren != null) try self.expression_optional_block() else try self.expression_block();
-
-        var else_block: ?AstNodeId = null;
-
-        if (self.next_if(.keyword_else)) |_| {
-            else_block = try self.expression_optional_block();
-        }
-        const node = Ast.IfStmt {
-            .block = block,
-            .condition = cond,
-            .else_block = else_block,
-            .refinements = if (refinements.items.len == 0) null else try refinements.toOwnedSlice(self.allocator),
-        };
-        span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.if_stmt, span, node);
-        return nodeid;
-
-    }
     return try self.expression_match();
 }
+
+
 
 fn expression_block(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
@@ -1302,7 +1192,7 @@ fn expression_optional_block(self: *@This()) !AstNodeId {
     if (self.is_next(.open_bracket)) {
         return try self.expression_block();
     }
-    return try self.expression(); //May be changed to statement
+    return try self.expression();
 }
 
 fn expression_match(self: *@This()) !AstNodeId {
@@ -1313,7 +1203,7 @@ fn expression_match(self: *@This()) !AstNodeId {
             const err = errors.ExpectedTokenError {
                 .expected = .open_bracket,
                 .span = .init(self.previous_token.span.end, self.file),
-                .help = "match expressions must always have brackets",
+                .help = "match expressions must always open with a bracket",
             };
             const errid = try self.context.session.push(try err.get_error_type(self.allocator));
             _ = errid;
@@ -1322,7 +1212,7 @@ fn expression_match(self: *@This()) !AstNodeId {
         while (!self.is_next(.close_bracket)) {
             var patterns: std.ArrayList(AstNodeId) = .empty;
             while (!self.is_next(.fat_arrow)) {
-                const pattern = try self.match_pattern();
+                const pattern = try self.type_expression();
                 _ = self.next_if(.comma);
                 try patterns.append(self.allocator, pattern);
             }
@@ -1365,72 +1255,7 @@ fn expression_match(self: *@This()) !AstNodeId {
     return try self.expression_logical_or();
 }
 
-fn match_pattern(self: *@This()) !AstNodeId {
-    var span: common.Span = .init(self.lexer.index, self.file);
-    if (self.is_next(.dot)) {
-        if (!try self.expect(.open_bracket)) {
-            //ERROR: Expected '{'
-            span.merge(.init(self.lexer.index, self.file));
-            const err = errors.ExpectedTokenError {
-                .expected = .open_bracket,
-                .span = .init(span.end, self.file),
-            };
-            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-            _ = errid;
-        }
-        var ids: std.ArrayList(Ast.Ident) = .empty;
-        var vals: std.ArrayList(AstNodeId) = .empty;
-        while (!self.is_next(.close_bracket)) {
-            const ident = try self.expect_ret(.ident);
-            if (ident == null) {
-                //ERROR: Expected identifier
-                const err = errors.ExpectedTokenError {
-                    .expected = .ident,
-                    .span = .init(span.end, self.file),
-                };
-                const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-                _ = errid;
-            }
 
-            if (!try self.expect(.colon)) {
-                //ERROR: Expected ':'
-                return error.ParseError;
-            }
-            const expr = try self.match_pattern();
-            _ = self.next_if(.comma);
-            try ids.append(self.allocator, .{ .span = .make(ident.?.span) });
-            try vals.append(self.allocator, expr);
-        }
-
-        if (!try self.expect(.close_bracket)) return error.ParseError;
-        const node = Ast.MatchCompoundLiteral {
-            .ids = try ids.toOwnedSlice(self.allocator),
-            .values = try vals.toOwnedSlice(self.allocator)
-        };
-
-        span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.match_compound_literal, span, node);
-        return nodeid;
-    }
-    const left = try self.type_expression_literal();
-    if (self.is_next_one_of(.{.dot2, .bang})) {
-        const left_exclude = self.next() catch unreachable;
-        const right_exclude = self.next_if(.bang);
-        const right = try self.type_expression_literal();
-
-        const node = Ast.TypeRange {
-            .start = left,
-            .start_inclusive = left_exclude.tag != .bang,
-            .end = right,
-            .end_inclusive = right_exclude == null,
-        };
-
-        span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.type_range, span, node);
-        return nodeid;
-    }
-    return left;
-}
 
 fn expression_logical_or(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
@@ -1600,10 +1425,10 @@ fn expression_additive(self: *@This()) !AstNodeId {
 
 fn expression_multiplicative(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    var left = try self.expression_cast();
+    var left = try self.expression_unary();
     while (self.is_next_one_of(.{.star, .slash, .percent})) {
         const tok = self.next() catch unreachable;
-        const right = try self.expression_cast();
+        const right = try self.expression_unary();
         const node = Ast.BinaryExpr {
             .left = left,
             .right = right,
@@ -1616,25 +1441,6 @@ fn expression_multiplicative(self: *@This()) !AstNodeId {
     }
     return left;
 }
-
-fn expression_cast(self: *@This()) !AstNodeId {
-    var span: common.Span = .init(self.lexer.index, self.file);
-    var left = try self.expression_unary();
-    while (self.next_if(.keyword_as)) |_| {
-        const right = try self.type_expression();
-        const node = Ast.Cast {
-            .expr = left,
-            .ty = right,
-        };
-        span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.cast, span, node);
-        left = nodeid;
-    }
-    return left;
-}
-
-
-
 
 fn expression_unary(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
@@ -1804,25 +1610,25 @@ fn expression_initializer(self: *@This()) !AstNodeId {
             if (comma == null and !self.is_next(.close_bracket)) {
                 //ERROR: Expected }
                 return error.ParseError;
+            }
+            const expr = try self.expression();
+            try fields.append(self.allocator, Ast.InitializerField {
+                .id = ident,
+                .value = expr,
+            });
         }
-        const expr = try self.expression();
-        try fields.append(self.allocator, Ast.InitializerField {
-            .id = ident,
-            .value = expr,
-        });
+        _ = try self.expect(.close_bracket);
+
+        const node = Ast.Initializer {
+            .ty = ty,
+            .fields = try fields.toOwnedSlice(self.allocator),
+        };
+
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.initializer, span, node);
+        return nodeid;
     }
-    _ = try self.expect(.close_bracket);
-
-    const node = Ast.Initializer {
-        .ty = ty,
-        .fields = try fields.toOwnedSlice(self.allocator),
-    };
-
-    span.merge(.init(self.lexer.index, self.file));
-    const nodeid = try self.builder.add_node(.initializer, span, node);
-    return nodeid;
-}
-return try self.expression_primary();
+    return try self.expression_primary();
 }
 
 fn expression_primary(self: *@This()) !AstNodeId {
@@ -1838,7 +1644,7 @@ fn expression_primary(self: *@This()) !AstNodeId {
     if (self.is_next(.back_slash)) {
         return try self.expression_lambda();
     }
-    
+
     if (self.is_next_one_of(.{ .keyword_comptime, .keyword_inline, .keyword_pure })) {
         return try self.expression_mod_block();
     }
@@ -1846,7 +1652,7 @@ fn expression_primary(self: *@This()) !AstNodeId {
     if (self.is_next(.open_bracket)) {
         return try self.expression_block();
     }
-    return try self.expression_terminal();
+    return try self.expression_literal();
 }
 
 fn expression_mod_block(self: *@This()) !AstNodeId {
@@ -2013,43 +1819,6 @@ fn expression_lambda(self: *@This()) !AstNodeId {
 
 }
 
-fn expression_terminal(self: *@This()) !AstNodeId {
-    if (self.is_next(.ident)) {
-        return try self.expression_path();
-    }
-    return try self.expression_literal();
-}
-
-fn expression_path(self: *@This()) !AstNodeId {
-    var span: common.Span = .init(self.lexer.index, self.file);
-    var idents: std.ArrayList(Ast.Ident) = .empty;
-    const first_id = try self.expect_ret(.ident);
-    if (first_id == null) {
-        std.debug.print("ERROR: Expected identifier\n", .{});
-        return error.ParseError;
-    }
-    try idents.append(self.allocator, .{ .span = .make(first_id.?.span) });
-    while (self.next_if(.colon2)) |_| {
-        const id = try self.expect_ret(.ident);
-        if (id == null) {
-            std.debug.print("ERROR: Expected identifier after ::\n", .{});
-            return error.ParseError;
-        }
-        try idents.append(self.allocator, .{ .span = .make(id.?.span) });
-
-    }
-    if (idents.items.len == 0) {
-        std.debug.print("FATAL: Should never be 0\n", .{});
-        return error.FatalError;
-    }
-    const node = Ast.Path {
-        .parts = try idents.toOwnedSlice(self.allocator),
-    };
-
-    span.merge(.init(self.lexer.index, self.file));
-    const nodeid = try self.builder.add_node(.path, span, node);
-    return nodeid;
-}
 
 fn expression_literal(self: *@This()) anyerror!AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
@@ -2061,13 +1830,13 @@ fn expression_literal(self: *@This()) anyerror!AstNodeId {
         .char_literal,
         .keyword_true,
         .keyword_false,
+        .ident,
     })) {
         const tok = self.next() catch unreachable;
         const node = Ast.Terminal {
             .termtype = .{
                 .value = tok,
             },
-            .span = tok.span,
         };
         span.merge(.init(self.lexer.index, self.file));
         const nodeid = try self.builder.add_node(.terminal, span, node);
@@ -2082,7 +1851,6 @@ fn expression_literal(self: *@This()) anyerror!AstNodeId {
         }
 
         const node = Ast.Terminal {
-            .span = ident.?.span,
             .termtype = .{
                 .symbol = .{ .span = .make(ident.?.span) },
             }
@@ -2220,7 +1988,6 @@ fn loop_block(self: *@This()) !AstNodeId {
     span.merge(.init(self.lexer.index, self.file));
     const nodeid = try self.builder.add_node(.block, span, node);
     return nodeid;
-
 }
 
 fn while_loop(self: *@This()) !AstNodeId {

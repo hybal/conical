@@ -16,7 +16,6 @@ const sets = @import("types").set;
 
 pub fn main(init: std.process.Init) !u8 {
     const buffer = 
-        \\mod a;
         \\let A = type i32 | 1;
         \\fn ide(a, b): (i32, i32) -> i32 { 1}
         \\fn main() {
@@ -24,8 +23,6 @@ pub fn main(init: std.process.Init) !u8 {
         \\ }
     ;
     var alloc = std.heap.DebugAllocator(.{ 
-        .never_unmap = true,
-        .retain_metadata = true,
     }).init;
     const gpa = alloc.allocator();
     var ctx = common.Context.init(gpa);
@@ -35,7 +32,7 @@ pub fn main(init: std.process.Init) !u8 {
     _ = try parser.parse();
     //var hir_ctx = hir.lower.init(gpa, &ctx, file, buffer, &ast);
     //_ = try hir_ctx.lower();
-    var buff: [64]u8 = undefined;
+    var buff: [1024]u8 = undefined;
     const stderr = try init.io.lockStderr(&buff, null);
     try ctx.session.emit(&ctx, init.io, &stderr.file_writer.interface);
     init.io.unlockStderr();
