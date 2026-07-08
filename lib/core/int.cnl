@@ -2,7 +2,7 @@ mod core::int;
 
 /// Helper functions
 comptime fn unchecked_cast($A, B: type, val: A) -> B {
-    return val as B;
+    __intrin_reinterpret(val, B)
 }
 
 fn min(a: comptime_int, b: comptime_int) -> comptime_int {
@@ -103,16 +103,8 @@ pub comptime fn Int(a: comptime_int, b: comptime_int) -> type {
     let sub_end = b - a;
     let sub_range = type {sub_start}..{sub_end};
 
-    let mul_start = min(min(
-                        a * a,
-                        a * b),
-                        b * b,
-                        );
-    let mul_end = max(max(
-                        a * a,
-                        a * b),
-                        b * b,
-                        );
+    let mul_start = min(min( a * a, a * b), b * b );
+    let mul_end = max(max( a * a, a * b), b * b );
     let mul_range = type {mul_start}..{mul_end};
 
     let mut div_start = max(a, b);

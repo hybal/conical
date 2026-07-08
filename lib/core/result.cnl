@@ -1,5 +1,6 @@
 mod core::result;
 
+
 pub let Result = \($T, $E) => type ok: T | err: E with impl {
     fn is_ok(self: Self) -> bool {
         match self {

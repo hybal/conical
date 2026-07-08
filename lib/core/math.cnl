@@ -1,6 +1,6 @@
 /// Commonly used mathematical functions and constants
 /// All constants are verified via oeis.org when available, and are rounded to 160 digits
-/// Note that oeis generally does not have more digits than 150, and as such constants are checked up to the digits available and are then extended using other tools
+/// Note that oeis generally does not have more digits than 150 digits, and as such constants are checked up to the digits available and are then extended using other tools
 mod core::math;
 
 /// Archimedes' constant (π)
@@ -8,15 +8,16 @@ mod core::math;
 /// Correct to 105 digits as of 2026
 pub let PI = 3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117067982148086513282306647093844609550582231725359408128481117450;
 
+/// Circle constant (2π or τ)
+/// OEIS number: A019692
+/// Correct to 99 digits as of 2026
+pub let TAU = 6.283185307179586476925286766559005768394338798750211641949889184615632812572417997256069650684234135964296173026564613294187689219101164463450718816256962234901;
+
 /// Euler's number (e)
 /// OEIS number: A001113
 /// Correct to 105 digits as of 2026
 pub let E = 2.718281828459045235360287471352662497757247093699959574966967627724076630353547594571382178525166427427466391932003059921817413596629043572900334295260595630738;
 
-/// Circle constant (2π or τ)
-/// OEIS number: A019692
-/// Correct to 99 digits as of 2026
-pub let TAU = 6.283185307179586476925286766559005768394338798750211641949889184615632812572417997256069650684234135964296173026564613294187689219101164463450718816256962234901;
 
 /// Golden ratio constant Φ = (1 + sqrt(5))/2
 /// OEIS number: A001622
