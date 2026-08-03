@@ -110,19 +110,9 @@ You can also return a value from a function using the block expression (hence wh
 
 ## Control Flow
 
-Branching and loops are both supported in conical.
+Various types of loops are supported, however normal if/else style conditionals are replaced by match expressions as part of an experiment.
 
 ```conical
-if 1 < 2 { // parenthesis are only required if you don't use a block
-    // do stuff
-} else if {
-    // do more stuff
-} else {
-    //do even more stuff
-}
-
-let a = if (1 > 2) 1 else 2; // inline if statement can be used, and takes the place of a ternary operator
-
 let mut c = 1;
 while true { // while loops work like expected
     c += 1;
@@ -133,19 +123,27 @@ for i in range(1, 10) { // range(1, 10) is a range from 1 to 10, meaning i will 
     // do stuff
 }
 
+// Normal if-style branching is done by matching against true/false
+match (cond) {
+    true => {
+    },
+    false => {
+    },
+}
+
 ```
-Loops cannot yield values, and as such have the type unit `()`
+Loops cannot yield values, and as such have the type unit
 
 ## Types
 
 The basic struct and enum syntaxes exist and can be used:
 ```conical
-type Vec2 = struct {
+let Vec2 = type struct {
     x: f32,
     y: f32
 };
 
-type Direction = enum {
+let Direction = type enum {
     North,
     South,
     East,
@@ -153,21 +151,18 @@ type Direction = enum {
     Exact: u16,
 };
 ```
-Where enums are algebraic data types and can have associated values
-
 However, these things are just syntax sugar.
 
 In conical, all types are treated as sets, these sets essentially describe the exact values a memory location with that type can hold.
 
 For example, the most basic type is `unit` which represents a set with no values:
 ``` conical
-type Unit = ();
+let Unit = type .{};
 ```
-(The parenthesis may be changed to `{}` or `.{}` depending on how compound type literal syntax evolves)
 
 A bit of a more interesting type is:
 ```conical
-type u8 = 0..255;
+let u8 = type 0..255;
 ```
 This is a type that can contain the integer values 0 to 255 inclusive.
 The `..` syntax is the range operator, it is just a convenient way to do numeric ranges.
@@ -175,14 +170,14 @@ It is recommended to use ranges whenever possible, as it makes it faster for the
 
 You can also of course just use one number like so:
 ```conical
-type One = 1;
+let One = type 1;
 ```
 in which case there is only one possible value, 1.
 
 ```conical
 let a: One = 2; // This will cause a type error.
 ```
-You can use pretty much any literal value in a type, including strings and characters.
+You can use pretty much any literal value in a type, including characters.
 
 You can also use "symbols" which are just identifiers, these are very similar to the traditional C enum variants
 
@@ -197,8 +192,8 @@ These are, subset (`<=`), strict subset (`<`), superset (`>=`), strict superset 
 
 Example:
 ```conical
-type u32 = 0..!(math::pow(2, 32)-1);
-type Pos = x: u32 * y: u32;
+let u32 = type 0..!(math::pow(2, 32)-1);
+let Pos = type x: u32 * y: u32;
 
 ```
 
@@ -208,7 +203,7 @@ A type union is equivalent to the algebraic enum from before, just that it doesn
 
 ## Product
 
-A product is equivalent to a struct, it differs to a union in that it requires a label for each of its members
+A product is equivalent to a struct.
 
 > **NOTE**
 > Labels may or may not be required in the final version
@@ -221,9 +216,9 @@ These are as expected, except for the fact that any associated functions on the 
 
 Generics in conical are only allowed in functions.
 Which means that to implement generic data types, you have to wrap them in a compile-time function.
-This is commonly done with a lambda on the type declaration:
+This is commonly done with a lambda around the type expression.
 ```conical
-type Option = \$T => T | null;
+let Option = \$T => type T | null;
 ```
 
 ## Compile-time Execution
@@ -264,14 +259,12 @@ All of this makes it so that there is no need for an external dependency to be a
 > I will try to keep it up-to-date as much as possible.
 
 All data in Conical is internally represented using the concept of a _memory slot_.
-A memory slot is an abstract location in memory that data is stored, it has 4 different attributes: size, value set, capability set, and the associated-function set.
-
-The size is just the number of bits that the memory slot is _required_ to have.
-This does not mean that the slot _will_ be that size, just that it cannot be smaller then that.
+A memory slot is an abstract location in memory that data is stored, it has 3 different attributes: value set, associated set, and a layout.
 
 The value set is analogous to other languages' types.
 It is the set of values that this slot can store.
 It could in-theory be generalized to be the set of _bit-patterns_ that this slot can have, but the "types" of values is retained to help with correctness and to be able to pass them to the backend (as for example, different backends support different floating point representations).
+
 <details>
 <summary>This content is out-of-date but is kept for reference reasons</summary>
 The meta set is a compile-time only set of usage constraints. 
@@ -303,13 +296,15 @@ In-addition to usage rules, the set will also contain lifetime information.
 How this will be done is still being worked on.
 </details>
 
+<details>
+<summary>This content is out-of-date but is kept for reference reasons</summary>
 The capability set is a set of plain values (mostly symbols) that represent what things can be done to a memory slot. 
 This works because the compiler has a collection of builtin values that it uses internally.
 For example, `builtin::write`, is checked for whenever assignment occurs (and as such is also inferred based on declaration).
 
 Note that the capability set cannot be implicitly expanded, rather it can only be declared.
 This prevents unintended functionality from creeping in.
-
+</details>
 
 The last attribute on memory slots is the set of functions that are associated with it.
 This is a separate set to keep the meta-set distinct.
@@ -318,10 +313,32 @@ This can also be used to add value declaration that is interned and static and a
 
 ## Resource Management
 
-Automatic resource management in Conical will be implemented using scope-based lifetime inference.
-Unlike most lifetime-based languages (e.g. Rust), this approach does not seek to be granular by determining exactly where a value/slot is no longer used.
-Rather, it merely determines the last scope it is used via escape-analysis and inserts clean-up code at the end of said scope.
-This does not mean that it can't be more granular, instead, that is relegated to being an optimization rather then being the default.
+Automatic resource management is done via 'relevant' types and move semantics. 
+Relevant types are types that are guaranteed to be used _at least_ once. This is a relaxation of the requirements of linear/affine types in that it allows for more than just one use.
+
+A move modifier 'moves' the lifetime of a value to whatever binding its modifying; preventing any further use of any instances or references to said value.
+
+Combining these two mechanisms, allows certain patterns to arise that mimic many other language's approaches to resource management.
+
+For example, take an allocator's 'new' function:
+```conical
+let Allocator = type ... with impl {
+    fn new(self, T): (&mut Self, type) -> TrackedPtr(T) { ... }
+};
+```
+and a TrackedPtr type
+```conical
+let TrackedPtr = \$T => type ref: &T with impl {
+    rel free(move self, allocator): (Self, Allocator) {
+        allocator.free(self);
+    }
+};
+```
+
+Since the 'free' function on 'TrackedPtr' is marked as relevant, it is required to be used sometime within the pointer's lifetime. 
+And since 'self' is marked as 'move' it will not be able to be used after the call to free (preventing use-after-frees and double-frees).
+
+Additionally, since there are no automatic destructors, it is up to the programmer's discretion of _when_ to free the resource, which can lead to higher performance by not holding on to large amounts of memory.
 
 ## Compiler Guarantees 
 
@@ -329,25 +346,6 @@ The way that the compiler guarantees that value sets are upheld is by making _ev
 All functional operators are de-sugared into associated function calls (operator overloading).
 And, in those associated functions the actual operation is preformed via a call to a compiler intrinsic.
 As such, the only locations that the contract could be violated are intrinsics (which the compiler controls) and external functions.
-
-## Destructors / Drop Functions
-
-> **NOTE**
-> This section is entirely just ideas at this point
-
-Since the goal is to have automatic resource management, destructors (I will be using the "drop functions" terminology from Rust), are a requirement.
-There are two _good_ (good is relative) ways to do drop functions.
-A single function that only takes in the value itself (which would require all non-global allocators to have a reference in their allocations).
-Or a function that is required to be called at the end of the values lifetime (which is the approach of linear-type based languages).
-
-The first one is nice in that it reduces boilerplate and complexity, however its downside is that you can't pass any extra context to it without having it be apart of the type.
-The second is the opposite.
-
-Perhaps, conical could use both.
-Where drop functions that only have a single argument of `self` will be called automatically, and more complex drop functions would require manual invocation. 
-Of course, there shouldn't be a "destructor" keyword / syntax as that makes drop code "magical".
-I am currently leaning toward an attribute marker on an associated function that marks it as a drop function, however that does mean that there is more functionality that is not able to be implemented in the language itself.
-Alternatively, there could just be an "overloaded" function that gets called for every type that has it. However, this does mean that you would have to call something like \_\_drop which doesn't really read very well.
 
 
 ## Inference

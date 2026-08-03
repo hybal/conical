@@ -98,12 +98,17 @@ pub const Tag = enum {
     keyword_return,     //KEYWORD_RETURN
     keyword_struct,     //KEYWORD_STRUCT
     keyword_enum,       //KEYWORD_ENUM
+    keyword_interface,  //KEYWORD_INTERFACE
     keyword_use,        //KEYWORD_USE
     keyword_mod,        //KEYWORD_MOD
     keyword_comptime,   //KEYWORD_COMPTIME
     keyword_as,         //KEYWORD_AS
     keyword_static,     //KEYWORD_STATIC
     keyword_type,       //KEYWORD_TYPE
+    keyword_distinct,   //KEYWORD_DISTINCT
+    keyword_rel,        //KEYWORD_REL
+    keyword_linear,     //KEYWORD_LINEAR
+    keyword_affine,     //KEYWORD_AFFINE
     keyword_const,      //KEYWORD_CONST
     keyword_impl,       //KEYWORD_IMPL
     keyword_when,       //KEYWORD_WHEN
@@ -207,12 +212,17 @@ pub const Tag = enum {
             .keyword_return     => "return",
             .keyword_struct     => "struct",
             .keyword_enum       => "enum",
+            .keyword_interface  => "interface",
             .keyword_use        => "use",
             .keyword_mod        => "mod",
             .keyword_comptime   => "comptime",
             .keyword_as         => "as",
             .keyword_static     => "static",
             .keyword_type       => "type",
+            .keyword_distinct   => "distinct",
+            .keyword_rel        => "rel",
+            .keyword_linear     => "linear",
+            .keyword_affine     => "affine",
             .keyword_const      => "const",
             .keyword_impl       => "impl",
             .keyword_when       => "when",
@@ -252,12 +262,17 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     .{ "return",   .keyword_return   },
     .{ "struct",   .keyword_struct   },
     .{ "enum",     .keyword_enum     },
+    .{ "interface",.keyword_interface},
     .{ "use",      .keyword_use      },
     .{ "mod",      .keyword_mod      },
     .{ "comptime", .keyword_comptime },
     .{ "as",       .keyword_as       },
     .{ "static",   .keyword_static   },
     .{ "type",     .keyword_type     },
+    .{ "distinct", .keyword_distinct },
+    .{ "rel",      .keyword_rel      },
+    .{ "linear",   .keyword_linear   },
+    .{ "affine",   .keyword_affine   },
     .{ "const",    .keyword_const    },
     .{ "impl",     .keyword_impl     },
     .{ "when",     .keyword_when     },

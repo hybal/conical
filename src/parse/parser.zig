@@ -573,7 +573,7 @@ fn function_declaration(self: *@This()) !AstNodeId {
 
 /// Parses a type expression
 /// Corresponds to grammar rule `TYPE_EXPRESSION`
-fn type_expression(self: *@This()) !AstNodeId {
+fn type_expression(self: *@This()) anyerror!AstNodeId {
     return try self.type_expression_metadata();
 }
 
@@ -582,10 +582,10 @@ fn type_expression(self: *@This()) !AstNodeId {
 fn type_expression_metadata(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
     // TYPE_EXPRESSION_STRICT_INCLUSION
-    var left = try self.type_expression_default();
+    var left = try self.type_expression_prefix();
     // ( KEYWORD_WITH TYPE_EXPRESSION_STRICT_INCLUSION )*
     while ( self.is_next(.keyword_with )) {
-        const right = try self.type_expression_default();
+        const right = try self.type_expression_prefix();
         const node = Ast.TypeMetadata {
             .left = left,
             .right = right,
@@ -597,6 +597,21 @@ fn type_expression_metadata(self: *@This()) !AstNodeId {
         left = nodeid;
     }
     return left;
+}
+
+fn type_expression_prefix(self: *@This()) !AstNodeId {
+    var span: common.Span = .init(self.lexer.index, self.file);
+    if (self.next_if(.keyword_rel)) |_| {
+        span.merge(.init(self.lexer.index, self.file));
+        const expr = try self.type_expression();
+        const node: Ast.TypePrefix = .{
+            .kind = .relevant,
+            .expr = expr,
+        };
+        const nodeid = try self.builder.add_node(.type_prefix, span, node);
+        return nodeid;
+    }
+    return try self.type_expression_default();
 }
 
 fn type_expression_default(self: *@This()) !AstNodeId {

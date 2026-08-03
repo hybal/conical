@@ -77,6 +77,16 @@ pub const TypeModifier = struct {
     expr: AstNodeId,
 };
 
+/// In the future this can contain linear/affine/distinct prefix types
+pub const TypePrefixKind = enum {
+    relevant,
+};
+
+pub const TypePrefix = struct {
+    kind: TypePrefixKind,
+    expr: AstNodeId,
+};
+
 pub const TypeMetadata = struct {
     left: AstNodeId,
     right: AstNodeId,
@@ -383,6 +393,7 @@ pub const AstKind = enum {
     type_metadata,
     type_literal,
     type_modifier,
+    type_prefix,
     type_label,
     type_default,
     type_enum,
@@ -418,48 +429,49 @@ pub const AstKind = enum {
 
 pub const Ast = struct {
     program: Program,
-    nodes: []const AstNode,
-    poisons: []const Poison,
-    spans: []const common.Span,
-    units: []const Unit,
-    items: []const Item,
-    binary_exprs: []const BinaryExpr,
-    unary_exprs: []const UnaryExpr,
-    terminals: []const Terminal,
-    type_binary_exprs: []const TypeBinaryExpr,
-    type_modifiers: []const TypeModifier,
-    type_metadatas: []const TypeMetadata,
-    type_labels: []const TypeLabel,
-    type_defaults: []const TypeDefault,
-    type_literals: []const TypeLiteral,
-    type_enums: []const TypeEnum,
-    type_structs: []const TypeStruct,
-    type_impls: []const TypeImpl,
-    type_sets: []const TypeSet,
-    type_ranges: []const TypeRange,
-    assignments: []const Assignment,
-    matchs: []const Match,
-    match_arms: []const MatchArm,
-    match_patterns: []const Pattern,
-    match_compound_literals: []const MatchCompoundLiteral,
-    while_loops: []const WhileLoop,
-    for_loops: []const ForLoop,
-    loops: []const Loop,
-    loop_controls: []const LoopControl,
-    blocks: []const Block,
-    mod_blocks: []const ModBlock,
-    var_decls: []const VarDecl,
-    fn_decls: []const FnDecl,
-    fn_calls: []const FnCall,
-    lambdas: []const Lambda,
-    return_stmts: []const ReturnStmt,
-    type_decls: []const TypeDecl,
-    terminateds: []const Terminated,
-    initializers: []const Initializer,
-    access_operators: []const AccessOperator,
-    indexs: []const IndexOp,
-    slices: []const SliceOp,
-    imports: []const Import,
+    node: []const AstNode,
+    poison: []const Poison,
+    span: []const common.Span,
+    unit: []const Unit,
+    item: []const Item,
+    binary_expr: []const BinaryExpr,
+    unary_expr: []const UnaryExpr,
+    terminal: []const Terminal,
+    type_binary_expr: []const TypeBinaryExpr,
+    type_modifier: []const TypeModifier,
+    type_prefix: []const TypePrefix,
+    type_metadata: []const TypeMetadata,
+    type_label: []const TypeLabel,
+    type_default: []const TypeDefault,
+    type_literal: []const TypeLiteral,
+    type_enum: []const TypeEnum,
+    type_struct: []const TypeStruct,
+    type_impl: []const TypeImpl,
+    type_set: []const TypeSet,
+    type_range: []const TypeRange,
+    assignment: []const Assignment,
+    match: []const Match,
+    match_arm: []const MatchArm,
+    match_pattern: []const Pattern,
+    match_compound_literal: []const MatchCompoundLiteral,
+    while_loop: []const WhileLoop,
+    for_loop: []const ForLoop,
+    loop: []const Loop,
+    loop_control: []const LoopControl,
+    block: []const Block,
+    mod_block: []const ModBlock,
+    var_decl: []const VarDecl,
+    fn_decl: []const FnDecl,
+    fn_call: []const FnCall,
+    lambda: []const Lambda,
+    return_stmt: []const ReturnStmt,
+    type_decl: []const TypeDecl,
+    terminated: []const Terminated,
+    initializer: []const Initializer,
+    access_operator: []const AccessOperator,
+    index: []const IndexOp,
+    slice: []const SliceOp,
+    import: []const Import,
     type_use_mod: []const TypeUseMod,
 
     pub fn get(self: *const @This(), id: AstNodeId) struct {AstKind, *anyopaque} {
@@ -467,7 +479,7 @@ pub const Ast = struct {
         const node_kind = self.nodes[id].kind;
         inline for (comptime std.meta.tags(AstKind)) |tag| {
             if (node_kind == tag) {
-                const field_name = comptime @tagName(tag) ++ "s";
+                const field_name = comptime @tagName(tag);
 
                 comptime {
                     if (!@hasField(@This(), field_name)) {
@@ -579,11 +591,11 @@ fn _AstBuilder() type {
             comptime kind: AstKind,
             span: common.Span,
             data: anytype) !AstNodeId {
-            const id_name = @tagName(kind) ++ "s";
+            const id_name = @tagName(kind);
             const id = try self.append(&@field(self.Self, id_name), data);
-            const spanid = try self.append(&self.Self.spans, span);
+            const spanid = try self.append(&self.Self.span, span);
 
-            const out = try self.append(&self.Self.nodes, AstNode {
+            const out = try self.append(&self.Self.node, AstNode {
                 .kind = kind,
                 .span = spanid,
                 .index = id,
@@ -597,9 +609,9 @@ fn _AstBuilder() type {
             const node_kind = node.kind;
 
             inline for (std.meta.tags(AstKind)) |tag| {
-                @compileLog("Added: " ++ @tagName(tag) ++ "s");
+                @compileLog("Added: " ++ @tagName(tag));
                 if (node_kind == tag) {
-                    const field_name = comptime @tagName(tag) ++ "s";
+                    const field_name = comptime @tagName(tag);
 
                     comptime {
                         if (!@hasField(@This().Self, field_name)) {
@@ -644,11 +656,11 @@ fn _AstBuilder() type {
         }
 
         pub fn get_node(self: *@This(), id: AstNodeId) AstNode {
-            return self.Self.nodes.items[id];
+            return self.Self.node.items[id];
         }
 
         pub fn get_span(self: *@This(), id: AstNodeId) common.Span {
-            return self.Self.spans.items[self.Self.nodes.items[id].span];
+            return self.Self.span.items[self.Self.node.items[id].span];
         }
 
         pub fn set_program(self: *@This(), prog: Program) void {
@@ -660,7 +672,7 @@ fn _AstBuilder() type {
         }
 
         pub fn is_poison(self: *const @This(), id: AstNodeId) bool {
-            return self.Self.nodes.items.len > id and self.Self.nodes.items[id].kind == .poison;
+            return self.Self.node.items.len > id and self.Self.nodes.items[id].kind == .poison;
         }
 
     };

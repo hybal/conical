@@ -16,7 +16,7 @@ const sets = @import("types").set;
 
 pub fn main(init: std.process.Init) !u8 {
     const buffer = 
-        \\let A = type i32 | 1;
+        \\let A = type rel i32 | 1;
         \\fn ide(a, b): (i32, i32) -> i32 { 1}
         \\fn main() {
         \\  let mut a = 2;

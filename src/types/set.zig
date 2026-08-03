@@ -17,6 +17,7 @@ pub const Set = union(enum) {
     universal,
     ptr,
     @"type",
+    relevant: *Set,
     finite: []const Value,
 
     label: struct {

@@ -100,9 +100,8 @@ pub const InstrKind = enum(u16) {
     slot_ptr,
     // Yields a value from a block
     //  acts as a general-purpose "return-from-block" instruction,
-    //  takes the place of 'return' in functions
+    //  every block must be terminated by a yield (hence CFG)
     yield,
-    @"return",
     // Construct an initializer, used to make sure that ordering is correct.
     init,
     _,

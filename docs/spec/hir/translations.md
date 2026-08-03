@@ -20,7 +20,7 @@ loop {
     {
         expressions*
     }
-    if (!cond) break;
+    match (cond) { false => break, _ => {} };
 }
 ```
 
@@ -36,7 +36,7 @@ It should be translated as such:
 ```conical
 loop {
     let id = iter.next();
-    if (id == .null) break;
+    match (id) { .null => break, _ => {}};
     {
         expressions*
     }
@@ -106,8 +106,8 @@ Given a generic unary prefix operator `op`, in the expression `op a`, it should 
 Given the postfix operator `!`, in the expression `a!` it should be translated to
 ```conical
 match a.overload(!)(a) {
-    .{ left: _ } => |l| return l.left,
-    .{ right: _ } => |r| r.right,
+    left: _ => |l| return l.left,
+    right: _ => |r| r.right,
 }
 ```
 
@@ -122,20 +122,4 @@ Given the binary operator `|>` in the expression `a |> b`, it should be translat
 ```conical
 b(a)
 ```
-
-## Refinements
-
-Given an expression like:
-```conical
-if cond |a| {
-
-}
-```
-It should be translated to:
-```conical
-if cond |a=a| {
-
-}
-```
-
 
