@@ -220,13 +220,6 @@ pub const FnMod = struct {
     span: common.Span,
 };
 
-pub const Visibility = struct {
-    span: common.Span,
-    kind: enum {
-        public,
-    },
-};
-
 pub const Linkage = struct {
     span: common.Span,
     kind: enum {
@@ -236,7 +229,6 @@ pub const Linkage = struct {
 };
 
 pub const Item = struct {
-    visibility: ?Visibility,
     linkage: ?Linkage,
     function_mods: ?[]FnMod,
     item_kind: ItemKind,
@@ -367,7 +359,7 @@ pub const Poison = struct {
 pub const Unit = struct {};
 
 pub const Program = struct {
-    declarations: []AstNodeId,
+    expressions: []AstNodeId,
 };
 
 pub const SpanId = usize;
@@ -511,7 +503,7 @@ pub const Ast = struct {
     pub fn deinit(self: *const @This(), allocator: std.mem.Allocator) void {
         inline for (comptime std.meta.fieldNames(Ast)) |fl| {
             if ((comptime std.mem.eql(u8, fl, "program"))) {
-                allocator.free(self.program.declarations);
+                allocator.free(self.program.expressions);
             } else {
                 allocator.free(@field(self, fl));
             }

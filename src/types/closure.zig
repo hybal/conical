@@ -5,7 +5,7 @@ const common = @import("common");
 
 
 pub const Closure = struct {
-    env: Set,
+    env: *Set,
     signature: FnSignature,
 
     pub fn equal(self: *const @This(), other: *const @This()) bool {
@@ -18,7 +18,7 @@ pub const Closure = struct {
 
 pub const FnSignature = struct {
     args: []Set,
-    ret: Set,
+    ret: *Set,
 
     pub fn equal(self: *const @This(), other: *const @This()) bool {
         if (self.args.len != other.args.len) return false;

@@ -1,4 +1,3 @@
-mod core::subtype;
 
 fn implements(sub: type, inter: type) {
     type inter <= sub;

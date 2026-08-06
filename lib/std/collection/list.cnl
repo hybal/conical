@@ -24,7 +24,7 @@ pub let List = \($T, $Alloc: Alloc <= AllocatorI = GlobalAlloc) => type struct {
     fn append(self: &mut Self, item: T) -> Option(AllocError) {
         if (self.data.len + 1 >= capacity - 1) {
             self.capacity += self.capacity * GROWTH_CONSTANT;
-            self.data = self.allocator.realloc_slice(self.data, self.capacity);
+            self.data = self.allocator.realloc_slice(self.data, self.capacity)?;
         }
 
         self.data.len += 1;

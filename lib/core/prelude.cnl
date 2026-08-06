@@ -1,10 +1,9 @@
-mod core::prelude;
 
-import core::int;
-import core::float;
-import core::iterator;
-import core::option;
-import core::result;
-import core::slice;
+use import("core/int");
+use import("core/float");
+use import("core/iterator");
+use import("core/option");
+use import("core/result");
+use import("core/slice");
 
 

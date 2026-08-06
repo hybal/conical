@@ -1,4 +1,3 @@
-mod core::result;
 
 
 pub let Result = \($T, $E) => type ok: T | err: E with impl {

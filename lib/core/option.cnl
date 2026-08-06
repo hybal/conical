@@ -1,4 +1,4 @@
-mod core::option;
+
 
 pub let Option = \$T => type some: T | .none with impl {
     fn __operator_unwrap(self: &Self) -> bool {
@@ -6,7 +6,9 @@ pub let Option = \$T => type some: T | .none with impl {
     }
 
     fn is_some(self: &Self) -> bool {
-        *self != .none
+        match *self {
+
+        }
     }
 
     fn unwrap_or(self: &Self, other: T) -> T {

@@ -7,7 +7,7 @@ const golden = @import("golden.zig");
 //const utils = @import("utils.zig");
 
 test "parser" {
-    const code = \\ mod a;
+    const code = \\ 
                  \\ fn main() {
                  \\     let a = 1;
                  \\ }

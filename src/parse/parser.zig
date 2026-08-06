@@ -155,14 +155,14 @@ pub fn parse(self: *@This()) !Ast.Ast {
 fn program(self: *@This()) anyerror!Ast.Ast {
     // Every source file requires a module declaration as the first thing in the file.
     // MODULE_DECLARATION
-    var decls = std.ArrayList(AstNodeId).empty;
+    var exprs = std.ArrayList(AstNodeId).empty;
     // ITEM*
     while (self.lexer.has_next()) {
-        const decl = try self.item();
-        try decls.append(self.allocator, decl);
+        const expr = try self.expression();
+        try exprs.append(self.allocator, expr);
     }
     const prog = Ast.Program {
-        .declarations = try decls.toOwnedSlice(self.allocator),
+        .expressions = try exprs.toOwnedSlice(self.allocator),
     };
 
     self.builder.set_program(prog);
@@ -174,8 +174,6 @@ fn program(self: *@This()) anyerror!Ast.Ast {
 // Corresponds to grammar rule `ITEM`
 fn item(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
-    // currently only `pub`
-    const vis = try self.visibility();
     // `extern`/`export`
     const link = try self.linkage();
     // We parse function modifiers here to make things easier.
@@ -212,7 +210,6 @@ fn item(self: *@This()) !AstNodeId {
 
     // We don't really need to do this, but its here.
     if (link) |l| span.merge(l.span);
-    if (vis) |v| span.merge(v.span);
     for (function_mods) |i| {
         span.merge(i.span);
     }
@@ -222,7 +219,6 @@ fn item(self: *@This()) !AstNodeId {
         .item = kind.@"1",
         .item_kind = kind.@"0",
         .linkage = link,
-        .visibility = vis,
         .function_mods = function_mods,
     };
 
@@ -235,16 +231,6 @@ fn item(self: *@This()) !AstNodeId {
 
 }
 
-// Parses item visibility.
-fn visibility(self: *@This()) !?Ast.Visibility {
-    if (self.next_if(.keyword_pub)) |v| {
-        return .{
-            .kind = .public,
-            .span = v.span,
-        };
-    }
-    return null;
-}
 
 // Parses item linkage
 fn linkage(self: *@This()) !?Ast.Linkage {
@@ -1152,10 +1138,20 @@ fn type_impl_sugar(self: *@This()) !AstNodeId {
 /// Parses an expression
 /// Corresponds to grammar rule `EXPRESSION`
 fn expression(self: *@This()) anyerror!AstNodeId {
+    switch(self.peek().?.tag) {
+        .keyword_extern,
+        .keyword_export,
+        .keyword_fn,
+        .keyword_let => {
+            return try self.item();
+        },
+        else => {},
+    }
     // KEYWORD_TYPE TYPE_EXPRESSION
     if (self.next_if(.keyword_type)) |_| {
         return try self.type_expression();
     }
+
     // | EXPRESSION
     return try self.expression_return();
 }

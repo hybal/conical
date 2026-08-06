@@ -1,7 +1,5 @@
-mod core::slice;
-import prelude;
+use import("prelude");
 /// Represents a view or slice of memory.
-/// TODO: add correct lifetime constraints
 pub let slice = \$T => type value: ptr * length: usize with impl {
     fn __operator_index(self: Self, index: usize) -> T {
         match index > self.length {

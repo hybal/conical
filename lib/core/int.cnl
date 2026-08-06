@@ -1,4 +1,3 @@
-mod core::int;
 
 /// Helper functions
 comptime fn unchecked_cast($A, B: type, val: A) -> B {
@@ -18,6 +17,27 @@ fn max(a: comptime_int, b: comptime_int) -> comptime_int {
         false => b,
     }
 }
+
+/// A common interface for functions that are generic over arithmetic integers
+pub let ArithIntI = anyint with interface {
+    fn __operator_add(anytype, anytype) -> anytype;
+    fn __operator_subtract(anytype, anytype) -> anytype;
+    fn __operator_multiply(anytype, anytype) -> anytype;
+    fn __operator_divide(anytype, anytype) -> anytype;
+    fn __operator_remainder(anytype, anytype) -> anytype;
+    fn __operator_negate(anytype, anytype) -> anytype;
+    fn __operator_left_shift(anytype, anytype) -> anytype;
+    fn __operator_right_shift(anytype, anytype) -> anytype;
+    fn __operator_bitwise_or(anytype, anytype) -> anytype;
+    fn __operator_bitwise_and(anytype, anytype) -> anytype;
+    fn __operator_bitwise_xor(anytype, anytype) -> anytype;
+    fn __operator_eq(anytype, anytype) -> bool;
+    fn __operator_neq(anytype, anytype) -> bool;
+    fn __operator_less_then(anytype, anytype) -> bool;
+    fn __operator_greater_then(anytype, anytype) -> bool;
+    fn __operator_less_then_equal(anytype, anytype) -> bool;
+    fn __operator_greater_then_equal(anytype, anytype) -> bool;
+};
 
 /// A compile-time only integer.
 /// Allows for arithmetic in compile-time contexts without having to resort to intrinsics.

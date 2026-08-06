@@ -23,3 +23,11 @@ pub fn init(allocator: std.mem.Allocator, hir_tree: *const Hir, context: *common
     };
 }
 
+pub fn lower(self: *@This()) anyerror!Tir {
+
+}
+
+pub fn lower_single(self: *@This(), node: hir.HirNodeId) !tir.ResultLoc {
+
+}
+
