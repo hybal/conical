@@ -1,6 +1,8 @@
-use import("prelude");
+mod type enum {
+    slice: slice,
+};
 /// Represents a view or slice of memory.
-pub let slice = \$T => type value: ptr * length: usize with impl {
+let slice = \$T => type value: ptr * length: usize with impl {
     fn __operator_index(self: Self, index: usize) -> T {
         match index > self.length {
             true => panic(),

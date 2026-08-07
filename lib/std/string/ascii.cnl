@@ -1,4 +1,15 @@
-mod std::ascii;
+mod type enum {
+    is_visible: is_visible,
+    is_control: is_control,
+    is_alphabetic: is_alphabetic,
+    is_alphanumeric: is_alphanumeric,
+    is_digit: is_digit,
+    is_whitespace: is_whitespace,
+    is_upper: is_upper,
+    is_lower: is_lower,
+    is_punctuation: is_punctuation,
+    is_ascii: is_ascii,
+};
 
 pub fn is_visible(char: u8) -> bool {
     match char {

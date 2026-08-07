@@ -1,6 +1,9 @@
 /// An interface for code that deals with I/O.
 /// Includes things like filesystem interactions, networking, random numbers, etc.
 /// An implementation of this interface is not included.
+mod type enum {
+    IO: IO,
+};
 
 //TODO: Perhaps it would be better to split different kinds of effects out into different interfaces and then have one `Effect` type that includes
 //  allocation, filesystem, networking, etc. as optionals.
@@ -9,5 +12,3 @@
 let IO = type struct {
 
 };
-
-type IO: IO

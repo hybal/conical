@@ -1,4 +1,3 @@
 /// A SIMD accelerated fixed width array
 /// Will use SIMD if present, otherwise defaults to loop (and will likely emit a warning)
-mod std::collection::vector;
 

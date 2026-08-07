@@ -1,4 +1,4 @@
-type impl {
+mod type impl {
     let AddI = interface {
         fn __operator_add(self: anytype, other: anytype) -> anytype;
     };
@@ -91,7 +91,7 @@ type impl {
     let BitwiseI = LShiftI | RShiftI | BitOrI | BitAndI | BitXorI;
 
     let ArithI = AddI | SubI | DivI | MulI | RemI | NegI;
-}
+};
 
 
 

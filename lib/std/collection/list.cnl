@@ -1,10 +1,11 @@
-mod std::collection::list;
-import core::result;
-import core::option;
-import core::iterator;
-import std::mem::allocator;
+mod type enum {
+    List: List,
+};
+let Result = core.Result;
+let Option = core.Option;
+let Iterator = core.Iterator;
 
-pub let List = \($T, $Alloc: Alloc <= AllocatorI = GlobalAlloc) => type struct {
+let List = \($T, $Alloc: Alloc <= AllocatorI = GlobalAlloc) => type struct {
     data: []T,
     capacity: usize,
     allocator: Alloc,

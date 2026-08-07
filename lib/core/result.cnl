@@ -1,6 +1,8 @@
+mod type enum {
+    Result: Result,
+};
 
-
-pub let Result = \($T, $E) => type ok: T | err: E with impl {
+let Result = \($T, $E) => type ok: T | err: E with impl {
     fn is_ok(self: Self) -> bool {
         match self {
             ok: _ => true,

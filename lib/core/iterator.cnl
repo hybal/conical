@@ -1,12 +1,13 @@
 /// Contains types relating to iteration.
 /// Included in the prelude
-mod core::iterator;
-import core::option;
 
+mod type enum {
+    IteratorI: IteratorI,
+};
 
 /// The main iterator interface.
 /// This interface is required to use the `for x in a` construct on a type.
-pub let IteratorI = interface {
+let IteratorI = interface {
     /// Advances the iterator and returns the result.
     /// .end is returned at the end of iteration.
     /// There are no guarantees that calling next again after .end won't result in further values.

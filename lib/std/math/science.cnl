@@ -1,48 +1,56 @@
 /// Constants and functions common in the physical sciences
 /// All constants are checked using oeis.org, and are rounded to 20 significant figures
-mod std::math::science;
-
+mod type enum {
+    C: C,
+    PLANCK: PLANCK,
+    PLANCK_REDUCED: PLANCK_REDUCED,
+    G: G,
+    BOLTZMANN_K: BOLTZMANN_K,
+    N_A: N_A,
+    EC: EC,
+    FARADAY: FARADAY,
+};
 
 /// Speed of light in a vacuum in meters/second
 /// OEIS number: A003678
 /// Correct as of 2026
-pub let C = 299792458;
+let C = 299792458;
 
 /// Planck constant in joule * second
 /// OEIS number: A003676
 /// Correct as of 2026
-pub let PLANCK = 662607015;
+let PLANCK = 662607015;
 
 /// Reduced Planck constant in joule * second
 /// OEIS number: A254181
 /// Correct as of 2026
-pub let PLANCK_REDUCED = 1.0545718176461563913;
+let PLANCK_REDUCED = 1.0545718176461563913;
 
 /// Newton's gravitational constant in (newton * m^2) / kg^2
 /// OEIS number: A070058
 /// Correct as of 2026
-pub let G = 6.674e-11;
+let G = 6.674e-11;
 
 /// Boltzmann's constant in joule / kelvin
 /// OEIS number: A070063
 /// Correct as of 2026
-pub let BOLTZMANN_K = 1.380649e-23;
+let BOLTZMANN_K = 1.380649e-23;
 
 /// Avogadro's number (unitless)
 /// OEIS number: A322578
 /// Correct as of 2026
-pub let N_A = 6.02214076e23;
+let N_A = 6.02214076e23;
 
 
 /// Elementary Charge constant in coulombs
 /// OEIS number: A081823
 /// Correct as of 2026
-pub let EC = 1.602176634e-19;
+let EC = 1.602176634e-19;
 
 /// Faraday constant in coulombs / mole
 /// OEIS number: A163999
 /// Correct as of 2026
-pub let FARADAY = 96485.3321233100184;
+let FARADAY = 96485.3321233100184;
 
 
 
