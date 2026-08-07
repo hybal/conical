@@ -1,20 +1,22 @@
+let ref = import("core/prelude").ref;
 
-
-pub let Option = \$T => type some: T | .none with impl {
-    fn __operator_unwrap(self: &Self) -> bool {
-        !self.is_some()
-    }
-
-    fn is_some(self: &Self) -> bool {
-        match *self {
-
+type impl {
+    let Option = \$T => type some: T | .none with impl {
+        fn __operator_unwrap(self: ref(Self)) -> bool {
+            !self.is_some()
         }
-    }
 
-    fn unwrap_or(self: &Self, other: T) -> T {
-        match *self {
-            some: v => v,
-            .none => other,
+        fn is_some(self: ref(Self)) -> bool {
+            match *self {
+
+            }
         }
-    }
-};
+
+        fn unwrap_or(self: ref(Self), other: T) -> T {
+            match *self {
+                some: v => v,
+                .none => other,
+            }
+        }
+    };
+}

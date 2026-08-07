@@ -16,6 +16,7 @@ const parse = @import("parse");
 
 pub fn main(init: std.process.Init) !u8 {
     const buffer = 
+        \\mod type ide: ide | main: main;
         \\let A = type rel i32 | 1;
         \\fn ide(a, b): (i32, i32) -> i32 { 1}
         \\fn main() {

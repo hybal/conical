@@ -228,6 +228,10 @@ pub const Linkage = struct {
     },
 };
 
+pub const ModStmt = struct {
+    expression: AstNodeId,
+};
+
 pub const Item = struct {
     linkage: ?Linkage,
     function_mods: ?[]FnMod,
@@ -238,6 +242,7 @@ pub const Item = struct {
 pub const ItemKind = enum {
     function,
     binding,
+    mod_expr,
 };
 
 pub const Import = struct {
@@ -359,7 +364,7 @@ pub const Poison = struct {
 pub const Unit = struct {};
 
 pub const Program = struct {
-    expressions: []AstNodeId,
+    items: []AstNodeId,
 };
 
 pub const SpanId = usize;
@@ -371,13 +376,11 @@ pub const AstNode = struct {
     index: usize,
 };
 
-// Is it bad that you have to change 8 things to add a new ast node, yes...
-// Am I going to make it better? Maybe...
-// Compile time stuff in zig isn't the easiest thing to reason about.
 pub const AstKind = enum {
     poison,
     unit,
     item,
+    mod_stmt,
     binary_expr,
     unary_expr,
     terminal,
@@ -426,6 +429,7 @@ pub const Ast = struct {
     span: []const common.Span,
     unit: []const Unit,
     item: []const Item,
+    mod_stmt: []const ModStmt,
     binary_expr: []const BinaryExpr,
     unary_expr: []const UnaryExpr,
     terminal: []const Terminal,

@@ -1,8 +1,8 @@
-//! This file contains the parser for the conical language
+//! The parser for Conical
 
 
 //NOTES:
-//In the self-hosted rewrite the Ast will actually be a syntax tree so that span information is exact
+//In the self-hosted rewrite the parser will actually produce a syntax tree for better span tracking instead of an Ast
 const std = @import("std");
 
 const Ast = @import("Ast.zig");
@@ -18,7 +18,6 @@ allocator: std.mem.Allocator,
 tmp_allocator: std.mem.Allocator = std.heap.page_allocator, //TODO: use an actual allocator
 lexer: lex.Lexer,
 context: *common.Context,
-has_module: bool = false,
 builder: Ast.AstBuilder,
 file: common.FileId,
 saved_token: ?lex.Token = null,
@@ -153,16 +152,14 @@ pub fn parse(self: *@This()) !Ast.Ast {
 /// Parser module declaration and any number of top-level declarations.
 /// Corresponds to grammar rule `PROGRAM`
 fn program(self: *@This()) anyerror!Ast.Ast {
-    // Every source file requires a module declaration as the first thing in the file.
-    // MODULE_DECLARATION
-    var exprs = std.ArrayList(AstNodeId).empty;
+    var items = std.ArrayList(AstNodeId).empty;
     // ITEM*
     while (self.lexer.has_next()) {
-        const expr = try self.expression();
-        try exprs.append(self.allocator, expr);
+        const decl = try self.item();
+        try items.append(self.allocator, decl);
     }
     const prog = Ast.Program {
-        .expressions = try exprs.toOwnedSlice(self.allocator),
+        .items = try items.toOwnedSlice(self.allocator),
     };
 
     self.builder.set_program(prog);
@@ -174,6 +171,31 @@ fn program(self: *@This()) anyerror!Ast.Ast {
 // Corresponds to grammar rule `ITEM`
 fn item(self: *@This()) !AstNodeId {
     var span: common.Span = .init(self.lexer.index, self.file);
+    if (self.next_if(.keyword_mod)) |key_tok| {
+        const expr = try self.expression();
+        if (!try self.expect(.semicolon)) {
+            const err = errors.ExpectedTokenError {
+                .expected = .semicolon,
+                .span = .init(key_tok.span.end, self.file),
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
+        }
+        const mod_node = Ast.ModStmt {
+            .expression = expr,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const mod_nodeid = try self.builder.add_node(.mod_stmt, span, mod_node);
+        const node = Ast.Item {
+            .function_mods = null,
+            .item = mod_nodeid,
+            .item_kind = .mod_expr,
+            .linkage = null,
+        };
+        span.merge(.init(self.lexer.index, self.file));
+        const nodeid = try self.builder.add_node(.item, span, node);
+        return nodeid;
+    }
     // `extern`/`export`
     const link = try self.linkage();
     // We parse function modifiers here to make things easier.
@@ -189,6 +211,7 @@ fn item(self: *@This()) !AstNodeId {
         .keyword_fn => .{ .function, try self.function_declaration()},
         .keyword_let => .{ .binding, try self.let_binding()},
         else => {
+            std.debug.print("H: {any}\n", .{peek_tok.?.tag});
             const err = errors.UnexpectedTokenError {
                 .found = peek_tok.?,
                 .notes = &.{ "top-level can only contain functions, imports, and variables" },
@@ -202,7 +225,8 @@ fn item(self: *@This()) !AstNodeId {
                 .error_id = errid,
             };
             const poisonid = try self.builder.add_node(.poison, span, poison_node);
-            return poisonid;
+            _ = poisonid;
+            return error.AAAA;
 
 
         },

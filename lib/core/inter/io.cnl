@@ -1,11 +1,13 @@
 /// An interface for code that deals with I/O.
 /// Includes things like filesystem interactions, networking, random numbers, etc.
 /// An implementation of this interface is not included.
-mod core::inter::io;
 
 //TODO: Perhaps it would be better to split different kinds of effects out into different interfaces and then have one `Effect` type that includes
 //  allocation, filesystem, networking, etc. as optionals.
 // That way things that don't depend on, say, a network stack don't have to require an implementation for that.
-pub let IO = type struct {
+
+let IO = type struct {
 
 };
+
+type IO: IO
