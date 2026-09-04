@@ -1,40 +1,4 @@
 
-
-let slice = \$T => type value: ptr * length: usize with impl {
-    fn __operator_index(self: Self, index: usize) T => {
-        match index > self.length {
-            true => panic(),
-            false => __intrin_array_get_at_offset(self.value, index),
-        }
-    }
-
-    fn __operator_index_set($V, self: Self, index: usize, value: V) => {
-        match index > self.length {
-            true => panic(),
-            false => __intrin_array_set_at_offset(self.value, index, value),
-        }
-    }
-    fn __operator_slice(self: Self, start: usize, end: usize) Self => {
-        match (start > self.length || end >= self.length) {
-            true => panic(),
-            false => {},
-        }
-        match ( start > end ) {
-            true => panic(), 
-            false => {},
-        }
-        let v = __intrin_offset_ptr(self.value, start);
-        let length = end - start;
-        .{ .value = v, .length = length }
-    }
-
+let A = type interface {
+    fn foo() => {}
 };
-    fn next(self: Self, index: usize) Option(T) => {
-        match ( index >= .(usize_s) { self.length } - 1) {
-            true => .none,
-            false => .{ .some = self.__operator_index(self, index) },
-        }
-    }
-
-
-

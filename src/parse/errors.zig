@@ -214,20 +214,17 @@ pub const ExpectedTokenError = struct {
 
 
     pub fn get_error_type(self: *const @This(), allocator: std.mem.Allocator) !diag.ErrorType {
-        _ = self;
-        _ = allocator;
-        unreachable;
-//        const vtable = struct {
-//            pub fn to_diagnostic(_self: *const anyopaque, _allocator: std.mem.Allocator) !diag.Diagnostic {
-//                return ExpectedTokenError.to_diagnostic(@alignCast(@ptrCast(_self)), _allocator);
-//            }
-//        };
-//
-//        return diag.ErrorType {
-//
-//            .ptr = try common.createWith(allocator, self.*),
-//            .vtable = .{ .to_diagnostic = &vtable.to_diagnostic},
-//        };
+        const vtable = struct {
+            pub fn to_diagnostic(_self: *const anyopaque, _allocator: std.mem.Allocator) !diag.Diagnostic {
+                return ExpectedTokenError.to_diagnostic(@alignCast(@ptrCast(_self)), _allocator);
+            }
+        };
+
+        return diag.ErrorType {
+
+            .ptr = try common.createWith(allocator, self.*),
+            .vtable = .{ .to_diagnostic = &vtable.to_diagnostic},
+        };
     }
 };
 

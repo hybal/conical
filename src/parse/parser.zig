@@ -807,7 +807,12 @@ fn type_expression_range(self: *@This()) !AstNodeId {
         if (tok.tag == .bang) {
             left_exclude = true;
             if (!try self.expect(.dot2)) {
-                return error.ParserError;
+                const err = errors.ExpectedTokenError {
+                    .expected = .dot2,
+                    .span = .init(self.previous_token.span.end, self.file),
+                };
+                const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                _ = errid;
             }
         }
         const right = try self.type_expression_unary();
@@ -1227,8 +1232,12 @@ fn type_interface_sugar(self: *@This()) !AstNodeId {
         const node = self.builder.get_or_null(Ast.FnDecl, .fn_decl, decl).?;
         if (node.body != null) {
             span.merge(.init(self.lexer.index, self.file));
-            // Functions cannot have bodies in interfaces
-            return error.ParseError;
+            const err = errors.ExpectedTokenError {
+                .expected = .semicolon,
+                .span = .init(self.builder.get_span(node.body.?).start, self.file),
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            return errid;
         }
         try decls.append(self.allocator, decl);
     }
@@ -1350,8 +1359,13 @@ fn expression_match(self: *@This()) !AstNodeId {
                 while (!self.is_next(.pipe)) {
                     const ident = try self.expect_ret(.ident);
                     if (ident == null) {
-                        //Expected identifier
-                        return error.ParserError;
+                        const err = errors.ExpectedTokenError {
+                            .expected = .ident,
+                            .span = .init(self.previous_token.span.end, self.file),
+                        };
+
+                        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                        return errid;
                     }
                     try captures.append(self.allocator, .{ .span = .make(ident.?.span) });
                 }
@@ -1625,8 +1639,12 @@ fn expression_postfix(self: *@This()) !AstNodeId {
                     }
                     ident = try self.expect_ret(.ident);
                     if (ident == null) {
-                        //ERROR: expected identifier
-                        return error.ParseError;
+                        const err = errors.ExpectedTokenError {
+                            .expected = .ident,
+                            .span = .init(self.previous_token.span.end, self.file),
+                        };
+                        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                        return errid;
                     }
                 }
                 const val = try self.expression();
@@ -1656,8 +1674,6 @@ fn expression_postfix(self: *@This()) !AstNodeId {
                     right = try self.expression();
                 }
                 if (!try self.expect(.close_square)) {
-                    //ERROR: Expected ']'
-                    return error.ParseError;
                 }
                 const node = Ast.SliceOp {
                     .expr = expr,
@@ -1670,8 +1686,12 @@ fn expression_postfix(self: *@This()) !AstNodeId {
                 return nodeid;
             }
             if (!try self.expect(.close_square)) {
-                //ERROR: Expected ']'
-                return error.ParseError;
+                const err = errors.ExpectedTokenError {
+                    .expected = .close_square,
+                    .span = .init(self.previous_token.span.end, self.file),
+                };
+                const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                _ = errid;
             }
 
             const node = Ast.IndexOp {
@@ -1754,13 +1774,22 @@ fn expression_initializer(self: *@This()) !AstNodeId {
         if (self.next_if(.open_paren)) |_| {
             ty = try self.type_expression();
             if (!try self.expect(.close_paren)) {
-                //ERROR: Expected ')'
-                return error.ParseError;
+                const err = errors.ExpectedTokenError {
+                    .expected = .close_paren,
+                    .span = .init(self.previous_token.span.end, self.file),
+                };
+                const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                _ = errid;
+
             }
         }
         if (!try self.expect(.open_bracket)) {
-            //ERROR: Expected '{'
-            return error.ParseError;
+            const err = errors.ExpectedTokenError {
+                .expected = .open_bracket,
+                .span = .init(self.previous_token.span.end, self.file),
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
         }
         var fields: std.ArrayList(Ast.InitializerField) = .empty;
         while (!self.is_next(.close_bracket)) {
@@ -1768,13 +1797,21 @@ fn expression_initializer(self: *@This()) !AstNodeId {
             if (self.next_if(.dot)) |_| {
                 const id = try self.expect_ret(.ident);
                 if (id == null) {
-                    //ERROR: Expected identifier
-                    return error.ParseError;
+                    const err = errors.ExpectedTokenError {
+                        .expected = .ident,
+                        .span = .init(self.previous_token.span.end, self.file),
+                    };
+                    const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                    return errid;
                 }
                 ident = .{ .span = .make(id.?.span) };
                 if (!try self.expect(.eq)) {
-                    //ERROR: Expected =
-                    return error.ParseError;
+                    const err = errors.ExpectedTokenError {
+                        .expected = .eq,
+                        .span = .init(self.previous_token.span.end, self.file),
+                    };
+                    const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                    _ =errid;
                 }
             }
             const expr = try self.expression();
@@ -1974,8 +2011,12 @@ fn expression_literal(self: *@This()) anyerror!AstNodeId {
     if (self.next_if(.dot)) |_| {
         const ident = try self.expect_ret(.ident);
         if (ident == null) {
-            //ERROR: Expected identifier
-            return error.ParseError;
+            const err = errors.ExpectedTokenError {
+                .expected = .ident,
+                .span = .init(self.previous_token.span.end, self.file),
+            };
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            return errid;
         }
 
         const node = Ast.Terminal {
@@ -2117,8 +2158,12 @@ fn loop_block(self: *@This()) !AstNodeId {
 
     var span: common.Span = .init(self.lexer.index, self.file);
     if (!try self.expect(.open_bracket)) {
-        //ERROR: Expected {
-        return error.ParseError;
+        const err = errors.ExpectedTokenError {
+            .expected = .open_bracket,
+            .span = .init(self.previous_token.span.end, self.file),
+        };
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        _ = errid;
     }
     var stmts: std.ArrayList(AstNodeId) = .empty;
     while (!self.is_next(.close_bracket)) {
@@ -2135,128 +2180,130 @@ fn loop_block(self: *@This()) !AstNodeId {
             try stmts.append(self.allocator, try self.statement());
         }
     }
-
-    if (self.next() catch null == null) {
-        //ERROR: EOF
-        return error.ParseError;
-    }
-
     const node = Ast.Block {
         .exprs = try stmts.toOwnedSlice(self.allocator),
     };
     span.merge(.init(self.lexer.index, self.file));
     const nodeid = try self.builder.add_node(.block, span, node);
     return nodeid;
+}
+
+fn while_loop(self: *@This()) !AstNodeId {
+
+    var span: common.Span = .init(self.lexer.index, self.file);
+    if (!try self.expect(.keyword_while)) {
+        //FATAL: Called without a known while loop
+        return error.FatalError;
     }
 
-    fn while_loop(self: *@This()) !AstNodeId {
+    const cond = try self.expression();
+    const block = try self.loop_block();
 
-        var span: common.Span = .init(self.lexer.index, self.file);
-        if (!try self.expect(.keyword_while)) {
-            //FATAL: Called without a known while loop
-            return error.FatalError;
-        }
+    const node = Ast.WhileLoop {
+        .block = block,
+        .condition = cond,
+    };
 
-        const cond = try self.expression();
-        const block = try self.loop_block();
+    span.merge(.init(self.lexer.index, self.file));
+    const nodeid = try self.builder.add_node(.while_loop, span, node);
+    return nodeid;
+}
 
-        const node = Ast.WhileLoop {
-            .block = block,
-            .condition = cond,
+fn for_loop(self: *@This()) !AstNodeId {
+
+    var span: common.Span = .init(self.lexer.index, self.file);
+    if (!try self.expect(.keyword_for)) {
+        //FATAL: Called without a known for loop
+        return error.FatalError;
+    }
+
+    const ident = try self.expect_ret(.ident);
+    if (ident == null) {
+        const err = errors.ExpectedTokenError {
+            .expected = .ident,
+            .span = .init(self.previous_token.span.end, self.file),
         };
-
-        span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.while_loop, span, node);
-        return nodeid;
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        return errid;
     }
 
-    fn for_loop(self: *@This()) !AstNodeId {
-
-        var span: common.Span = .init(self.lexer.index, self.file);
-        if (!try self.expect(.keyword_for)) {
-            //FATAL: Called without a known for loop
-            return error.FatalError;
-        }
-
-        const ident = try self.expect_ret(.ident);
-        if (ident == null) {
-            //ERROR: Expected identifier
-            return error.ParseError;
-        }
-
-        if (!try self.expect(.keyword_in)) {
-            //ERROR: Expected 'in'
-            return error.ParseError;
-        }
-
-        const expr = try self.expression();
-
-        const block = try self.loop_block();
-
-        const node = Ast.ForLoop {
-            .expr = expr,
-            .ident = .{ .span = .make(ident.?.span) },
-            .block = block
+    if (!try self.expect(.keyword_in)) {
+        const err = errors.ExpectedTokenError {
+            .expected = .keyword_in,
+            .span = .init(self.previous_token.span.end, self.file),
         };
-
-        span.merge(.init(self.lexer.index, self.file));
-        const nodeid = try self.builder.add_node(.for_loop, span, node);
-        return nodeid;
-
+        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+        _ = errid;
     }
 
-    fn try_parse_attributes(self: *@This()) !?[]Ast.Attribute {
+    const expr = try self.expression();
 
-        var attribs: std.ArrayList(Ast.Attribute) = .empty;
-        while (self.is_next(.at)) {
-            _ = try self.expect(.at);
-            const id = try self.expect_ret(.ident);
-            if (id == null) {
-                const err = errors.ExpectedTokenError {
-                    .expected = .ident,
-                    .span = .init(self.previous_token.span.end, self.file),
-                };
+    const block = try self.loop_block();
 
-                const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-                _ = errid;
-                // Try to resync the parser if there is a parameter list
-                // Probably need to imrove this
-                if (self.next_if(.open_paren)) |_| {
-                    while (!self.is_next(.close_paren)) {
-                        _ = try self.next();
-                    }
-                }
+    const node = Ast.ForLoop {
+        .expr = expr,
+        .ident = .{ .span = .make(ident.?.span) },
+        .block = block
+    };
 
-                return null;
-            }
-            var args: std.ArrayList(Ast.AstNodeId) = .empty;
-            if (self.next_if(.open_paren)) |_| {
-                while (!self.is_next(.close_paren)) {
-                    const expr = try self.expression();
-                    if (!self.is_next(.comma) and !self.is_next(.close_paren)) {
-                        const err = errors.ExpectedTokenError {
-                            .expected = .comma,
-                            .span = .init(self.previous_token.span.end, self.file),
-                        };
+    span.merge(.init(self.lexer.index, self.file));
+    const nodeid = try self.builder.add_node(.for_loop, span, node);
+    return nodeid;
 
-                        const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-                        _ = errid;
-                    }
-                    _ = self.next_if(.comma);
+}
 
-                    try args.append(self.allocator, expr);
-                }
-                _ = try self.expect(.close_paren);
-            }
+fn try_parse_attributes(self: *@This()) !?[]Ast.Attribute {
 
-            const attrib = Ast.Attribute {
-                .args = if (args.items.len == 0) null else try args.toOwnedSlice(self.allocator),
-                .id = .{ .span = .make_a(id.?.span) },
+    var attribs: std.ArrayList(Ast.Attribute) = .empty;
+    while (self.is_next(.at)) {
+        _ = try self.expect(.at);
+        const id = try self.expect_ret(.ident);
+        if (id == null) {
+            const err = errors.ExpectedTokenError {
+                .expected = .ident,
+                .span = .init(self.previous_token.span.end, self.file),
             };
 
-            try attribs.append(self.allocator, attrib);
+            const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+            _ = errid;
+            // Try to resync the parser if there is a parameter list
+            // Probably need to imrove this
+            if (self.next_if(.open_paren)) |_| {
+                while (!self.is_next(.close_paren)) {
+                    _ = try self.next();
+                }
+            }
+
+            return null;
+        }
+        var args: std.ArrayList(Ast.AstNodeId) = .empty;
+        if (self.next_if(.open_paren)) |_| {
+            while (!self.is_next(.close_paren)) {
+                const expr = try self.expression();
+                if (!self.is_next(.comma) and !self.is_next(.close_paren)) {
+                    const err = errors.ExpectedTokenError {
+                        .expected = .comma,
+                        .span = .init(self.previous_token.span.end, self.file),
+                    };
+
+                    const errid = try self.context.session.push(try err.get_error_type(self.allocator));
+                    _ = errid;
+                }
+                _ = self.next_if(.comma);
+
+                try args.append(self.allocator, expr);
+            }
+            _ = try self.expect(.close_paren);
         }
 
+        const attrib = Ast.Attribute {
+            .args = if (args.items.len == 0) null else try args.toOwnedSlice(self.allocator),
+            .id = .{ .span = .make_a(id.?.span) },
+        };
 
-        return if (attribs.items.len == 0) null else try attribs.toOwnedSlice(self.allocator);
+        try attribs.append(self.allocator, attrib);
     }
+
+
+    return if (attribs.items.len == 0) null else try attribs.toOwnedSlice(self.allocator);
+}
