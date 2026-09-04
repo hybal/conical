@@ -22,6 +22,17 @@ pub const Path = struct {
         return self.normalized;
     }
 
+    pub fn read_to_string(self: *const @This(), io: std.Io, allocator: std.mem.Allocator) ![]const u8 {
+        const fl = try std.Io.Dir.cwd().openFile(io, self.normalized, .{});
+        const stat = try fl.stat(io);
+        var buffer: [4096]u8 = undefined;
+        var array: std.ArrayList(u8) = try .initCapacity(allocator, stat.size + 1);
+        var reader = fl.reader(io, &buffer);
+        try reader.interface.appendRemaining(allocator, &array, .unlimited);
+        return try array.toOwnedSlice(allocator);
+
+    }
+
     pub fn make_reader(self: *const @This(), io: std.Io, allocator: std.mem.Allocator) !std.Io.Reader {
         const fl = try std.Io.Dir.cwd().openFile(io, self.normalized, .{});
         const reader_buffer = try allocator.alloc(u8, 4096);

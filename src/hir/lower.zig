@@ -202,7 +202,7 @@ fn ident_to_intern(self: *@This(), id: ast.Ident) !common.intern.InternId {
 
 
 pub fn lower(self: *@This()) !Hir {
-    for (self.tree.nodes, 0..) |_, i| {
+    for (self.tree.node, 0..) |_, i| {
         _ = try self.lower_single(i);
     }
     return try self.builder.build();
@@ -222,9 +222,7 @@ fn lower_single(self: *@This(), nodeid: ast.AstNodeId) anyerror!hir.HirNodeId {
         .access_operator => try self.lower_access(nodeid),
         .assignment => try self.lower_assignment(nodeid),
         .block => try self.lower_block(nodeid, null),
-        .cast => try self.lower_cast(nodeid),
         .fn_call => try self.lower_fn_call(nodeid),
-        .if_stmt => try self.lower_if_stmt(nodeid),
         .loop => try self.lower_loop(nodeid),
         .loop_control => try self.lower_loop_control(nodeid),
         .mod_block => mb: {
@@ -237,7 +235,6 @@ fn lower_single(self: *@This(), nodeid: ast.AstNodeId) anyerror!hir.HirNodeId {
         .terminal => try self.lower_terminal(nodeid),
         .terminated => try self.lower_terminated(nodeid),
         .lambda => try self.lower_lambda(nodeid),
-        .path => try self.lower_path(nodeid),
         .return_stmt => try self.lower_return(nodeid),
         .slice => try self.lower_slice(nodeid),
         .type_binary_expr => try self.lower_type_binary_expr(nodeid),
@@ -616,8 +613,9 @@ fn lower_item(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     std.debug.assert(self.tree.get(nodeid).@"0" == .item);
     const node: *ast.Item = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
     const item_node = switch (node.item_kind) {
-        .function => try self.lower_fn_decl(node.item, node.function_mods),
+        .function => try self.lower_fn_decl(node.item),
         .binding => try self.lower_binding(node.item),
+        else => unreachable,
     };
     const linkage: ?hir.Linkage = if (node.linkage) |l| switch (l.kind) {
         .@"export" => .@"export",
@@ -658,10 +656,12 @@ fn lower_binding(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     return out;
     
 }
-fn lower_fn_decl(self: *@This(), nodeid: ast.AstNodeId, mods: ?[]ast.FnMod) !hir.HirNodeId {
+
+fn lower_fn_decl(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
     std.debug.assert(self.tree.get(nodeid).@"0" == .fn_decl);
     const node: *ast.FnDecl = @ptrCast(@alignCast(self.tree.get(nodeid).@"1"));
     const id = try self.context.intern_pool.put(node.ident.span.a.get_string(self.builder.source));
+
     const prev_scope = self.builder.scope;
     _ = try self.builder.add_scope(true);
     var generics_buf = try self.allocator.alloc(hir.Generic, node.generics.len);
@@ -672,14 +672,14 @@ fn lower_fn_decl(self: *@This(), nodeid: ast.AstNodeId, mods: ?[]ast.FnMod) !hir
         };
         _ = try self.builder.add_symbol(gen.ident.span.a);
     }
-    var param_buf = try self.allocator.alloc(hir.FunctionParameter, node.params.len);
+    var param_buf = try self.allocator.alloc(hir.LambdaParameter, node.params.len);
     for (node.params, 0..) |p, i| {
         const param_mod: ?hir.BindingModifier = if (p.modifier) |m| switch (m.kind) {
             .alias => .alias,
             .mut => .mut,
             .move => .move,
         } else null;
-        param_buf[i] = hir.FunctionParameter {
+        param_buf[i] = hir.LambdaParameter {
             .id = try self.context.intern_pool.put(p.id.span.a.get_string(self.builder.source)),
             .ty = try self.lower_single(node.param_types[i]),
             .modifier = param_mod,
@@ -687,29 +687,22 @@ fn lower_fn_decl(self: *@This(), nodeid: ast.AstNodeId, mods: ?[]ast.FnMod) !hir
         _ = try self.builder.add_symbol(p.id.span.a);
     }
     const ret_ty = if (node.return_ty) |r| try self.lower_single(r) else null;
-    const block = try self.lower_single(node.body);
+    const block: hir.HirNodeId = try self.lower_single(node.body.?);
     self.builder.into_scope(prev_scope);
-    var decl_mods: ?[]hir.FnModifier = null;
-    if (mods) |ms| {
-        decl_mods = try self.allocator.alloc(hir.FnModifier, ms.len);
-        for (ms, 0..) |m, i| {
-            decl_mods.?[i] = switch (m.kind) {
-                .@"comptime" => .@"comptime",
-                .@"inline" => .@"inline",
-                .pure => .pure,
-            };
-        }
-    }
-    const out_node = hir.FnDecl {
+    const out_node = hir.Lambda {
         .generics = generics_buf,
-        .id = id,
         .params = param_buf,
-        .ret_ty = ret_ty,
-        .modifiers = decl_mods,
-        .body = block,
+        .return_ty = ret_ty,
+        .block = block,
     };
-    const out = try self.builder.add_node(.fn_decl, self.tree.get_span(nodeid), out_node);
-    return out;
+    const lambda = try self.builder.add_node(.lambda, self.tree.get_span(nodeid), out_node);
+    const binding_node = hir.Binding {
+        .id = id,
+        .initialization = lambda,
+        .modifier = null,
+    };
+    const binding = try self.builder.add_node(.binding, self.tree.get_span(nodeid), binding_node);
+    return binding;
 }
 
 fn lower_binary_expr(self: *@This(), nodeid: ast.AstNodeId) !hir.HirNodeId {
@@ -893,15 +886,7 @@ fn lower_impl(self: *@This(), nodeid: hir.HirNodeId) !hir.HirNodeId {
     
     for (node.declarations) |decl| {
         const item: *ast.Item = @ptrCast(@alignCast(self.tree.get(decl).@"1"));
-        if (item.linkage != null) {
-            //ERROR: Sets currently can't have non-internal linkage
-            return error.HirError;
-        }
-
-        if (item.visibility != null) {
-            //ERROR: Sets currently default to public and can't be changed.
-            return error.HirError;
-        }
+        _ = item;
     }
     return error.Unimplemented;
 }

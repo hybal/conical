@@ -5,18 +5,18 @@ mod type enum {
 
 
 let Option = \$T => type some: T | .none with impl {
-    fn __operator_unwrap(self: &Self) -> bool {
+    fn __operator_unwrap(self: &Self) bool => {
         !self.is_some()
     }
 
-    fn is_some(self: &Self) -> bool {
+    fn is_some(self: &Self) bool => {
         match *self {
             some: _ => true,
             _ => false,
         }
     }
 
-    fn unwrap_or(self: &Self, other: T) -> T {
+    fn unwrap_or(self: &Self, other: T) T => {
         match *self {
             some: v => v,
             .none => other,

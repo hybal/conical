@@ -65,18 +65,31 @@ pub fn build(b: *std.Build) void {
 
 
     //modules.getPtr("bindings").?.*.link_libc = true;
+    //
+
+    const tests_filter = b.option([]const []const u8, "test", "Enable specific modules for tests");
 
     // Add tests
     const test_step = b.step("test", "Run unit tests");
     var mod_it = modules.iterator();
     while (mod_it.next()) |entry| {
-        const tst = b.addTest(.{
-            .use_lld = false, //FIXME: Remove with SFrame support
-            .use_llvm = false,
-            .root_module = entry.value_ptr.*,
-        });
-        const test_run = b.addRunArtifact(tst);
-        test_step.dependOn(&test_run.step);
+        var add_test: bool = true;
+        if (tests_filter) |filter| {
+            for (filter) |f| {
+                if (!std.mem.eql(u8, entry.key_ptr.*, f)) {
+                    add_test = false;
+                }
+            }
+        }
+        if (add_test) {
+            const tst = b.addTest(.{
+                .use_lld = false, //FIXME: Remove with SFrame support
+                .use_llvm = false,
+                .root_module = entry.value_ptr.*,
+            });
+            const test_run = b.addRunArtifact(tst);
+            test_step.dependOn(&test_run.step);
+        }
     }
     b.installArtifact(exe);
 

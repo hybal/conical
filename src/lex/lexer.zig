@@ -74,6 +74,7 @@ pub const Tag = enum {
     dot2,               //..
     colon,              //:
     colon2,             //::
+    coloneq,            //:=
     single_quote,       //'
                         //keywords
     keyword_if,         //KEYWORD_IF
@@ -188,6 +189,7 @@ pub const Tag = enum {
             .dot2               => "..",
             .colon              => ":",
             .colon2             => "::",
+            .coloneq            => ":=",
             .single_quote       => "'",
             //keywords
             .keyword_if         => "if",
@@ -265,7 +267,7 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     .{ "interface",.keyword_interface},
     .{ "use",      .keyword_use      },
     .{ "mod",      .keyword_mod      },
-    .{ "comptime", .keyword_comptime },
+    //.{ "comptime", .keyword_comptime },
     .{ "as",       .keyword_as       },
     .{ "static",   .keyword_static   },
     .{ "type",     .keyword_type     },
@@ -359,26 +361,16 @@ pub const Lexer = struct {
 
     // Strip any preceeding byte-order-marks (BOM)
     fn strip_bom(source: []const u8) []const u8 {
-        const bytes = source[0..3];
-        if (bytes[0] == 0xEF 
-            and bytes[1] == 0xBB 
-            and bytes[2] == 0xBF) {
-            return source[3..];
+        if (source.len >= 3) {
+            const bytes = source[0..3];
+            if (bytes[0] == 0xEF 
+                and bytes[1] == 0xBB 
+                and bytes[2] == 0xBF) {
+                return source[3..];
+            }
         }
         return source;
 
-    }
-    //checks if the next character and the one after are the same
-    fn is_double(self: *Lexer) bool {
-        self.iterator.save();
-        defer self.iterator.restore();
-        const a = self.iterator.next();
-        const b = self.iterator.next();
-        if (a == null or b == null) return false;
-        if (a == b) {
-            return true;
-        }
-        return false;
     }
 
     //checks if the next character matches next_char
@@ -416,8 +408,8 @@ pub const Lexer = struct {
     fn peek2(self: *Lexer) ?u21 {
         const saved_index = self.index;
         defer self.index = saved_index;
-        self.iterator.save();
-        defer self.iterator.restore();
+        const saved_i = self.iterator.iter.i;
+        defer self.iterator.restore(saved_i);
         _ = self.next();
 
         return self.peek();
@@ -475,9 +467,9 @@ pub const Lexer = struct {
     //This returns the next token but does not advance
     pub fn peek_token(self: *Lexer) Token {
         const saved_index = self.index;
-        self.iterator.save();
+        const saved_i = self.iterator.iter.i;
         const tok = self.next_token();
-        self.iterator.restore();
+        self.iterator.restore(saved_i);
         self.index = saved_index;
         return tok;
     }
@@ -491,6 +483,52 @@ pub const Lexer = struct {
                 else => break
             }
         }
+    }
+
+    fn parse_int(self: *Lexer, c: u21) Tag {
+        var tag: Tag = .eof;
+        var base: Base = .b10;
+        var is_float = false;
+        if (c == '0' and self.has_next()) {
+            //the number can be prefixed with a 0 and a character that indicates the base
+            switch (self.peek() orelse 0) {
+                'x', 'X' => base = .b16, 
+                'o', 'O' => base = .b8,
+                'b', 'B' => base = .b2,
+                else => {}, //currently base 64 is not supported since I have not figured out a good syntax for it
+            }
+            if (base != .b10) {
+                _ = self.next();
+            }
+        }
+        while (self.has_next()) : (_ = self.next()) {
+            const next_digit = self.peek() orelse 0;
+            if (next_digit == '_') { //numbers can contain underscores (_) as optional seperators
+                continue;
+            }
+            if (next_digit == '.') {
+                if (self.peek2() orelse 0 == '.') {
+                    break;
+                }
+                if (self.peek2()) |val| {
+                    if (is_id_start(val)) {
+                        break;
+                    }
+                }
+                if (is_float) {
+                    break;
+                }
+                is_float = true;
+                continue;
+            }
+            if (!is_base(next_digit, base)) {
+                break;
+            }
+        }
+        if (tag != .invalid) {
+            tag = if (is_float) .float_literal else .int_literal;
+        }
+        return tag;
     }
 
     //This is the function used to mainpulate the lexer
@@ -512,7 +550,6 @@ pub const Lexer = struct {
                         continue;
                     } else if (self.next_if('*') != null) {
                         if (!self.parse_block_comment()) {
-                            std.debug.print("DEBUG Z\n", .{});
                             tag = .invalid;
                         }
                         continue;
@@ -543,14 +580,12 @@ pub const Lexer = struct {
                     }
                     tag = .hash;
                 },
-                '+' => tag = if (self.next_if('+')) |_| .plus2 else if (self.next_if('=')) |_| .pluseq else .plus,
                 '?' => tag = if (self.next_if('?')) |_| .question2 else .question,
                 '|' => tag = if (self.next_if('|')) |_| if (self.next_if('=')) |_| .pipe2eq else .pipe2 else if (self.next_if('=')) |_| .pipeeq else if (self.next_if('>')) |_| .pipearrow else .pipe,
                 '.' => tag = if (self.next_if('.')) |_| .dot2 else .dot,
-                ':' => tag = if (self.next_if(':')) |_| .colon2 else .colon,
+                ':' => tag = if (self.next_if(':')) |_| .colon2 else if (self.next_if('=')) |_| .coloneq else .colon,
                 '&' => tag = if (self.next_if('&')) |_| if (self.next_if('=')) |_| .amp2eq else .amp2 else .amp,
                 '=' => tag = if (self.next_if('=')) |_| .eq2 else if (self.next_if('>')) |_| .fat_arrow else .eq,
-                '-' => tag = if (self.next_if('-')) |_| .minus2 else if (self.next_if('>')) |_| .thin_arrow else .minus,
                 '!' => tag = if (self.next_if('=')) |_| .bangeq else if (self.next_if('!')) |_| .bang2 else .bang,
                 '>' => tag = if (self.next_if('=')) |_| .gteq else if (self.next_if('>')) |_| if (self.next_if('=')) |_| .gt2eq else .gt2 else .gt,
                 '<' => tag = if (self.next_if('=')) |_| .lteq else if (self.next_if('<')) |_| if (self.next_if('=')) |_| .lt2eq else .lt2 else .lt,
@@ -624,47 +659,29 @@ pub const Lexer = struct {
                         tag = .raw_string_literal;
                     }
                 },
+                '-' => {
+                    switch (self.peek() orelse 0) {
+                        '-' => { tag = .minus2; _ = self.next(); },
+                        '=' => { tag = .minuseq; _ = self.next(); },
+                        '>' => { tag = .thin_arrow; _ = self.next(); },
+                        '0'...'9' => {
+                            tag = self.parse_int(self.next().?);
+                        },
+                        else => tag = .minus,
+                    }
+                },
+                '+' => {
+                    switch (self.peek() orelse 0) {
+                        '+' => { tag = .plus2; _ = self.next(); },
+                        '=' => { tag = .pluseq; _ = self.next(); },
+                        '0'...'9' => {
+                            tag = self.parse_int(self.next().?);
+                        },
+                        else => tag = .plus,
+                    }
+                },
                 '0'...'9' => { //this parses a number literal 
-                    var base: Base = .b10;
-                    var is_float = false;
-                    if (c == '0' and self.has_next()) {
-                        switch (self.peek() orelse 0) {
-                            'x', 'X' => base = .b16, //the number can be prefixed with a 0 and a character that indicates the base
-                            'o', 'O' => base = .b8,
-                            'b', 'B' => base = .b2,
-                            else => {}, //currently base 64 is not supported since I have not figured out a good syntax for it
-                        }
-                        if (base != .b10) {
-                            _ = self.next();
-                        }
-                    }
-                    while (self.has_next()) : (_ = self.next()) {
-                        const next_digit = self.peek() orelse 0;
-                        if (next_digit == '_') { //numbers can contain underscores (_) as optional seperators
-                            continue;
-                        }
-                        if (next_digit == '.') {
-                            if (self.peek2() orelse 0 == '.') {
-                                break;
-                            }
-                            if (self.peek2()) |val| {
-                                if (is_id_start(val)) {
-                                    break;
-                                }
-                            }
-                            if (is_float) {
-                                break;
-                            }
-                            is_float = true;
-                            continue;
-                        }
-                        if (!is_base(next_digit, base)) {
-                            break;
-                        }
-                    }
-                    if (tag != .invalid) {
-                        tag = if (is_float) .float_literal else .int_literal;
-                    }
+                    tag = self.parse_int(c);
                 },
                 '_', 'a'...'z', 'A'...'Z' => {
                     while (self.has_next()) {
@@ -690,6 +707,7 @@ pub const Lexer = struct {
             }
             break;
         }
+        ////std.debug.print("DEBUG: {any}\n", .{tag});
         return .{ .span = .{ .start = start, .end = self.index, .fileid = self.file}, .tag = tag };
     }
 };

@@ -1,22 +1,40 @@
-mod main;
-extern fn print();
-extern fn puts(value): &u8 -> i32;
 
 
-fn add(a, b): (i32, i32) -> i32 {
-    return a + b;
-}
-pub type Test = struct {
-    a: i32,
-    b: i32
+let slice = \$T => type value: ptr * length: usize with impl {
+    fn __operator_index(self: Self, index: usize) T => {
+        match index > self.length {
+            true => panic(),
+            false => __intrin_array_get_at_offset(self.value, index),
+        }
+    }
+
+    fn __operator_index_set($V, self: Self, index: usize, value: V) => {
+        match index > self.length {
+            true => panic(),
+            false => __intrin_array_set_at_offset(self.value, index, value),
+        }
+    }
+    fn __operator_slice(self: Self, start: usize, end: usize) Self => {
+        match (start > self.length || end >= self.length) {
+            true => panic(),
+            false => {},
+        }
+        match ( start > end ) {
+            true => panic(), 
+            false => {},
+        }
+        let v = __intrin_offset_ptr(self.value, start);
+        let length = end - start;
+        .{ .value = v, .length = length }
+    }
+
 };
+    fn next(self: Self, index: usize) Option(T) => {
+        match ( index >= .(usize_s) { self.length } - 1) {
+            true => .none,
+            false => .{ .some = self.__operator_index(self, index) },
+        }
+    }
 
-pub fn main() -> i32 {
-    let a: i32 = 1;
-    let b: Test = Test { .a = 1, .b = 2 };
-    let out = add(1, 3);
-    let d: i32 = b.a;
-    return d;
-}
 
 

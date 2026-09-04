@@ -3,6 +3,7 @@
 > **WARNING** 
 > Conical is not yet in a useable state.
 > Everything in this directory is unstable and can change at any time, and is not guaranteed to compile on current versions.
+> At the moment this is more for testing language design decisions then actual use.
 
 The standard library for conical is organized into three main sections: core, std, and extra.
 

@@ -5,13 +5,11 @@ pub const UnicodeError = error {
 };
 pub const Iterator = struct {
     iter: std.unicode.Utf8Iterator,
-    saved_index: ?usize,
 
     pub fn init(text: []const u8) UnicodeError!@This() {
         const iter = std.unicode.Utf8View.init(text) catch return UnicodeError.InvalidUtf8;
         return .{
             .iter = iter.iterator(),
-            .saved_index = null,
         };
     }
 
@@ -36,15 +34,8 @@ pub const Iterator = struct {
         return out;
     }
 
-    pub fn save(self: *@This()) void {
-        self.saved_index = self.iter.i;
-    }
-
-    pub fn restore(self: *@This()) void {
-        if (self.saved_index) |v| {
-            self.iter.i = v;
-            self.saved_index = null;
-        }
+    pub fn restore(self: *@This(), index: usize) void {
+        self.iter.i = index;
     }
 
 };

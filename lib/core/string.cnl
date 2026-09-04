@@ -7,4 +7,4 @@ mod type enum {
 
 let char = type 0..255;
 
-let str = []char;
+let str = type []char;

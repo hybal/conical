@@ -195,6 +195,8 @@ pub const ErrorStore = struct {
         //TODO: add suggestions
         //TODO: add labels
         try writer.print("\n", .{});
+
+        try writer.flush();
     }
 
 

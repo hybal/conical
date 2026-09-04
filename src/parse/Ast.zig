@@ -34,6 +34,10 @@ pub const IndexOp = struct {
     index: AstNodeId,
 };
 
+pub const Unwrap = struct {
+    expr: AstNodeId,
+};
+
 /// Represents an assignment operaton including compound assignment operations like += or *=
 pub const Assignment = struct {
     op: Token,
@@ -137,6 +141,19 @@ pub const TypeImpl = struct {
     declarations: []AstNodeId,
 };
 
+pub const TypeInterface = struct {
+    decls: []AstNodeId,
+};
+
+pub const TypeUnaryExprKind = enum {
+    negate,
+};
+
+pub const TypeUnaryExpr = struct {
+    kind: TypeUnaryExprKind,
+    expr: AstNodeId,
+};
+
 pub const TypeLiteral = union(enum) {
     value: Token,
     symbol: Ident,
@@ -196,13 +213,18 @@ pub const BindingModifier = struct {
     kind: BindingModifierKind,
 };
 
+pub const FnParam = struct {
+    id: BindingId,
+    mod: ?BindingModifier,
+    ty: ?AstNodeId,
+    is_generic: bool,
+};
+
 pub const FnDecl = struct {
     ident: Ident,
-    params: []BindingId, 
-    param_types: []AstNodeId,
-    generics: []Generic,
+    params: []FnParam,
     return_ty: ?AstNodeId,
-    body: AstNodeId,
+    body: ?AstNodeId,
 };
 
 pub const Generic = struct {
@@ -234,7 +256,6 @@ pub const ModStmt = struct {
 
 pub const Item = struct {
     linkage: ?Linkage,
-    function_mods: ?[]FnMod,
     item_kind: ItemKind,
     item: AstNodeId,
 };
@@ -271,14 +292,22 @@ pub const LambdaParam = struct {
     mod: ?BindingModifier,
     ident: Ident,
     ty: ?AstNodeId,
-    //default: ?AstNodeId,
 };
 
 pub const Lambda = struct {
     params: []LambdaParam,
-    generics: []Generic,
     ret_ty: ?AstNodeId,
     expr: AstNodeId,
+};
+
+pub const Attribute = struct {
+    id: Ident,
+    args: ?[]AstNodeId
+};
+
+pub const AttributeList = struct {
+    attributes: []Attribute,
+    value: AstNodeId,
 };
 
 pub const Refinement = struct {
@@ -298,7 +327,7 @@ pub const Match = struct {
 };
 
 pub const MatchArm = struct {
-    patterns: ?[]AstNodeId,
+    pattern: AstNodeId,
     captures: ?[]Ident,
     block: AstNodeId,
 };
@@ -385,6 +414,7 @@ pub const AstKind = enum {
     unary_expr,
     terminal,
     type_binary_expr,
+    type_unary_expr,
     type_metadata,
     type_literal,
     type_modifier,
@@ -394,6 +424,7 @@ pub const AstKind = enum {
     type_enum,
     type_struct,
     type_impl,
+    type_interface,
     type_set,
     type_range,
     type_use_mod,
@@ -418,8 +449,10 @@ pub const AstKind = enum {
     initializer,
     access_operator,
     index,
+    unwrap,
     slice,
     import,
+    attribute_list,
 };
 
 pub const Ast = struct {
@@ -434,6 +467,7 @@ pub const Ast = struct {
     unary_expr: []const UnaryExpr,
     terminal: []const Terminal,
     type_binary_expr: []const TypeBinaryExpr,
+    type_unary_expr: []const TypeUnaryExpr,
     type_modifier: []const TypeModifier,
     type_prefix: []const TypePrefix,
     type_metadata: []const TypeMetadata,
@@ -443,6 +477,7 @@ pub const Ast = struct {
     type_enum: []const TypeEnum,
     type_struct: []const TypeStruct,
     type_impl: []const TypeImpl,
+    type_interface: []const TypeInterface,
     type_set: []const TypeSet,
     type_range: []const TypeRange,
     assignment: []const Assignment,
@@ -466,13 +501,15 @@ pub const Ast = struct {
     initializer: []const Initializer,
     access_operator: []const AccessOperator,
     index: []const IndexOp,
+    unwrap: []const Unwrap,
     slice: []const SliceOp,
     import: []const Import,
     type_use_mod: []const TypeUseMod,
+    attribute_list: []const AttributeList,
 
     pub fn get(self: *const @This(), id: AstNodeId) struct {AstKind, *anyopaque} {
-        const node_index = self.nodes[id].index;
-        const node_kind = self.nodes[id].kind;
+        const node_index = self.node[id].index;
+        const node_kind = self.node[id].kind;
         inline for (comptime std.meta.tags(AstKind)) |tag| {
             if (node_kind == tag) {
                 const field_name = comptime @tagName(tag);
@@ -493,11 +530,11 @@ pub const Ast = struct {
     }
 
     pub fn get_node(self: *const @This(), id: AstNodeId) AstNode {
-        return self.nodes[id];
+        return self.node[id];
     }
 
     pub fn get_span(self: *const @This(), id: AstNodeId) common.Span {
-        return self.spans[self.nodes[id].span];
+        return self.span[self.node[id].span];
     }
 
     pub fn get_program(self: *const @This()) Program {
@@ -600,17 +637,16 @@ fn _AstBuilder() type {
         }
         
         pub fn get(self: *@This(), id: AstNodeId) struct { AstKind, *anyopaque } {
-            const node = self.Self.nodes.items[id];
+            const node = self.Self.node.items[id];
             const node_index = node.index;
             const node_kind = node.kind;
 
-            inline for (std.meta.tags(AstKind)) |tag| {
-                @compileLog("Added: " ++ @tagName(tag));
+            inline for (comptime std.meta.tags(AstKind)) |tag| {
                 if (node_kind == tag) {
                     const field_name = comptime @tagName(tag);
 
                     comptime {
-                        if (!@hasField(@This().Self, field_name)) {
+                        if (!@hasField(Base, field_name)) {
                             @compileError("Missing field" ++ field_name);
                         }
                     }
@@ -620,8 +656,8 @@ fn _AstBuilder() type {
                         @constCast(&@field(self.Self, field_name).items[node_index]),
                     };
                 }
-
             }
+            unreachable;
         }
 
         pub fn build(self: *@This()) !Ast {
@@ -643,10 +679,10 @@ fn _AstBuilder() type {
 
         }
 
-        pub fn get_or_null(self: *@This(), T: type, kind: AstKind, id: AstNodeId) ?T {
-            const node = self.Self.get(id);
+        pub fn get_or_null(self: *@This(), T: type, kind: AstKind, id: AstNodeId) ?*T {
+            const node = self.get(id);
             if (node.@"0" == kind) {
-                return @as(T, @constCast(node.@"1"));
+                return @as(*T, @alignCast(@ptrCast(node.@"1")));
             }
             return null;
         }

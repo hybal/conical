@@ -13,6 +13,9 @@ pub const OverloadOp = enum {
     bitor,
     bitand,
     bitxor,
+    lognot,
+    logand,
+    logor,
     eq,
     neq,
     lt,
@@ -29,6 +32,49 @@ pub const OverloadOp = enum {
     deref_set,
 };
 
+
+/// Set of intrinsics 
+/// Note: it would be worth considering if the different variants of certain functions (e.g. types of arithmetic),
+///  should be seperate intrinsics, or a single intrinsic with a mode parameter.
+///  For now all forms are listed as seperate intrinsics
+pub const Intrinsic = enum {
+    /// Integer addition, trapping
+    add_it,
+    /// Integer addition, wrapping
+    add_im,
+    /// Integer addition, saturating
+    add_is,
+    /// Integer subtraction
+    sub_it,
+    sub_im,
+    sub_is,
+    /// Integer multiplication
+    mul_it,
+    mul_im,
+    mul_is,
+    /// Integer division, truncate
+    div_it,
+    /// Integer division, floor
+    div_if,
+    /// Integer division, round
+    div_ir,
+    /// Integer division, ceiling
+    div_ic,
+    /// Floating point addition
+    add_f,
+    /// Floating point subtraction
+    sub_f,
+    /// Floating point multiplication
+    mul_f,
+    /// Floating point division
+    div_f,
+    import,
+
+
+
+
+};
+
 pub const OPERATOR_OVERLOAD_MAP = [_]struct {OverloadOp, []const u8} {
     .{ .add,             "__operator_add"                 },
     .{ .sub,             "__operator_subtract"            },
@@ -41,6 +87,9 @@ pub const OPERATOR_OVERLOAD_MAP = [_]struct {OverloadOp, []const u8} {
     .{ .bitor,           "__operator_bitwise_or"          },
     .{ .bitand,          "__operator_bitwise_and"         },
     .{ .bitxor,          "__operator_bitwise_xor"         },
+    .{ .lognot,          "__operator_logical_not"         },
+    .{ .logand,          "__operator_logical_and"         },
+    .{ .logor,           "__operator_logical_or"         },
     .{ .eq,              "__operator_eq"                  },
     .{ .neq,             "__operator_neq"                 },
     .{ .lt,              "__operator_less_then"           },
@@ -56,6 +105,15 @@ pub const OPERATOR_OVERLOAD_MAP = [_]struct {OverloadOp, []const u8} {
     .{ .deref,           "__operator_dereference",        },
     .{ .deref_set,       "__operator_dereference_set",    },
 };
+
+
+pub const INTRINSIC_MAP = [_]struct {Intrinsic, []const u8} {
+
+
+};
+
+
+
 
 pub fn get_operator_overload(op: OverloadOp) []const u8 {
     inline for (OPERATOR_OVERLOAD_MAP) |entry| {

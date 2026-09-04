@@ -52,9 +52,8 @@ let SQRT2 = 1.414213562373095048801688724209698078569671875376948073176679737990
 fn cos(
     $T: T <= ArithFloatI, 
     theta: T,
-    tolerance: comptime_float = 0.0000000001,
-    ) 
-    -> T {
+    tolerance: comptime_float := 0.0000000001,
+    ) T => {
     let mut x: T = theta;
     while x > PI {
         x = x - TAU;

@@ -4,8 +4,8 @@ const Ast = ast.Ast;
 const common = @import("common");
 const diag = @import("diagnostics");
 
-const Int = void;
-const Float = void;
+const Int = common.numbers.Int;
+const Float = common.numbers.Float;
 
 pub const Poison = struct {
     error_id: diag.ErrorId,
@@ -59,18 +59,6 @@ pub const Assignment = struct {
     right: HirNodeId,
 };
 
-pub const Conditional = struct {
-    condition: HirNodeId,
-    then: HirNodeId,
-    @"else": ?HirNodeId,
-    refinements: ?[]RefinementBinding,
-};
-
-pub const RefinementBinding = struct {
-    left: InternId,
-    right: SymbolId,
-};
-
 pub const Loop = struct {
     block: HirNodeId,
 };
@@ -98,15 +86,8 @@ pub const Pattern = union(enum) {
     underscore,
 };
 
-pub const EvalModifier = enum {
-    @"inline",
-    @"comptime",
-    pure,
-};
-
 pub const Block = struct {
     statements: []HirNodeId,
-    mod: ?EvalModifier,
     scope: ScopeId,
 };
 
@@ -170,18 +151,6 @@ pub const Return = struct {
     expr: HirNodeId,
 };
 
-//NOTE: May be removed
-pub const Cast = struct {
-    left: HirNodeId,
-    right: HirNodeId,
-};
-
-pub const FunctionParameter = struct {
-    id: InternId, 
-    ty: HirNodeId,
-    modifier: ?BindingModifier,
-};
-
 pub const LambdaParameter = struct {
     id: InternId,
     ty: ?HirNodeId,
@@ -210,40 +179,9 @@ pub const FnCall = struct {
     args: []FnArg,
 };
 
-pub const FnDecl = struct {
-    id: InternId, 
-    params: []FunctionParameter,
-    generics: []Generic,
-    ret_ty: ?HirNodeId,
-    modifiers: ?[]FnModifier,
-    body: HirNodeId,
-};
-
-pub const FnModifier = enum {
-    pure,
-    @"inline",
-    @"comptime",
-};
-
-pub const ItemKind = enum {
-    binding,
-    func
-};
-
 pub const Linkage = enum {
     @"export",
     @"extern",
-};
-
-pub const Visibility = enum {
-    public,
-};
-
-pub const Item = struct {
-    kind: ItemKind,
-    node: HirNodeId,
-    linkage: ?Linkage,
-    visibility: ?Visibility,
 };
 
 pub const HirNodeId = usize;
@@ -269,8 +207,6 @@ pub const HirKind = enum {
     cast,
     lambda,
     fn_call,
-    fn_decl,
-    item,
 };
 
 const HirNodeType = struct {
@@ -280,7 +216,6 @@ const HirNodeType = struct {
     unary_expr: UnaryExpr,
     access: Access,
     assignment: Assignment,
-    conditional: Conditional,
     loop: Loop,
     loop_control: LoopControl,
     match: Match,
@@ -291,11 +226,8 @@ const HirNodeType = struct {
     type_terminal: TypeTerminal,
     type_label: TypeLabel,
     return_stmt: Return,
-    cast: Cast,
     lambda: Lambda,
     fn_call: FnCall,
-    fn_decl: FnDecl,
-    item: Item,
 };
 
 fn HirNodeTypeFinal() type {

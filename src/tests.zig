@@ -2,9 +2,9 @@ const std = @import("std");
 
 test {
     _ = @import("lex");
-    _ = @import("parse");
-    _ = @import("common");
-    _ = @import("diagnostics");
+    //_ = @import("parse");
+    //_ = @import("common");
+    //_ = @import("diagnostics");
 //    _ = @import("hir/mod.zig");
 //    _ = @import("mir/mod.zig");
 //    _ = @import("sema/mod.zig");

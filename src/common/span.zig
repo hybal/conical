@@ -42,10 +42,7 @@ pub const File = union(enum) {
      pub fn get_source(self: *const @This(), io: std.Io, allocator: std.mem.Allocator) ![]const u8 {
          switch (self.*) {
              .file => |path| {
-                 var reader = try path.make_reader(io, allocator);
-                 const out = try reader.allocRemaining( allocator, .unlimited);
-                 return out;
-                 
+                 return try path.read_to_string(io, allocator);
              },
              .buffer => |buf| {
                  return buf;

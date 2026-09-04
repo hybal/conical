@@ -18,6 +18,7 @@ test "lex/tokens" {
         \\ fn main() {
         \\  let a = 1;
         \\ }
+        \\ 1..1 * 1.._
     ;
 
     var ctx: common.Context = common.Context {
@@ -35,7 +36,6 @@ test "lex/tokens" {
     try expectEqual(.int_literal,    lexer.next_token().tag);
     try expectEqual(.float_literal,  lexer.next_token().tag);
     try expectEqual(.float_literal,  lexer.next_token().tag);
-    try expectEqual(.minus,          lexer.next_token().tag);
     try expectEqual(.int_literal,    lexer.next_token().tag);
     try expectEqual(.int_literal,    lexer.next_token().tag);
     try expectEqual(.int_literal,    lexer.next_token().tag);
@@ -79,6 +79,13 @@ test "lex/tokens" {
     try expectEqual(.int_literal,    lexer.next_token().tag);
     try expectEqual(.semicolon,      lexer.next_token().tag);
     try expectEqual(.close_bracket,  lexer.next_token().tag);
+    try expectEqual(.int_literal,  lexer.next_token().tag);
+    try expectEqual(.dot2,  lexer.next_token().tag);
+    try expectEqual(.int_literal,  lexer.next_token().tag);
+    try expectEqual(.star,  lexer.next_token().tag);
+    try expectEqual(.int_literal,  lexer.next_token().tag);
+    try expectEqual(.dot2,  lexer.next_token().tag);
+    try expectEqual(.underscore,  lexer.next_token().tag);
 
     try expectEqual(.eof,            lexer.next_token().tag);
 
@@ -96,6 +103,7 @@ test "lex/spans" {
          \\fn main() {
          \\  let a = 1;
          \\}
+         \\ _..1 * 1.._
     ;
     var ctx = common.Context {
         .file_store = .init(allocator),
@@ -109,15 +117,22 @@ test "lex/spans" {
 
     var lexer = try lex.Lexer.init(buffer, fileid);
 
-    try expectEqual(span(1, 3, fileid),   lexer.next_token().span);
-    try expectEqual(span(4, 8, fileid),   lexer.next_token().span);
-    try expectEqual(span(8, 9, fileid),   lexer.next_token().span);
-    try expectEqual(span(9, 10, fileid),  lexer.next_token().span);
-    try expectEqual(span(11, 12, fileid), lexer.next_token().span);
-    try expectEqual(span(15, 18, fileid), lexer.next_token().span);
-    try expectEqual(span(19, 20, fileid), lexer.next_token().span);
-    try expectEqual(span(21, 22, fileid), lexer.next_token().span);
-    try expectEqual(span(23, 24, fileid), lexer.next_token().span);
-    try expectEqual(span(24, 25, fileid), lexer.next_token().span);
-    try expectEqual(span(26, 27, fileid), lexer.next_token().span);
+    try expectEqual(span(1, 3, fileid),   lexer.next_token().span); //fn
+    try expectEqual(span(4, 8, fileid),   lexer.next_token().span); //main
+    try expectEqual(span(8, 9, fileid),   lexer.next_token().span); //(
+    try expectEqual(span(9, 10, fileid),  lexer.next_token().span); //)
+    try expectEqual(span(11, 12, fileid), lexer.next_token().span); //{
+    try expectEqual(span(15, 18, fileid), lexer.next_token().span); //let
+    try expectEqual(span(19, 20, fileid), lexer.next_token().span); //a
+    try expectEqual(span(21, 22, fileid), lexer.next_token().span); //=
+    try expectEqual(span(23, 24, fileid), lexer.next_token().span); //1
+    try expectEqual(span(24, 25, fileid), lexer.next_token().span); //;
+    try expectEqual(span(26, 27, fileid), lexer.next_token().span); //}
+    try expectEqual(span(29, 30, fileid), lexer.next_token().span); //_
+    try expectEqual(span(30, 32, fileid), lexer.next_token().span); //..
+    try expectEqual(span(32, 33, fileid), lexer.next_token().span); //1
+    try expectEqual(span(34, 35, fileid), lexer.next_token().span); //*
+    try expectEqual(span(36, 37, fileid), lexer.next_token().span); //1
+    try expectEqual(span(37, 39, fileid), lexer.next_token().span); //..
+    try expectEqual(span(39, 40, fileid), lexer.next_token().span); //_
 }

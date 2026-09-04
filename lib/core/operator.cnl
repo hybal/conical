@@ -1,97 +1,123 @@
-mod type impl {
-    let AddI = interface {
-        fn __operator_add(self: anytype, other: anytype) -> anytype;
-    };
-
-    let SubI = interface {
-        fn __operator_subtract(self: anytype, other: anytype) -> anytype;
-    };
-
-    let MulI = interface {
-        fn __operator_multiply(self: anytype, other: anytype) -> anytype;
-    };
-
-    let DivI = interface {
-        fn __operator_divide(self: anytype, other: anytype) -> anytype;
-    };
-
-    let RemI = interface {
-        fn __operator_remainder(self: anytype, other: anytype) -> anytype;
-    };
-
-    let NegI = interface {
-        fn __operator_negate(self: anytype, other: anytype) -> anytype;
-    };
-
-    let LShiftI = interface {
-        fn __operator_left_shift(self: anytype, other: anytype) -> anytype;
-    };
-
-    let RShiftI = interface {
-        fn __operator_right_shift(self: anytype, other: anytype) -> anytype;
-    };
-
-    let BitOrI = interface {
-        fn __operator_bitwise_or(self: anytype, other: anytype) -> anytype;
-    };
-
-    let BitAndI = interface {
-        fn __operator_bitwise_and(self: anytype, other: anytype) -> anytype;
-    };
-
-    let BitXorI = interface {
-        fn __operator_bitwise_xor(self: anytype, other: anytype) -> anytype;
-    };
-
-    let EqI = interface {
-        fn __operator_eq(self: anytype, other: anytype) -> anytype;
-    };
-
-    let NEqI = interface {
-        fn __operator_neq(self: anytype, other: anytype) -> anytype;
-    };
-
-    let LessThenI = interface {
-        fn __operator_less_then(self: anytype, other: anytype) -> antype;
-    };
-
-    let GreaterThenI = interface {
-        fn __operator_greater_then(self: anytype, other: anytype) -> anytype;
-    };
-
-    let LessThenEqualI = interface {
-        fn __operator_less_then_equal(self: anytype, other: anytype) -> anytype;
-    };
-
-    let GreaterThenEqualI = interface {
-        fn __operator_greater_then_equal(self: anytype, other: anytype) -> anytype;
-    };
-
-    let IndexI = interface {
-        fn __operator_index(self: anytype, index: anytype) -> anytype;
-    };
-
-    let IndexMutI = interface {
-        fn __operator_index_set(self: anytype, index: anytype, value: anytype);
-    };
-
-    let SliceI = interface {
-        fn __operator_slice(self: anytype, start: anytype, end: anytype) -> anytype;
-    };
-
-    let AutoDropI = interface {
-        fn __drop(self: antype);
-    };
-
-    let DropI = __drop: anytype;
-
-
-    let ComparableI = EqI | NEqI | LessThenI | GreaterThenI | LessThenEqualI | GreaterThenEqualI;
-
-    let BitwiseI = LShiftI | RShiftI | BitOrI | BitAndI | BitXorI;
-
-    let ArithI = AddI | SubI | DivI | MulI | RemI | NegI;
+mod type enum {
+    AddI: AddI,
+    SubI: SubI,
+    MulI: MulI,
+    DivI: DivI,
+    RemI: RemI,
+    NegI: NegI,
+    LShiftI: LShiftI,
+    RShiftI: RShiftI,
+    BitOrI: BitOrI,
+    BitAndI: BitAndI,
+    BitXorI: BitXorI,
+    EqI: EqI,
+    NEqI: NEqI,
+    LessThenI: LessThenI,
+    GreaterThenI: GreaterThenI,
+    LessThenEqualI: LessThenEqualI,
+    GreaterThenEqualI: GreaterThenEqualI,
+    IndexI: IndexI,
+    IndexMutI: IndexMutI,
+    SliceI: SliceI,
+    AutoDropI: AutoDropI,
+    DropI: DropI,
+    ComparableI: ComparableI,
+    BitwiseI: BitwiseI,
+    ArithI: ArithI,
 };
+
+let AddI = type interface {
+    fn __operator_add(self: anytype, other: anytype) anytype;
+};
+
+let SubI = type interface {
+    fn __operator_subtract(self: anytype, other: anytype) anytype;
+};
+
+let MulI = type interface {
+    fn __operator_multiply(self: anytype, other: anytype) anytype;
+};
+
+let DivI = type interface {
+    fn __operator_divide(self: anytype, other: anytype) anytype;
+};
+
+let RemI = type interface {
+    fn __operator_remainder(self: anytype, other: anytype) anytype;
+};
+
+let NegI = type interface {
+    fn __operator_negate(self: anytype, other: anytype) anytype;
+};
+
+let LShiftI = type interface {
+    fn __operator_left_shift(self: anytype, other: anytype) anytype;
+};
+
+let RShiftI = type interface {
+    fn __operator_right_shift(self: anytype, other: anytype) anytype;
+};
+
+let BitOrI = type interface {
+    fn __operator_bitwise_or(self: anytype, other: anytype) anytype;
+};
+
+let BitAndI = type interface {
+    fn __operator_bitwise_and(self: anytype, other: anytype) anytype;
+};
+
+let BitXorI = type interface {
+    fn __operator_bitwise_xor(self: anytype, other: anytype) anytype;
+};
+
+let EqI = type interface {
+    fn __operator_eq(self: anytype, other: anytype) anytype;
+};
+
+let NEqI = type interface {
+    fn __operator_neq(self: anytype, other: anytype) anytype;
+};
+
+let LessThenI = type interface {
+    fn __operator_less_then(self: anytype, other: anytype) anytype;
+};
+
+let GreaterThenI = type interface {
+    fn __operator_greater_then(self: anytype, other: anytype) anytype;
+};
+
+let LessThenEqualI = type interface {
+    fn __operator_less_then_equal(self: anytype, other: anytype) anytype;
+};
+
+let GreaterThenEqualI = type interface {
+    fn __operator_greater_then_equal(self: anytype, other: anytype) anytype;
+};
+
+let IndexI = type interface {
+    fn __operator_index(self: anytype, index: anytype) anytype;
+};
+
+let IndexMutI = type interface {
+    fn __operator_index_set(self: anytype, index: anytype, value: anytype);
+};
+
+let SliceI = type interface {
+    fn __operator_slice(self: anytype, start: anytype, end: anytype) anytype;
+};
+
+let AutoDropI = type interface {
+    fn __drop(self: anytype);
+};
+
+let DropI = type __drop: anytype;
+
+
+let ComparableI = type EqI | NEqI | LessThenI | GreaterThenI | LessThenEqualI | GreaterThenEqualI;
+
+let BitwiseI = type LShiftI | RShiftI | BitOrI | BitAndI | BitXorI;
+
+let ArithI = type AddI | SubI | DivI | MulI | RemI | NegI;
 
 
 

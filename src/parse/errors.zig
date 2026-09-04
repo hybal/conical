@@ -64,6 +64,56 @@ pub const UnexpectedTokenError = struct {
     }
 };
 
+pub const ExpectedTokensError = struct {
+    expected: []const lex.Tag,
+    span: common.Span,
+    help: ?[]const u8 = null,
+    notes: ?[]const []const u8 = null,
+
+
+    pub fn to_diagnostic(self: *const @This(), allocator: std.mem.Allocator) !diag.Diagnostic {
+        var builder = diag.DiagnosticBuilder.init(allocator);
+        var msg: std.ArrayList(u8) = .empty;
+        try msg.appendSlice(allocator, "Expected one of: [ ");
+        for (self.expected, 0..) |tag, i| {
+            try msg.appendSlice(allocator, tag.to_string());
+            if (i != self.expected.len - 1) {
+                try msg.appendSlice(allocator, ", ");
+            }
+        }
+        try msg.appendSlice(allocator, " ]");
+        _ = builder
+            .code(@intFromEnum(ParseErrorKind.expected_token))
+            .severity(.Error)
+            .span(self.span)
+            .message(try msg.toOwnedSlice(allocator));
+        if (self.notes) |notes| {
+            for (notes) |note| {
+                _ = try builder.add_note(note);
+            }
+        }
+        if (self.help) |help| {
+            _ = builder.help(help);
+        }
+        return try builder.build();
+    }
+
+    pub fn get_error_type(self: *const @This(), allocator: std.mem.Allocator) !diag.ErrorType {
+        const vtable = struct {
+            pub fn to_diagnostic(_self: *const anyopaque, _allocator: std.mem.Allocator) !diag.Diagnostic {
+                return ExpectedTokensError.to_diagnostic(@alignCast(@ptrCast(_self)), _allocator);
+            }
+        };
+
+        return diag.ErrorType {
+
+            .ptr = try common.createWith(allocator, self.*),
+            .vtable = .{ .to_diagnostic = &vtable.to_diagnostic},
+        };
+    }
+
+};
+
 pub const ExpectedDeclarationError = struct {
     ty: enum {
         expected_module,
@@ -164,17 +214,20 @@ pub const ExpectedTokenError = struct {
 
 
     pub fn get_error_type(self: *const @This(), allocator: std.mem.Allocator) !diag.ErrorType {
-        const vtable = struct {
-            pub fn to_diagnostic(_self: *const anyopaque, _allocator: std.mem.Allocator) !diag.Diagnostic {
-                return ExpectedTokenError.to_diagnostic(@alignCast(@ptrCast(_self)), _allocator);
-            }
-        };
-
-        return diag.ErrorType {
-
-            .ptr = try common.createWith(allocator, self.*),
-            .vtable = .{ .to_diagnostic = &vtable.to_diagnostic},
-        };
+        _ = self;
+        _ = allocator;
+        unreachable;
+//        const vtable = struct {
+//            pub fn to_diagnostic(_self: *const anyopaque, _allocator: std.mem.Allocator) !diag.Diagnostic {
+//                return ExpectedTokenError.to_diagnostic(@alignCast(@ptrCast(_self)), _allocator);
+//            }
+//        };
+//
+//        return diag.ErrorType {
+//
+//            .ptr = try common.createWith(allocator, self.*),
+//            .vtable = .{ .to_diagnostic = &vtable.to_diagnostic},
+//        };
     }
 };
 

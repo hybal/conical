@@ -3,7 +3,7 @@ mod type enum {
 };
 /// Represents a view or slice of memory.
 let slice = \$T => type value: ptr * length: usize with impl {
-    fn __operator_index(self: Self, index: usize) -> T {
+    fn __operator_index(self: Self, index: usize) T => {
         match index > self.length {
             true => panic(),
             false => __intrin_array_get_at_offset(self.value, index),
@@ -17,7 +17,7 @@ let slice = \$T => type value: ptr * length: usize with impl {
         }
     }
 
-    fn __operator_slice(self: Self, start: usize, end: usize) -> Self {
+    fn __operator_slice(self: Self, start: usize, end: usize) Self => {
         match (start > self.length || end >= self.length) {
             true => panic(),
             false => {},
@@ -31,7 +31,7 @@ let slice = \$T => type value: ptr * length: usize with impl {
         .{ .value = v, .length = length };
     }
 
-    fn next(self: Self, index: usize) -> Option(T) {
+    fn next(self: Self, index: usize) Option(T) => {
         match ( index >= .(usize_s) { self.length } - 1) {
             true => .none,
             false => .{ .some = self.__operator_index(self, index) },
