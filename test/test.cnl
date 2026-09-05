@@ -1,4 +1,21 @@
-
-let A = type interface {
-    fn foo() => {}
+let ArithIntI = type anyint with interface {
+    fn __operator_add(_: anytype, _: anytype) anytype; 
+    fn __operator_subtract(_: anytype, _: anytype) anytype;
+    fn __operator_multiply(_: anytype, _: anytype) anytype;
+    fn __operator_divide(_: anytype, _: anytype) anytype;
+    fn __operator_remainder(_: anytype, _: anytype) anytype;
+    fn __operator_negate(_: anytype, _: anytype) anytype;
+    fn __operator_left_shift(_: anytype, _: anytype) anytype;
+    fn __operator_right_shift(_: anytype, _: anytype) anytype;
+    fn __operator_bitwise_or(_: anytype, _: anytype) anytype;
+    fn __operator_bitwise_and(_: anytype, _: anytype) anytype;
+    fn __operator_bitwise_xor(_: anytype, _: anytype) anytype;
+    fn __operator_eq(_: anytype, _: anytype) bool;
+    fn __operator_neq(_: anytype, _: anytype) bool;
+    fn __operator_less_then(_: anytype, _: anytype) bool;
+    fn __operator_greater_then(_: anytype, _: anytype) bool;
+    fn __operator_less_then_equal(_: anytype, _: anytype) bool;
+    fn __operator_greater_then_equal(_: anytype, _: anytype) bool;
 };
+
+

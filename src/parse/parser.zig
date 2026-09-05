@@ -279,7 +279,6 @@ fn item(self: *@This()) !AstNodeId {
 
 // Parses item linkage
 fn linkage(self: *@This()) !?Ast.Linkage {
-
     if (self.next_if(.keyword_extern)) |tok| {
         return .{
             .kind = .@"extern",
@@ -328,8 +327,8 @@ fn let_binding(self: *@This()) !AstNodeId {
     const modifier = try self.binding_modifier();
 
     // IDENT
-    const ident_tmp = try self.expect_ret(.ident);
-    var ident: common.Either(common.Span, diag.ErrorId) = undefined;
+    const ident_tmp = if (self.is_next_one_of(.{.ident, .underscore})) self.next() catch unreachable else null;
+    var ident: Ast.Ident = undefined;
     if (ident_tmp == null) {
         // Expected identifier
         const err = errors.ExpectedTokenError {
@@ -337,9 +336,9 @@ fn let_binding(self: *@This()) !AstNodeId {
             .span = .init(self.previous_token.span.end, self.file),
         };
         const errid = try self.context.session.push(try err.get_error_type(self.allocator));
-        ident = .make(errid);
+        return errid;
     } else {
-        ident = .make(ident_tmp.?.span);
+        ident = if (ident_tmp.?.tag == .ident) .{ .span = .make_a(ident_tmp.?.span) } else .discard;
     }
     // { ':' TYPE_EXPRESSION }
     var typeexpr: ?AstNodeId = null;
@@ -375,7 +374,7 @@ fn let_binding(self: *@This()) !AstNodeId {
     }
     span.merge(.init(self.lexer.index, self.file));
     const binding_id = Ast.BindingId {
-        .id = .{ .span = ident },
+        .id = ident,
         .modifier = modifier,
     };
     const node = Ast.VarDecl {
@@ -444,7 +443,8 @@ fn function_declaration(self: *@This()) !AstNodeId {
     while (!self.is_next(.close_paren)) {
         const modifier = try self.binding_modifier();
         const is_generic = self.next_if(.dollar) != null;
-        if (self.next_if(.ident)) |param_id| {
+        if (self.is_next_one_of(.{ .ident, .underscore})) {
+            const param_id = self.next() catch unreachable;
             var type_expr: ?AstNodeId = null;
             if (!is_generic) {
                 if (!try self.expect(.colon)) {
@@ -463,8 +463,9 @@ fn function_declaration(self: *@This()) !AstNodeId {
                     type_expr = try self.type_expression();
                 }
             }
+            const idd: Ast.Ident = if (param_id.tag == .ident) .{ .span = .make_a(param_id.span) } else .discard;
             const bind_id = Ast.BindingId {
-                .id = .{ .span = .make_a(param_id.span) },
+                .id = idd,
                 .modifier = modifier,
             };
 

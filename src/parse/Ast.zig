@@ -46,8 +46,9 @@ pub const Assignment = struct {
 };
 
 
-pub const Ident = struct {
+pub const Ident = union(enum) {
     span: common.Either(common.Span, ErrorId),
+    discard
 };
 
 pub const BindingId = struct {
